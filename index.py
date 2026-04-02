@@ -7,8 +7,10 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Security: We get the token from Vercel's settings, not the code
+# Security: Get the token from Vercel's Environment Variables
 TOKEN = os.getenv("BOT_TOKEN")
+
+# Initialize the Application
 tg_app = Application.builder().token(TOKEN).build()
 
 def get_greeting():
@@ -18,11 +20,11 @@ def get_greeting():
     else: return "Good evening"
 
 async def process_update(update: Update):
+    # Only respond to /start or /menu commands
     if update.message and update.message.text in ["/start", "/menu"]:
         greeting = get_greeting()
         username = update.effective_user.first_name or "there"
         
-        # WIDE BUTTONS CONFIG
         keyboard = [
             [InlineKeyboardButton("🛒      Steam Accounts      🛒", url="https://your-link.com")],
             [InlineKeyboardButton("🔑      Learn & Guides      🔑", url="https://your-link.com")],
@@ -35,6 +37,7 @@ async def process_update(update: Update):
         caption = f"👋 {greeting}, {username}!\n\nThis channel serves as the primary router for our project. ❤️"
         GIF_URL = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm1kbGExNW12Z3ZpcjRtZmcwcjAxNmJ3YnA5NmRzMjQwNno2NGo2dSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/tkaDAjbZUmoH1a1Z2R/giphy.gif"
 
+        # Using await here ensures the message sends before the function ends
         await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=GIF_URL,
@@ -44,11 +47,18 @@ async def process_update(update: Update):
 
 @app.route('/api/index', methods=['POST'])
 async def webhook_handler():
-    async with tg_app:
-        data = request.get_json(force=True)
-        update = Update.de_json(data, tg_app.bot)
-        await process_update(update)
-    return "OK", 200
+    try:
+        # Start the bot's internal session
+        async with tg_app:
+            data = request.get_json(force=True)
+            update = Update.de_json(data, tg_app.bot)
+            await process_update(update)
+            
+        return "OK", 200
+    except Exception as e:
+        # This will print the exact error to your Vercel Logs
+        print(f"CRITICAL ERROR: {str(e)}")
+        return "Internal Server Error", 500
 
 @app.route('/')
 def index():
