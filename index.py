@@ -44,7 +44,7 @@ async def send_welcome_message(chat_id, first_name):
         "**We're glad to have you here! Check out the buttons below to get started. 🌿**"
     )
 
-    GIF_URL = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXJ1cTdjZmdoczNyMWlhOXRhaWphb2FvYnZkNXp1OHk4NnA5cnlieSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/2pC8mTxAni8Io/giphy.gif"
+    GIF_URL = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExZm9zemV0aTI3MTZzYTR6MmVoNDVuNWRjbzc5ZzB5eGZscDUzYjhzOSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/PgPVijEEPl6gw8WRRl/giphy.gif"
 
     # 4. Send the message with Markdown enabled
     await tg_app.bot.send_animation(
