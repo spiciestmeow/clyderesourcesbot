@@ -8,7 +8,7 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Security: We get the token from Vercel's settings, not the code
-TOKEN = os.getenv("8653302232:AAFz0t3TW_X7OqR9IDYPMdrvbN_bMVxqgPE")
+TOKEN = os.getenv("BOT_TOKEN")
 tg_app = Application.builder().token(TOKEN).build()
 
 def get_greeting():
