@@ -18,7 +18,7 @@ async def send_welcome_message(chat_id, first_name):
     # 1. Define the Keyboard Layout
     keyboard = [
         [
-            InlineKeyboardButton("Free Steam Accounts", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=0c802294d90683e69030086dfb718034"),
+            InlineKeyboardButton("Steam Accounts", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=0c802294d90683e69030086dfb718034"),
             InlineKeyboardButton("Learn & Guides", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=21502294d9068345834508d28ffbe79e")
         ],
         [InlineKeyboardButton("Our Website", url="https://clyderesourcehub.short.gy/")],
@@ -44,7 +44,7 @@ async def send_welcome_message(chat_id, first_name):
         "**We're glad to have you here! Check out the buttons below to get started. 🌿**"
     )
 
-    GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExaDQ2azNuZjM1Y2h6cGdkbTF0YXU0NWtxNDRlOGNybHhham1zenN1NSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/AebNPktTHrdYc/giphy.gif"
+    GIF_URL = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXJ1cTdjZmdoczNyMWlhOXRhaWphb2FvYnZkNXp1OHk4NnA5cnlieSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/2pC8mTxAni8Io/giphy.gif"
 
     # 4. Send the message with Markdown enabled
     await tg_app.bot.send_animation(
