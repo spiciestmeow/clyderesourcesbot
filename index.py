@@ -18,11 +18,11 @@ async def send_welcome_message(chat_id, first_name):
     # 1. Define the Keyboard Layout
     keyboard = [
         [
-            InlineKeyboardButton("🛒 Steam Accounts 🛒", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=0c802294d90683e69030086dfb718034"),
-            InlineKeyboardButton("🔑 Learn & Guides 🔑", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=21502294d9068345834508d28ffbe79e")
+            InlineKeyboardButton("Steam Accounts", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=0c802294d90683e69030086dfb718034"),
+            InlineKeyboardButton("Learn & Guides", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=21502294d9068345834508d28ffbe79e")
         ],
-        [InlineKeyboardButton("🌐 Our Website 🌐", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("📩 Contact & Advertise 📩", url="https://t.me/caydigitals")]
+        [InlineKeyboardButton("Our Website", url="https://clyderesourcehub.short.gy/")],
+        [InlineKeyboardButton("Contact & Advertise", url="https://t.me/caydigitals")]
     ]
     
     # 2. Handle Dynamic Time-based Greeting
