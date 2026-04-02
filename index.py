@@ -4,6 +4,7 @@ from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from datetime import datetime
+import pytz
 
 app = Flask(__name__)
 
@@ -22,12 +23,25 @@ async def send_welcome_message(chat_id, first_name):
         [InlineKeyboardButton("Contact & Advertise", url="https://t.me/caydigitals")]
     ]
     
-    caption = (
-    f"👋 **Hi there, {first_name}!**\n\n"
-    "You've found the heart of our project. This channel is designed "
-    "to help you navigate our ecosystem quickly and easily.\n\n"
-    "We're glad to have you here! Check out the buttons below to get started. 🌿"
-    )
+# Get the current hour in your timezone (e.g., 'Asia/Manila' for Philippines)
+user_tz = pytz.timezone('Asia/Manila')
+current_hour = datetime.now(user_tz).hour
+
+# Determine the dynamic greeting
+if 5 <= current_hour < 12:
+    greeting = "Good morning"
+elif 12 <= current_hour < 18:
+    greeting = "Good afternoon"
+else:
+    greeting = "Good evening"
+
+# The bolded, dynamic caption
+caption = (
+    f"👋 **{greeting}, {first_name}!**\n\n"
+    "**You've found the heart of our project. This channel is designed "
+    "to help you navigate our ecosystem quickly and easily.**\n\n"
+    "**We're glad to have you here! Check out the buttons below to get started. 🌿**"
+)
     GIF_URL = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm1kbGExNW12Z3ZpcjRtZmcwcjAxNmJ3YnA5NmRzMjQwNno2NGo2dSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/tkaDAjbZUmoH1a1Z2R/giphy.gif"
 
     await tg_app.bot.send_animation(
