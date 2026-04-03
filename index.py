@@ -50,7 +50,7 @@ async def send_welcome_message(chat_id, first_name):
         "<b>We're glad to have you! Explore the paths below to begin. 🍃</b>"
     )
 
-    GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDliYmZqdm9scXYzbm5xbHVqajg0d2pxd2x6eTY3dWFicDVhd3R0OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
+    GIF_URL = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExODgzZTJ0cWdlcHE1azNzcWszdzVnbnY2NnQ1MG85aGx6MTRmODJjeSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/m1e68kwYkDnuWbd7vy/giphy.gif"
 
     await tg_app.bot.send_animation(
         chat_id=chat_id,
