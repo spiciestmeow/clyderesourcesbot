@@ -43,7 +43,7 @@ async def send_welcome_message(chat_id, first_name):
     safe_name = html.escape(first_name)
     
     # Content revised for Tech Tips & OS Installation
-caption = (
+    caption = (
         f"{time_icon} {greeting}, <b>{safe_name}</b>!\n\n"
         "<b>You've stumbled upon our hidden clearing. This space is built "
         "to help you find the resources you need, simply and peacefully.</b>\n\n"
