@@ -14,43 +14,41 @@ TOKEN = os.getenv("BOT_TOKEN")
 tg_app = Application.builder().token(TOKEN).build()
 
 async def send_welcome_message(chat_id, first_name):
-    """Sends the Ghibli-themed welcome message with a focus on Tech/OS tips"""
+    """Sends the Ghibli-themed welcome message with the 1-2-1 modern layout"""
     
-    # 🛠️ for Tech/Installation, 📜 for the 'Guides' feel
+    # Modern 1-2-1 Layout
     keyboard = [
+        [InlineKeyboardButton("🎮 Access Steam Accounts", url="https://clyderesourcehub.short.gy/steam-account")],
         [
-            InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
-            InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
+            InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides"),
+            InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")
         ],
-        [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("🌿 Contact & Inquiries", url="https://t.me/caydigitals")]
     ]
     
-    # Time-based Greeting (Manila Time)
     user_tz = pytz.timezone('Asia/Manila')
-    current_hour = datetime.now(user_tz).hour
+    now = datetime.now(user_tz)
+    current_hour = now.hour
 
     if 5 <= current_hour < 12:
-        greeting = "Good morning"
-        time_icon = "🌅"
+        greeting, time_icon = "Good morning", "🌅"
     elif 12 <= current_hour < 18:
-        greeting = "Good afternoon"
-        time_icon = "🌤️"
+        greeting, time_icon = "Good afternoon", "🌤️"
     else:
-        greeting = "Good evening"
-        time_icon = "🌙"
+        greeting, time_icon = "Good evening", "🌙"
 
     safe_name = html.escape(first_name)
     
-    # Content revised for Tech Tips & OS Installation
     caption = (
         f"{time_icon} {greeting}, <b>{safe_name}</b>!\n\n"
-        "<b>You've stumbled upon our hidden clearing. This space is built "
-        "to help you find the resources you need, simply and peacefully.</b>\n\n"
-        "<b>We're glad to have you! Explore the paths below to begin. 🍃</b>"
+        "<b>Welcome to the Clearing.</b>\n"
+        "We've gathered the finest digital tools and system wisdom for your journey. "
+        "Whether you're installing a new OS or looking for a game, the path starts here.\n\n"
+        f"<i>System Status: 🔋 Fully Charged • {now.strftime('%H:%M')} PHT</i>"
     )
 
-    GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
+    # Updated to the Jiro/Engineer GIF for the Tech vibe
+    GIF_URL = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJ4Znd4Znd4Znd4Znd4Znd4Znd4Znd4Znd4Znd4Znd4Znd4Znd4JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKMGpxP5YI0QJxe/giphy.gif"
 
     await tg_app.bot.send_animation(
         chat_id=chat_id,
@@ -62,24 +60,40 @@ async def send_welcome_message(chat_id, first_name):
 
 @app.route('/api/index', methods=['POST'])
 def webhook():
-    """Optimized Entry Point for Vercel"""
     try:
         data = request.get_json(force=True)
+        user_tz = pytz.timezone('Asia/Manila')
         
         async def handle_update():
-            # Initialize bot components properly
             if not tg_app.bot_data:
                 await tg_app.initialize()
             
             update = Update.de_json(data, tg_app.bot)
             
-            if update.message and update.message.text in ["/start", "/menu"]:
-                await send_welcome_message(
-                    update.effective_chat.id, 
-                    update.effective_user.first_name
-                )
-        
-        # Using a fresh loop for each request to prevent Vercel 500 'Loop Closed' errors
+            if update.message and update.message.text:
+                text = update.message.text.lower()
+                chat_id = update.effective_chat.id
+
+                # 1. Start or Menu Commands
+                if text.startswith("/start") or text.startswith("/menu"):
+                    await send_welcome_message(chat_id, update.effective_user.first_name)
+                
+                # 2. Status Command (The part you're adding)
+                elif text.startswith("/status"):
+                    now = datetime.now(user_tz).strftime('%H:%M:%S')
+                    status_text = (
+                        "<b>🔋 System Pulse</b>\n\n"
+                        f"<b>Time:</b> {now} PHT\n"
+                        "<b>Status:</b> Operational 🍃\n"
+                        "<b>Server:</b> Edge Node\n\n"
+                        "<i>All paths are clear. Happy wandering.</i>"
+                    )
+                    await tg_app.bot.send_message(
+                        chat_id=chat_id, 
+                        text=status_text, 
+                        parse_mode='HTML'
+                    )
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(handle_update())
@@ -87,20 +101,8 @@ def webhook():
         
         return "OK", 200
     except Exception as e:
-        print(f"Error: {e}")
         return str(e), 500
 
 @app.route('/')
 def index():
     return "🍃 Clyde Tech Hub is floating in the wind..."
-
-
-
-
-
-
-
-
-
-
-
