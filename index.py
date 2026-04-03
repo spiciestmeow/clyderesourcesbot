@@ -9,14 +9,11 @@ import pytz
 
 app = Flask(__name__)
 
-# Load token
+# Load token - Ensure this is set in Vercel Dashboard!
 TOKEN = os.getenv("BOT_TOKEN")
 tg_app = Application.builder().token(TOKEN).build()
 
 async def send_welcome_message(chat_id, first_name):
-    """Function to generate and send the dynamic Ghibli message"""
-    
-    # 1. Define the Keyboard Layout
     keyboard = [
         [
             InlineKeyboardButton("Steam Accounts", url="https://clyderesourcehub.short.gy/steam-account"),
@@ -26,7 +23,6 @@ async def send_welcome_message(chat_id, first_name):
         [InlineKeyboardButton("Contact & Advertise", url="https://t.me/caydigitals")]
     ]
     
-    # 2. Handle Dynamic Time-based Greeting
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
 
@@ -37,20 +33,18 @@ async def send_welcome_message(chat_id, first_name):
     else:
         greeting = "Good evening"
 
-    # 3. Create the Bold Caption
-    
     safe_name = html.escape(first_name)
     
+    # Use HTML tags since you set parse_mode='HTML'
     caption = (
         f"👋 {greeting}, <b>{safe_name}</b>!\n\n"
-        "**You've found the heart of our project. This channel is designed "
-        "to help you navigate our ecosystem quickly and easily.**\n\n"
-        "**We're glad to have you here! Check out the buttons below to get started. 🌿**"
+        "<b>You've found the heart of our project. This channel is designed "
+        "to help you navigate our ecosystem quickly and easily.</b>\n\n"
+        "<b>We're glad to have you here! Check out the buttons below to get started. 🌿</b>"
     )
 
     GIF_URL = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExZm9zemV0aTI3MTZzYTR6MmVoNDVuNWRjbzc5ZzB5eGZscDUzYjhzOSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/PgPVijEEPl6gw8WRRl/giphy.gif"
 
-    # 4. Send the message with Markdown enabled
     await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=GIF_URL,
@@ -61,21 +55,28 @@ async def send_welcome_message(chat_id, first_name):
 
 @app.route('/api/index', methods=['POST'])
 def webhook():
-    """Vercel Entry Point"""
     try:
         data = request.get_json(force=True)
-        # Initialize the bot within the request context
-        async def handle_update():
-            async with tg_app:
-                update = Update.de_json(data, tg_app.bot)
-                if update.message and update.message.text in ["/start", "/menu"]:
-                    await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
         
-        asyncio.run(handle_update())
+        async def process_update():
+            # Initialize bot if not already done
+            if not tg_app.bot_data: 
+                await tg_app.initialize()
+            
+            update = Update.de_json(data, tg_app.bot)
+            if update.message and update.message.text in ["/start", "/menu"]:
+                await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
+
+        # Better way to run async in Flask/Vercel
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(process_update())
+        loop.close()
+        
         return "OK", 200
     except Exception as e:
         print(f"Error: {e}")
-        return "Internal Error", 500
+        return str(e), 500
 
 @app.route('/')
 def index():
