@@ -43,12 +43,11 @@ async def send_welcome_message(chat_id, first_name):
     safe_name = html.escape(first_name)
     
     # Content revised for Tech Tips & OS Installation
-    caption = (
+caption = (
         f"{time_icon} {greeting}, <b>{safe_name}</b>!\n\n"
-        "<b>You've arrived at our hidden workshop. Beyond the trees, "
-        "we share the craft of maintaining digital systems—from OS "
-        "installations to technical wisdom.</b>\n\n"
-        "<b>Take what you need for your journey. Explore the paths below. 🍃</b>"
+        "<b>You've stumbled upon our hidden clearing. This space is built "
+        "to help you find the resources you need, simply and peacefully.</b>\n\n"
+        "<b>We're glad to have you! Explore the paths below to begin. 🍃</b>"
     )
 
     GIF_URL = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExZm9zemV0aTI3MTZzYTR6MmVoNDVuNWRjbzc5ZzB5eGZscDUzYjhzOSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/PgPVijEEPl6gw8WRRl/giphy.gif"
