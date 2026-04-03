@@ -18,8 +18,8 @@ async def send_welcome_message(chat_id, first_name):
     # 1. Define the Keyboard Layout
     keyboard = [
         [
-            InlineKeyboardButton("Steam Accounts", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=0c802294d90683e69030086dfb718034"),
-            InlineKeyboardButton("Learn & Guides", url="https://clydehub.notion.site/d1402294d90683468aa1814447299e13?v=21502294d9068345834508d28ffbe79e")
+            InlineKeyboardButton("Steam Accounts", url="https://clyderesourcehub.short.gy/steam-account"),
+            InlineKeyboardButton("Learn & Guides", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
         [InlineKeyboardButton("Our Website", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("Contact & Advertise", url="https://t.me/caydigitals")]
@@ -37,8 +37,11 @@ async def send_welcome_message(chat_id, first_name):
         greeting = "Good evening"
 
     # 3. Create the Bold Caption
+    
+    safe_name = html.escape(first_name)
+    
     caption = (
-        f"👋 **{greeting}, {first_name}!**\n\n"
+        f"👋 {greeting}, <b>{safe_name}</b>!\n\n"
         "**You've found the heart of our project. This channel is designed "
         "to help you navigate our ecosystem quickly and easily.**\n\n"
         "**We're glad to have you here! Check out the buttons below to get started. 🌿**"
@@ -51,7 +54,7 @@ async def send_welcome_message(chat_id, first_name):
         chat_id=chat_id,
         animation=GIF_URL,
         caption=caption,
-        parse_mode='Markdown',
+        parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
