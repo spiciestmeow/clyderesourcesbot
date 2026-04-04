@@ -50,8 +50,8 @@ def get_full_menu_keyboard():
          InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("❓ Help", callback_data="help"),
-         InlineKeyboardButton("ℹ️ About", callback_data="about")],
+        [InlineKeyboardButton("❓ Guidance", callback_data="help"),
+         InlineKeyboardButton("ℹ️ Lore", callback_data="about")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
     ])
 
@@ -154,7 +154,7 @@ async def handle_callback(update: Update):
         except: pass
         await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=ABOUT_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
-    # 🌟 HELP (WITH LOADING)
+# 🌟 HELP (WITH LOADING)
     elif query.data == "help":
         try: await query.message.delete()
         except: pass
@@ -162,11 +162,30 @@ async def handle_callback(update: Update):
         await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🍃 <i>Clearing the path for a wanderer...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>The map is revealed...</i>", parse_mode='HTML')
         
-        text = "<b>❓ Help - How to Use</b>\n\n🌿 <b>Navigation:</b>\n• Tap buttons to move through the clearing.\n• Use <b>/menu</b> for the full list.\n\n📋 <b>Activation Keys:</b>\n1. Go to Inventory.\n2. Choose a category.\n3. Long-press the code to copy."
+        # Merged data: Original instructions + New Button Guide
+        text = (
+            "<b>❓ Help - How to Use</b>\n\n"
+            "🌿 <b>Navigation:</b>\n"
+            "• Tap buttons to move through the clearing.\n"
+            "• Use <b>/menu</b> for the full list.\n\n"
+            "📋 <b>Activation Keys:</b>\n"
+            "1. Go to Inventory.\n"
+            "2. Choose a category.\n"
+            "3. Long-press the code (e.g. <code>XXXXX</code>) to copy.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "✨ <b>Button Guide:</b>\n"
+            "• 🪄 <b>Spirit Treasures:</b> Steam Account collection.\n"
+            "• 📜 <b>Ancient Scrolls:</b> Library of learning guides.\n"
+            "• 🌿 <b>Forest Inventory:</b> Live stock of Windows/Office keys.\n"
+            "• 🌲 <b>Whispering Forest:</b> Our main resource hub.\n"
+            "• ℹ️ <b>Lore:</b> The story of this clearing.\n"
+            "• 🕊️ <b>Messenger:</b> Contact the caretaker directly."
+        )
+        
         try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
         except: pass
         await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=HELP_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
-
+        
 # ==================== WEBHOOK ====================
 async def start_tg_app():
     await tg_app.initialize()
