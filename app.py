@@ -60,7 +60,7 @@ def get_full_menu_keyboard():
             InlineKeyboardButton("❓ Help", callback_data="help"),
             InlineKeyboardButton("ℹ️ About", callback_data="about")
         ],
-        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals")]
+        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
     ])
 
 
@@ -119,7 +119,7 @@ async def send_help(chat_id):
         "🌿 <b>Navigation:</b>\n"
         "• Tap <b>🌿 Enter the Enchanted Clearing</b> to begin\n"
         "• Use <b>/menu</b> anytime to open the full menu\n\n"
-        "📋 <b>How to get keys:</b>\n"
+        "📋 <b>How to get activation keys:</b>\n"
         "1. Go to <b>🌿 Check Forest Inventory</b>\n"
         "2. Long-press the key (in the blue code box)\n"
         "3. Tap <b>Copy</b>\n\n"
