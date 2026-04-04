@@ -95,6 +95,40 @@ async def send_full_menu(chat_id, first_name):
 
     await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
+async def send_about(chat_id):
+    text = (
+        "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
+        "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
+        "We gather and share useful digital treasures such as Steam accounts, "
+        "learning guides, Windows & Office activation keys — all with care and good spirit.\n\n"
+        "<i>May this small corner of the internet bring you joy and usefulness.</i> 🍃✨"
+    )
+    try:
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=ABOUT_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    except:
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+
+
+async def send_help(chat_id):
+    text = (
+        "<b>❓ Help - How to Use This Bot</b>\n\n"
+        "🌿 <b>Navigation:</b>\n"
+        "• Tap <b>🌿 Enter the Enchanted Clearing</b> to begin\n"
+        "• Use <b>/menu</b> anytime to open the full menu\n\n"
+        "📋 <b>How to get activation keys:</b>\n"
+        "1. Go to <b>🌿 Check Forest Inventory</b>\n"
+        "2. Long-press the key (in the blue code box)\n"
+        "3. Tap <b>Copy</b>\n\n"
+        "🕊️ <b>Contact:</b>\n"
+        "Use <b>Messenger of the Wind</b> to reach us\n\n"
+        "<i>May the forest spirits guide your path.</i> 🍃✨"
+    )
+    try:
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=HELP_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    except:
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+
+
 
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
@@ -177,6 +211,12 @@ async def handle_callback(update: Update):
             reply_markup=get_back_keyboard(),
             protect_content=True
         )
+
+    elif query.data == "about":
+        await send_about(update.effective_chat.id)
+
+    elif query.data == "help":
+        await send_help(update.effective_chat.id)
 
 
 # ==================== WEBHOOK ====================
