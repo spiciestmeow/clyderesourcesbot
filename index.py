@@ -2,7 +2,7 @@ import os
 import asyncio
 import html
 import httpx
-from flask import Flask, request
+from Flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from datetime import datetime
@@ -66,14 +66,22 @@ async def handle_callback(update: Update):
     user_name = html.escape(update.effective_user.first_name)
     await query.answer()
 
-    # REMOVED: query.message.delete() 
-    # The old message will now stay in the chat history.
-
     if query.data == "main_menu":
+        # Delete the Inventory message before going back to the Welcome message
+        try:
+            await query.message.delete()
+        except:
+            pass
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
+            # Delete the Welcome message before showing the Inventory
+            try:
+                await query.message.delete()
+            except:
+                pass
+
             data = await get_vamt_data()
             report = "<b>🍃 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
             report += f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -120,8 +128,7 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
             
             if update.message:
-                # REMOVED: All delete_message logic.
-                # The /start command will now stay visible in the chat.
+                # We do NOT delete /start here anymore to avoid the "actual message list" deletion issue
                 if update.message.text in ["/start", "/menu"]:
                     await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
             
