@@ -23,6 +23,8 @@ ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxd
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
 LOADING_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
 MYID_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
+CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
+
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -90,7 +92,6 @@ async def send_full_menu(chat_id, first_name):
     await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
 # --- NEW STATIC ID FUNCTION ---
-# --- UPDATED STATIC ID FUNCTION ---
 async def send_myid(chat_id):
 
     
@@ -107,6 +108,27 @@ async def send_myid(chat_id):
         animation=MYID_GIF,
         caption=caption_text,
         parse_mode="HTML"
+    )
+
+# --- CLEAR FUNCTION ---
+async def handle_clear(chat_id, current_message_id):
+    try:
+        await tg_app.bot.delete_message(chat_id=chat_id, message_id=current_message_id)
+    except:
+        pass
+
+    caption = (
+        "🍃 <b>The Forest Mist Clears...</b>\n\n"
+        "The winds of the clearing have swept away previous whispers.\n"
+        "<i>Your path is now fresh and open.</i> ✨"
+    )
+
+    await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=CLEAN_GIF,
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=get_start_keyboard()
     )
 
 # ==================== CALLBACK ====================
@@ -228,7 +250,8 @@ def webhook():
             name = update.effective_user.first_name if update.effective_user else "Traveler"
             if text.startswith("/start"): await send_initial_welcome(chat_id, name)
             elif text.startswith("/menu"): await send_full_menu(chat_id, name)
-            elif text.startswith("/myid"): await send_myid(chat_id) # Triggers static ID message
+            elif text.startswith("/myid"): await send_myid(chat_id)
+            elif text.startswith("/clear"): await handle_clear(chat_id, update.message.message_id)
         elif update.callback_query: await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
