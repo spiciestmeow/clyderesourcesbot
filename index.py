@@ -17,8 +17,11 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 tg_app = Application.builder().token(TOKEN).build()
 
-# Static Image URL (more stable than GIFs for webhooks)
-STABLE_IMG = "https://i.imgur.com/8N8yQ9T.jpeg" 
+# 2. Media Settings
+# Replace this URL with your GIF link (direct link ending in .mp4 or .gif)
+# TIP: If it still says "Blocked in your region," upload the GIF to Telegram manually, 
+# get its File ID, and paste that ID string here instead of a URL.
+LOGO_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHB0ZHI5ZDJ2cGN3bXZyNmhvbmdnM2l3M3BjaWFkOGJhc2w1YmwyNyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif" 
 
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -34,7 +37,7 @@ def get_main_menu_keyboard():
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
             InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
-        [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
+        [InlineKeyboardButton("📊 Check Activation Key Stats", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/clydedigital")]
     ])
@@ -52,10 +55,13 @@ async def send_welcome_message(chat_id, first_name):
         "<i>May your path be clear and your scrolls be plenty.</i> 🍃"
     )
 
-    # Using send_photo for better stability across all Telegram clients
-    await tg_app.bot.send_photo(
-        chat_id=chat_id, photo=STABLE_IMG, caption=caption,
-        parse_mode='HTML', reply_markup=get_main_menu_keyboard(),
+    # Use send_animation to ensure the GIF loops and plays automatically
+    await tg_app.bot.send_animation(
+        chat_id=chat_id, 
+        animation=LOGO_GIF, 
+        caption=caption,
+        parse_mode='HTML', 
+        reply_markup=get_main_menu_keyboard(),
         protect_content=True 
     )
 
@@ -64,7 +70,7 @@ async def handle_callback(update: Update):
     user_name = html.escape(update.effective_user.first_name)
     await query.answer()
 
-    # Clear current message
+    # Clear current message to keep the "Clearing" clean
     try:
         await query.message.delete()
     except:
@@ -94,9 +100,10 @@ async def handle_callback(update: Update):
             
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to Clearing", callback_data="main_menu")]])
 
-            await tg_app.bot.send_photo(
+            # Also using animation here so the logo stays consistent on the stats page
+            await tg_app.bot.send_animation(
                 chat_id=update.effective_chat.id,
-                photo=STABLE_IMG,
+                animation=LOGO_GIF,
                 caption=report,
                 parse_mode='HTML',
                 reply_markup=back_kb,
@@ -104,10 +111,9 @@ async def handle_callback(update: Update):
             )
 
         except Exception as e:
-            # Fallback text if the image fails again
             await tg_app.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"📜 <b>The mist is too thick, {user_name}...</b>\n\n{report if 'report' in locals() else 'Scroll could not be read.'}\n\n⚠️ Error: <code>{str(e)}</code>",
+                text=f"📜 <b>The mist is too thick, {user_name}...</b>\n\nScroll could not be read.\n\n⚠️ Error: <code>{str(e)}</code>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]])
             )
@@ -115,7 +121,7 @@ async def handle_callback(update: Update):
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET': return "🍃 Clyde Tech Hub is online.", 200
+    if request.method == 'GET': return "🍃 Clyde's Resource Hub is online.", 200
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -125,9 +131,9 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
             
             if update.message:
-                # Delete user commands and previous bot messages (Clean Reset)
                 msg_id = update.message.message_id
-                for i in range(5): # Attempts to clear the last 5 messages for a fresh start
+                # Attempt to clear previous command messages
+                for i in range(2): 
                     try:
                         await tg_app.bot.delete_message(chat_id=update.effective_chat.id, message_id=msg_id - i)
                     except:
@@ -142,3 +148,6 @@ def webhook():
         loop.close()
         return "OK", 200
     except: return "OK", 200
+
+if __name__ == "__main__":
+    app.run(port=5000)
