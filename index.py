@@ -33,7 +33,7 @@ def get_main_menu_keyboard():
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
             InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
-        [InlineKeyboardButton("📊 Check Activation Key Stats", callback_data="check_vamt")],
+        [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/YOUR_USERNAME")]
     ])
@@ -47,9 +47,9 @@ async def send_welcome_message(chat_id, first_name):
 
     caption = (
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
-        "<b>Welcome to the hidden clearing. This space is built to help "
-        "you find the resources you need, simply and peacefully.</b>\n\n"
-        "<b>Explore the paths below to begin. 🍃</b>"
+        "<b>You've wandered into our hidden clearing. The wind whispers of new "
+        "treasures found deep within the digital thicket.</b>\n\n"
+        "<i>May your path be clear and your scrolls be plenty.</i> 🍃"
     )
     GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 
@@ -64,9 +64,10 @@ async def send_welcome_message(chat_id, first_name):
 
 async def handle_callback(update: Update):
     query = update.callback_query
+    user_name = html.escape(update.effective_user.first_name)
     await query.answer()
 
-    # EVERY callback (Back or Check) starts by deleting the previous message
+    # DELETE the current message to keep the clearing clean
     try:
         await query.message.delete()
     except:
@@ -77,15 +78,18 @@ async def handle_callback(update: Update):
 
     elif query.data == "check_vamt":
         try:
-            # Temporary "Loading" message (will also be deleted soon)
+            # Temporary "Loading" scroll
             loading_msg = await tg_app.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="🔎 <i>Consulting the hidden scrolls...</i>",
+                text=f"🍃 <i>Hush, <b>{user_name}</b>... the forest spirits are counting the seeds...</i>",
                 parse_mode='HTML'
             )
 
             data = await get_vamt_data()
-            report = "<b>📊 Clyde's Resource Hub Inventory:</b>\n\n"
+            
+            # PERSONALIZED HEADER
+            report = f"📜 <b>Greetings, {user_name}!</b>\n"
+            report += "Here is the latest inventory from the Hub's clearing:\n\n"
             
             for item in data:
                 product = item.get('service_type', 'Unknown Product')
@@ -99,17 +103,17 @@ async def handle_callback(update: Update):
                 report += f"└ 🔑 Key: <code>{actual_key}</code>\n"
                 report += f"└ 📦 Stock: <b>{count}</b> left\n\n"
             
-            report += f"<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🍃"
+            report += f"<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
             
-            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to Clearing", callback_data="main_menu")]])
             
-            # Delete the "Loading" message
+            # Clean up the loading message
             await loading_msg.delete()
 
-            # Send the protected Inventory
+            # Send the protected Inventory Scroll
             await tg_app.bot.send_animation(
                 chat_id=update.effective_chat.id,
-                animation="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif",
+                animation="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3ZtcHdwOHB4Znd4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/H76dbzJB3ALV6/giphy.gif", # Totoro/Ghibli Rain GIF
                 caption=report,
                 parse_mode='HTML',
                 reply_markup=back_kb,
@@ -119,14 +123,14 @@ async def handle_callback(update: Update):
         except Exception as e:
             await tg_app.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"⚠️ Hub Error: <code>{str(e)}</code>", 
+                text=f"⚠️ <b>The mist is too thick:</b>\n<code>{str(e)}</code>", 
                 parse_mode='HTML'
             )
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET': return "🍃 Clyde's Resource Hub is online.", 200
+    if request.method == 'GET': return "🍃 Clyde Tech Hub is online.", 200
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -136,7 +140,7 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
             
             if update.message and update.message.text in ["/start", "/menu"]:
-                # DELETE the user's "/start" command to keep the chat empty
+                # DELETE the command message immediately
                 try:
                     await update.message.delete()
                 except:
