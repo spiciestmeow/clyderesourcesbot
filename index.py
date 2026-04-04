@@ -2,7 +2,7 @@ import os
 import asyncio
 import html
 import httpx
-from Flask import Flask, request
+from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from datetime import datetime
@@ -18,11 +18,14 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 tg_app = Application.builder().token(TOKEN).build()
 
 # 2. Media Settings
-LOGO_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHB0ZHI5ZDJ2cGN3bXZyNmhvbmdnM2l3M3BjaWFkOGJhc2w1YmwyNyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif" 
+# IMPORTANT: Replace this with your actual Telegram File ID. 
+# Using a File ID prevents the "Region Block" and Vercel timeouts.
+LOGO_GIF = "CgACAgQAAxkBAAEY..." 
 
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    # Reduced timeout to 5.0s to prevent Vercel from crashing on slow DB responses
+    async with httpx.AsyncClient(timeout=5.0) as client:
         url = f"{SUPABASE_URL}/rest/v1/vamt_keys?select=*&order=service_type.asc"
         response = await client.get(url, headers=headers)
         response.raise_for_status()
@@ -67,7 +70,6 @@ async def handle_callback(update: Update):
     await query.answer()
 
     if query.data == "main_menu":
-        # Delete the Inventory message before going back to the Welcome message
         try:
             await query.message.delete()
         except:
@@ -76,7 +78,7 @@ async def handle_callback(update: Update):
 
     elif query.data == "check_vamt":
         try:
-            # Delete the Welcome message before showing the Inventory
+            # Delete menu before showing inventory
             try:
                 await query.message.delete()
             except:
@@ -113,12 +115,12 @@ async def handle_callback(update: Update):
                 protect_content=True
             )
         except Exception as e:
-            await tg_app.bot.send_message(chat_id=update.effective_chat.id, text=f"Error: {e}")
+            await tg_app.bot.send_message(chat_id=update.effective_chat.id, text=f"⚠️ Connection lost in the thicket: {e}")
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET': return "🍃 Clyde's Resource Hub is online.", 200
+    if request.method == 'GET': return "🍃 Online.", 200
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -128,7 +130,6 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
             
             if update.message:
-                # We do NOT delete /start here anymore to avoid the "actual message list" deletion issue
                 if update.message.text in ["/start", "/menu"]:
                     await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
             
@@ -138,7 +139,7 @@ def webhook():
         loop.run_until_complete(process())
         loop.close()
         return "OK", 200
-    except Exception as e:
+    except Exception:
         return "OK", 200
 
 if __name__ == "__main__":
