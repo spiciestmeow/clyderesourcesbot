@@ -3,5 +3,4 @@
   "rewrites": [
     { "source": "/(.*)", "destination": "/index" }
   ]
-  # Removed the 'builds' block to let Vercel use its modern auto-detection
 }
