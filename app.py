@@ -16,7 +16,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # ==================== GIFS ====================
-WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
+WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6mcbMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
 MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
@@ -50,8 +50,8 @@ def get_full_menu_keyboard():
          InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("❓ Help", callback_data="help"),
-         InlineKeyboardButton("ℹ️ About", callback_data="about")],
+        [InlineKeyboardButton("❓ Guidance", callback_data="help"),
+         InlineKeyboardButton("ℹ️ Lore", callback_data="about")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
     ])
 
@@ -132,37 +132,61 @@ async def handle_callback(update: Update):
 
         filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
         report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-        for item in filtered_data:
-            product = item.get('service_type', 'Product'); count = item.get('remaining', 0); key = item.get('key_id', 'HIDDEN')
-            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+        if not filtered_data:
+            report += "<i>Alas, these scrolls are currently hidden from view.</i>"
+        else:
+            for item in filtered_data:
+                product = item.get('service_type', 'Product'); count = item.get('remaining', 0); key = item.get('key_id', 'HIDDEN')
+                report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Revealed at: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
         
         try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
         except: pass
         await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=INVENTORY_GIF, caption=report, parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard(), protect_content=True)
 
-    # 🌟 ABOUT (WITH LOADING)
+    # 🌟 ABOUT / LORE (WITH LOADING)
     elif query.data == "about":
         try: await query.message.delete()
         except: pass
-        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="✨ <i>Consulting the ancient records...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🍃 <i>Gathering history from the leaves...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>The story is ready...</i>", parse_mode='HTML')
+        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="✨ <i>Consulting the ancient records of the clearing...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🍃 <i>Gathering history from the whispering leaves...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>The story of the forest is ready...</i>", parse_mode='HTML')
         
         text = "<b>🌿 About Clyde's Enchanted Clearing</b>\n\nThis is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\nWe gather digital treasures like Steam accounts, learning guides, and activation keys.\n\n<i>May this small corner bring you joy.</i> 🍃✨"
         try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
         except: pass
         await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=ABOUT_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
-    # 🌟 HELP (WITH LOADING)
+    # 🌟 HELP / GUIDANCE (WITH LOADING)
     elif query.data == "help":
         try: await query.message.delete()
         except: pass
-        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="✨ <i>Calling the forest guides...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🍃 <i>Clearing the path for a wanderer...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>The map is revealed...</i>", parse_mode='HTML')
+        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="✨ <i>Whispering to the soot sprites for guidance...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🍃 <i>Clearing the overgrown path for a weary traveler...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>The ancient map of the clearing begins to glow...</i>", parse_mode='HTML')
         
-        text = "<b>❓ Help - How to Use</b>\n\n🌿 <b>Navigation:</b>\n• Tap buttons to move through the clearing.\n• Use <b>/menu</b> for the full list.\n\n📋 <b>Activation Keys:</b>\n1. Go to Inventory.\n2. Choose a category.\n3. Long-press the code to copy."
+        text = (
+            "<b>❓ Guidance for the Wandering Soul</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🌿 <b>Finding Your Way (Navigation)</b>\n"
+            "The clearing is vast, but markers have been left behind. "
+            "Tap the enchanted buttons to travel between groves. "
+            "If you ever lose your way, speak <b>/menu</b> "
+            "and the wind will carry you back to the center.\n\n"
+            "📜 <b>The Art of Transcription (Copying Keys)</b>\n"
+            "1. Journey to the <b>Forest Inventory</b>.\n"
+            "2. Select the type of digital scroll you seek.\n"
+            "3. Once the key is revealed, <b>press and hold</b> the blue text. "
+            "It will be etched into your memory (copied) immediately.\n\n"
+            "🪄 <b>Spirit Treasures</b>\n"
+            "Steam accounts and hidden gems are shared daily. Keep a watchful "
+            "eye on the <i>Ancient Scrolls</i> for new knowledge.\n\n"
+            "🕊️ <b>Calling the Messenger</b>\n"
+            "If the forest mist is too thick, use the <b>Messenger of the Wind</b> "
+            "to send a direct plea to the caretakers.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "<i>May the forest spirits guide your every step.</i> 🍃✨"
+        )
         try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
         except: pass
         await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=HELP_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
@@ -183,7 +207,7 @@ def webhook():
     async def process_update():
         update = Update.de_json(update_data, tg_app.bot)
         if update.message and update.message.text:
-            text = update.message.text.lower().strip()
+            text = (update.message.text or "").lower().strip()
             chat_id = update.effective_chat.id
             name = update.effective_user.first_name if update.effective_user else "Traveler"
             if text.startswith("/start"): await send_initial_welcome(chat_id, name)
