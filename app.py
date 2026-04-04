@@ -15,7 +15,12 @@ TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-LOGO_GIF = "https://media.giphy.com/media/cBKMTJGAE8y2Y/giphy.gif"
+# ==================== DIFFERENT GIFS FOR EACH SECTION ====================
+WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"   # /start
+MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"   # /menu - Forest
+INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"   # Check Inventory - Wind
+ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"   # About - Calm spirit
+HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"       # Help - Friendly
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -38,14 +43,12 @@ async def get_vamt_data():
 
 # ==================== KEYBOARDS ====================
 def get_start_keyboard():
-    """Big button only for /start"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")]
     ])
 
 
 def get_full_menu_keyboard():
-    """Full menu shown by /menu"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
@@ -66,9 +69,9 @@ def get_back_keyboard():
     ])
 
 
-# ==================== MESSAGES ====================
+# ==================== MESSAGES WITH DIFFERENT GIFS ====================
 async def send_initial_welcome(chat_id, first_name):
-    """ /start - GIF + Text + Big Button """
+    """ /start - Welcome with GIF """
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -85,13 +88,13 @@ async def send_initial_welcome(chat_id, first_name):
     try:
         await tg_app.bot.send_animation(
             chat_id=chat_id,
-            animation=LOGO_GIF,
+            animation=WELCOME_GIF,
             caption=caption,
             parse_mode='HTML',
             reply_markup=get_start_keyboard()
         )
     except Exception as e:
-        print(f"GIF failed: {e}")
+        print(f"GIF failed (welcome): {e}")
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
@@ -101,7 +104,7 @@ async def send_initial_welcome(chat_id, first_name):
 
 
 async def send_full_menu(chat_id, first_name):
-    """ /menu - Full menu """
+    """ /menu - Full menu with different GIF """
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -117,12 +120,13 @@ async def send_full_menu(chat_id, first_name):
     try:
         await tg_app.bot.send_animation(
             chat_id=chat_id,
-            animation=LOGO_GIF,
+            animation=MENU_GIF,
             caption=caption,
             parse_mode='HTML',
             reply_markup=get_full_menu_keyboard()
         )
-    except:
+    except Exception as e:
+        print(f"GIF failed (menu): {e}")
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
@@ -139,7 +143,22 @@ async def send_about(chat_id):
         "learning guides, Windows & Office activation keys — all with care and good spirit.\n\n"
         "<i>May this small corner of the internet bring you joy and usefulness.</i> 🍃✨"
     )
-    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    try:
+        await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=ABOUT_GIF,
+            caption=text,
+            parse_mode='HTML',
+            reply_markup=get_back_keyboard()
+        )
+    except Exception as e:
+        print(f"GIF failed (about): {e}")
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML',
+            reply_markup=get_back_keyboard()
+        )
 
 
 async def send_help(chat_id):
@@ -161,7 +180,22 @@ async def send_help(chat_id):
         "→ Shows this help message\n\n"
         "<i>Tap any button to continue your journey through the forest.</i> 🍃"
     )
-    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    try:
+        await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=HELP_GIF,
+            caption=text,
+            parse_mode='HTML',
+            reply_markup=get_back_keyboard()
+        )
+    except Exception as e:
+        print(f"GIF failed (help): {e}")
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML',
+            reply_markup=get_back_keyboard()
+        )
 
 
 # ==================== CALLBACK HANDLER ====================
@@ -211,12 +245,13 @@ async def handle_callback(update: Update):
         try:
             await tg_app.bot.send_animation(
                 chat_id=query.message.chat_id,
-                animation=LOGO_GIF,
+                animation=INVENTORY_GIF,          # Different GIF for Inventory
                 caption=report,
                 parse_mode='HTML',
                 reply_markup=get_back_keyboard()
             )
-        except:
+        except Exception as e:
+            print(f"GIF failed (inventory): {e}")
             await tg_app.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=report,
