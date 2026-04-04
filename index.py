@@ -18,13 +18,12 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 tg_app = Application.builder().token(TOKEN).build()
 
 # 2. Media Settings
-# IMPORTANT: Replace this with your actual Telegram File ID. 
-# Using a File ID prevents the "Region Block" and Vercel timeouts.
-LOGO_GIF = "CgACAgQAAxkBAAEY..." 
+# Replace with a working URL or a Telegram File ID string.
+LOGO_GIF = "https://media.giphy.com/media/cBKMTJGAE8y2Y/giphy.gif" 
 
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    # Reduced timeout to 5.0s to prevent Vercel from crashing on slow DB responses
+    # Tight timeout to keep Vercel from crashing
     async with httpx.AsyncClient(timeout=5.0) as client:
         url = f"{SUPABASE_URL}/rest/v1/vamt_keys?select=*&order=service_type.asc"
         response = await client.get(url, headers=headers)
@@ -37,7 +36,7 @@ def get_main_menu_keyboard():
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
             InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
-        [InlineKeyboardButton("📊 Check Activation Key Stats", callback_data="check_vamt")],
+        [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/clydedigital")]
     ])
@@ -55,14 +54,23 @@ async def send_welcome_message(chat_id, first_name):
         "<i>May your path be clear and your scrolls be plenty.</i> 🍃"
     )
 
-    await tg_app.bot.send_animation(
-        chat_id=chat_id, 
-        animation=LOGO_GIF, 
-        caption=caption,
-        parse_mode='HTML', 
-        reply_markup=get_main_menu_keyboard(),
-        protect_content=True 
-    )
+    try:
+        # Try sending with the GIF first
+        await tg_app.bot.send_animation(
+            chat_id=chat_id, 
+            animation=LOGO_GIF, 
+            caption=caption,
+            parse_mode='HTML', 
+            reply_markup=get_main_menu_keyboard()
+        )
+    except Exception:
+        # FALLBACK: If GIF fails, send as a normal text message immediately
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=f"🍃 <b>CLYDE'S RESOURCE HUB</b>\n\n{caption}",
+            parse_mode='HTML',
+            reply_markup=get_main_menu_keyboard()
+        )
 
 async def handle_callback(update: Update):
     query = update.callback_query
@@ -78,7 +86,6 @@ async def handle_callback(update: Update):
 
     elif query.data == "check_vamt":
         try:
-            # Delete menu before showing inventory
             try:
                 await query.message.delete()
             except:
@@ -90,9 +97,9 @@ async def handle_callback(update: Update):
             report += f"📜 <i>Hello {user_name}, here is the latest stock:</i>\n\n"
             
             for item in data:
-                product = item.get('service_type', 'Unknown Product')
+                product = item.get('service_type', 'Product')
                 count = item.get('remaining', 0)
-                actual_key = item.get('key_id', 'No Key Found')
+                actual_key = item.get('key_id', 'HIDDEN')
                 
                 name_lower = str(product).lower()
                 icon = "📑" if "office" in name_lower else "🪟" if "win" in name_lower else "📦"
@@ -106,16 +113,23 @@ async def handle_callback(update: Update):
             
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to Clearing", callback_data="main_menu")]])
 
-            await tg_app.bot.send_animation(
-                chat_id=update.effective_chat.id,
-                animation=LOGO_GIF,
-                caption=report,
-                parse_mode='HTML',
-                reply_markup=back_kb,
-                protect_content=True
-            )
+            try:
+                await tg_app.bot.send_animation(
+                    chat_id=update.effective_chat.id,
+                    animation=LOGO_GIF,
+                    caption=report,
+                    parse_mode='HTML',
+                    reply_markup=back_kb
+                )
+            except Exception:
+                await tg_app.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=report,
+                    parse_mode='HTML',
+                    reply_markup=back_kb
+                )
         except Exception as e:
-            await tg_app.bot.send_message(chat_id=update.effective_chat.id, text=f"⚠️ Connection lost in the thicket: {e}")
+            await tg_app.bot.send_message(chat_id=update.effective_chat.id, text=f"⚠️ The thicket is too dense: {e}")
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
@@ -128,18 +142,16 @@ def webhook():
         async def process():
             if not tg_app.bot_data: await tg_app.initialize()
             update = Update.de_json(update_data, tg_app.bot)
-            
             if update.message:
                 if update.message.text in ["/start", "/menu"]:
+                    # We send the message but DON'T delete the command to ensure reliability
                     await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
-            
             elif update.callback_query:
                 await handle_callback(update)
-
         loop.run_until_complete(process())
         loop.close()
         return "OK", 200
-    except Exception:
+    except:
         return "OK", 200
 
 if __name__ == "__main__":
