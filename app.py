@@ -8,10 +8,9 @@ from telegram.ext import Application
 from datetime import datetime
 import pytz
 
-# --- VERCEL FLASK APP ---
 app = Flask(__name__)
 
-# ==================== CONFIGURATION ====================
+# ==================== CONFIG ====================
 TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -39,14 +38,14 @@ async def get_vamt_data():
 
 # ==================== KEYBOARDS ====================
 def get_start_keyboard():
-    """Initial welcome - only big Start button"""
+    """Big button only for /start"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")]
     ])
 
 
-def get_main_menu_keyboard():
-    """Full Ghibli menu"""
+def get_full_menu_keyboard():
+    """Full menu shown by /menu"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
@@ -54,13 +53,22 @@ def get_main_menu_keyboard():
         ],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals")]
+        [
+            InlineKeyboardButton("ℹ️ About", callback_data="about"),
+            InlineKeyboardButton("❓ Help", callback_data="help")
+        ]
+    ])
+
+
+def get_back_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Return to the Enchanted Clearing", callback_data="main_menu")]
     ])
 
 
 # ==================== MESSAGES ====================
 async def send_initial_welcome(chat_id, first_name):
-    """First message when user types /start - shows only big button"""
+    """ /start - GIF + Text + Big Button """
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -70,8 +78,8 @@ async def send_initial_welcome(chat_id, first_name):
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
         "🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\n"
         "The gentle wind carries whispers from the ancient forest...\n"
-        "Here lie hidden digital treasures and wonders waiting for you.\n\n"
-        "<i>May the forest spirits guide your steps.</i> 🍃✨"
+        "Hidden treasures and digital wonders await kind-hearted wanderers.\n\n"
+        "<i>May the forest spirits watch over you.</i> 🍃✨"
     )
 
     try:
@@ -80,10 +88,7 @@ async def send_initial_welcome(chat_id, first_name):
             animation=LOGO_GIF,
             caption=caption,
             parse_mode='HTML',
-            reply_markup=get_start_keyboard(),
-            connect_timeout=30,
-            read_timeout=30,
-            write_timeout=30
+            reply_markup=get_start_keyboard()
         )
     except Exception as e:
         print(f"GIF failed: {e}")
@@ -95,8 +100,8 @@ async def send_initial_welcome(chat_id, first_name):
         )
 
 
-async def send_main_menu(chat_id, first_name):
-    """Full menu with all buttons"""
+async def send_full_menu(chat_id, first_name):
+    """ /menu - Full menu """
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -105,7 +110,7 @@ async def send_main_menu(chat_id, first_name):
     caption = (
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
         "🌿 <b>You have entered the Enchanted Clearing</b>\n\n"
-        "Choose your path among the whispering trees...\n\n"
+        "Choose your path beneath the whispering trees...\n\n"
         "<i>May your journey be filled with magic and abundance.</i> 🍃✨"
     )
 
@@ -115,19 +120,48 @@ async def send_main_menu(chat_id, first_name):
             animation=LOGO_GIF,
             caption=caption,
             parse_mode='HTML',
-            reply_markup=get_main_menu_keyboard(),
-            connect_timeout=30,
-            read_timeout=30,
-            write_timeout=30
+            reply_markup=get_full_menu_keyboard()
         )
-    except Exception as e:
-        print(f"GIF failed: {e}")
+    except:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
             parse_mode='HTML',
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_full_menu_keyboard()
         )
+
+
+async def send_about(chat_id):
+    text = (
+        "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
+        "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
+        "We gather and share useful digital treasures such as Steam accounts, "
+        "learning guides, Windows & Office activation keys — all with care and good spirit.\n\n"
+        "<i>May this small corner of the internet bring you joy and usefulness.</i> 🍃✨"
+    )
+    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+
+
+async def send_help(chat_id):
+    text = (
+        "<b>❓ Help - Button Guide</b>\n\n"
+        "🪄 <b>Spirit Treasures</b>\n"
+        "→ Steam Accounts and game-related digital items\n\n"
+        "📜 <b>Ancient Scrolls</b>\n"
+        "→ Learning guides, tutorials, and useful resources\n\n"
+        "🌿 <b>Check Forest Inventory</b>\n"
+        "→ Shows current stock of Activation Keys (Windows, Office, etc.)\n\n"
+        "🌲 <b>The Whispering Forest</b>\n"
+        "→ Our main website and resource hub\n\n"
+        "🕊️ <b>Messenger of the Wind</b>\n"
+        "→ Contact and advertising\n\n"
+        "ℹ️ <b>About</b>\n"
+        "→ Information about this bot\n\n"
+        "❓ <b>Help</b>\n"
+        "→ Shows this help message\n\n"
+        "<i>Tap any button to continue your journey through the forest.</i> 🍃"
+    )
+    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
 
 # ==================== CALLBACK HANDLER ====================
@@ -135,56 +169,31 @@ async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "show_main_menu":
-        # User clicked the big start button → show full menu
+    if query.data in ["show_main_menu", "main_menu"]:
         try:
             await query.message.delete()
         except:
             pass
-        await send_main_menu(update.effective_chat.id, update.effective_user.first_name)
-
-    elif query.data == "main_menu":
-        # Return to full menu from anywhere
-        try:
-            await query.message.delete()
-        except:
-            pass
-        await send_main_menu(update.effective_chat.id, update.effective_user.first_name)
+        await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
             await query.edit_message_caption(
-                caption="🌬️ <i>The wind spirits are searching deep within the forest...</i>",
+                caption="🌬️ The wind spirits are searching deep within the forest...",
                 parse_mode='HTML'
             )
         except:
-            try:
-                await query.edit_message_text(
-                    text="🌬️ <i>The wind spirits are searching deep within the forest...</i>",
-                    parse_mode='HTML'
-                )
-            except:
-                pass
+            pass
 
         data = await get_vamt_data()
-
-        if data is None:
+        if not data:
             try:
-                await query.edit_message_caption(
-                    caption="🌫️ The forest spirits lost their way... Please try again.",
-                    reply_markup=get_main_menu_keyboard()
-                )
+                await query.edit_message_caption(caption="🌫️ The forest spirits lost their way...", reply_markup=get_back_keyboard())
             except:
-                await tg_app.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text="🌫️ The forest spirits lost their way... Please try again.",
-                    reply_markup=get_main_menu_keyboard()
-                )
+                pass
             return
 
-        # Inventory Content (Unchanged)
-        report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
-        report += "━━━━━━━━━━━━━━━━━━━━\n"
+        report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n━━━━━━━━━━━━━━━━━━━━\n"
         for item in data:
             product = item.get('service_type', 'Product')
             count = item.get('remaining', 0)
@@ -192,12 +201,7 @@ async def handle_callback(update: Update):
             name_l = str(product).lower()
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
             report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
-
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
-
-        back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Return to the Enchanted Clearing", callback_data="main_menu")]
-        ])
 
         try:
             await query.message.delete()
@@ -210,19 +214,25 @@ async def handle_callback(update: Update):
                 animation=LOGO_GIF,
                 caption=report,
                 parse_mode='HTML',
-                reply_markup=back_kb,
-                connect_timeout=30,
-                read_timeout=30,
-                write_timeout=30
+                reply_markup=get_back_keyboard()
             )
-        except Exception as e:
-            print(f"GIF failed in stats: {e}")
+        except:
             await tg_app.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=report,
                 parse_mode='HTML',
-                reply_markup=back_kb
+                reply_markup=get_back_keyboard()
             )
+
+    elif query.data == "about":
+        try: await query.message.delete()
+        except: pass
+        await send_about(update.effective_chat.id)
+
+    elif query.data == "help":
+        try: await query.message.delete()
+        except: pass
+        await send_help(update.effective_chat.id)
 
 
 # ==================== WEBHOOK ====================
@@ -241,11 +251,13 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
 
             if update.message and update.message.text:
-                if update.message.text.lower().startswith("/start"):
-                    await send_initial_welcome(
-                        update.effective_chat.id,
-                        update.effective_user.first_name
-                    )
+                text = update.message.text.lower().strip()
+
+                if text.startswith("/start"):
+                    await send_initial_welcome(update.effective_chat.id, update.effective_user.first_name)
+
+                elif text.startswith("/menu"):
+                    await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
             elif update.callback_query:
                 await handle_callback(update)
