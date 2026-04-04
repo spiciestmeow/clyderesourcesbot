@@ -57,10 +57,10 @@ def get_full_menu_keyboard():
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
-            InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals"),   # ← Fixed Contact Button
+            InlineKeyboardButton("❓ Help", callback_data="help"),
             InlineKeyboardButton("ℹ️ About", callback_data="about")
         ],
-        [InlineKeyboardButton("❓ Help", callback_data="help")]
+        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
     ])
 
 
