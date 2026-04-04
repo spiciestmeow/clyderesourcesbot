@@ -23,7 +23,7 @@ ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxd
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
 
 # 🌿 NEW LOADING GIF
-LOADING_GIF   = "https://i.imgur.com/5832VzM.gif"
+LOADING_GIF   = "https://www.reddit.com/media?url=https%3A%2F%2Fi.redd.it%2Fvlstcb3ns8qf1.gif"
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
