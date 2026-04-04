@@ -18,7 +18,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 tg_app = Application.builder().token(TOKEN).build()
 
 # 2. Media Settings
-# Replace with your GIF URL or Telegram File ID
+# IMPORTANT: Use a direct .mp4 link or a Telegram File ID for the best stability.
 LOGO_GIF = "https://your-gif-link-here.mp4" 
 
 async def get_vamt_data():
@@ -67,6 +67,7 @@ async def handle_callback(update: Update):
     user_name = html.escape(update.effective_user.first_name)
     await query.answer()
 
+    # Delete the previous menu/inventory before showing the new one
     try:
         await query.message.delete()
     except:
@@ -78,7 +79,8 @@ async def handle_callback(update: Update):
     elif query.data == "check_vamt":
         try:
             data = await get_vamt_data()
-            # Added the specific Header Title here
+            
+            # --- Inventory Header ---
             report = "<b>🍃 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
             report += f"━━━━━━━━━━━━━━━━━━━━\n"
             report += f"📜 <i>Hello {user_name}, here is the latest stock:</i>\n\n"
@@ -92,7 +94,7 @@ async def handle_callback(update: Update):
                 icon = "📑" if "office" in name_lower else "🪟" if "win" in name_lower else "📦"
 
                 report += f"{icon} <b>{product}</b>\n"
-                # Mono-spaced code block for easy copying
+                # Mono-spaced code tags make the key copyable on tap
                 report += f"└ 🔑 Key: <code>{actual_key}</code>\n"
                 report += f"└ 📦 Stock: <b>{count}</b> left\n\n"
             
@@ -131,22 +133,28 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
             
             if update.message:
-                msg_id = update.message.message_id
-                for i in range(2): 
-                    try:
-                        await tg_app.bot.delete_message(chat_id=update.effective_chat.id, message_id=msg_id - i)
-                    except:
-                        continue
+                # Targeted Delete: ONLY delete the user's /start or /menu command
+                # This keeps the bot's own inventory list from being deleted!
+                try:
+                    await tg_app.bot.delete_message(
+                        chat_id=update.effective_chat.id, 
+                        message_id=update.message.message_id
+                    )
+                except:
+                    pass
                 
                 if update.message.text in ["/start", "/menu"]:
                     await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
             
             elif update.callback_query:
                 await handle_callback(update)
+
         loop.run_until_complete(process())
         loop.close()
         return "OK", 200
-    except: return "OK", 200
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return "OK", 200
 
 if __name__ == "__main__":
     app.run(port=5000)
