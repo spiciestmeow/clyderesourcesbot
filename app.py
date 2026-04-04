@@ -89,15 +89,20 @@ async def send_full_menu(chat_id, first_name):
     await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
 # --- NEW STATIC ID FUNCTION ---
-async def send_myid(chat_id):
-    keyboard = [
-        [InlineKeyboardButton("Your telegram user id", callback_data="static_id")],
-        [InlineKeyboardButton("comming soon", callback_data="coming_soon")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    caption = "🌿 <b>Forest Spirit Identification</b>\n\nRegistration is currently undergoing a ritual of growth..."
-    await tg_app.bot.send_animation(chat_id=chat_id, animation=HELP_GIF, caption=caption, parse_mode='HTML', reply_markup=reply_markup)
-
+def send_id_status(chat_id):
+    caption_text = (
+        "🌿 <b>Forest Spirit Identification</b>\n\n"
+        "Registration is currently undergoing a ritual of growth...\n\n"
+        f"<b>Your Telegram User ID:</b> <code>{chat_id}</code>\n"
+        "<b>Status:</b> Coming Soon"
+    )
+    
+    bot.send_animation(
+        chat_id=chat_id,
+        animation="YOUR_GIF_FILE_ID_OR_URL",
+        caption=caption_text,
+        parse_mode="HTML"
+    )
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
     query = update.callback_query
