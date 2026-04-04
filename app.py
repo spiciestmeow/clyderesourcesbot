@@ -90,16 +90,18 @@ async def send_full_menu(chat_id, first_name):
     await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
 # --- NEW STATIC ID FUNCTION ---
+# --- UPDATED STATIC ID FUNCTION ---
 async def send_myid(chat_id):
 
+    
     caption_text = (
-        "🌿 <b>Forest Spirit Identification</b>\n\n"
-        "Registration is currently undergoing a ritual of growth...\n\n"
-        f"<b>Your Telegram User ID:</b> <code>{chat_id}</code>\n"
-        "<b>Status:</b> Coming Soon"
+        "🌿 <b>Forest Spirit Identification</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "✨ <i>The mist clears to reveal your essence...</i>\n\n"
+        f"🆔 <b>User ID:</b> <code>{chat_id}</code>\n\n"
+        "🍃 <i>Safe travels through the clearing, wanderer.</i>"
     )
     
-    # Use 'await' and reference 'tg_app.bot' correctly
     await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
