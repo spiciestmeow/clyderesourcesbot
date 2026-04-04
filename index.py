@@ -24,7 +24,7 @@ async def get_vamt_data():
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Targets your table and sorts by the product name
+        # Pulls data from your 'vamt_keys' table
         url = f"{SUPABASE_URL}/rest/v1/vamt_keys?select=*&order=service_type.asc"
         response = await client.get(url, headers=headers)
         response.raise_for_status()
@@ -62,12 +62,12 @@ async def handle_callback(update: Update):
     """Updates message with categorized live data from your Supabase table"""
     query = update.callback_query
     
-    # ANSWER IMMEDIATELY to prevent "Query is too old" error
+    # ANSWER IMMEDIATELY to prevent Telegram timeouts
     await query.answer("Fetching from the forest... 🍃")
 
     if query.data == "check_vamt":
         try:
-            # Show a loading state to the user
+            # Inform user of sync progress
             await query.edit_message_caption(
                 caption="🔎 <i>Consulting the scrolls...</i>",
                 parse_mode='HTML', reply_markup=query.message.reply_markup
@@ -80,7 +80,7 @@ async def handle_callback(update: Update):
 
             report = "<b>📊 Clyde Tech Hub Inventory:</b>\n\n"
             for item in data:
-                # Mapping to your specific column names
+                # Using your specific column names: service_type and remaining
                 product = item.get('service_type', 'Unknown Product')
                 count = item.get('remaining', 0)
                 
@@ -94,15 +94,20 @@ async def handle_callback(update: Update):
             await query.edit_message_caption(caption=report, parse_mode='HTML', reply_markup=query.message.reply_markup)
 
         except Exception as e:
+            # Provide error feedback in Telegram for easier debugging
             await query.edit_message_caption(
                 caption=f"⚠️ <b>Hub Error:</b>\n<code>{str(e)}</code>", 
                 parse_mode='HTML', reply_markup=query.message.reply_markup
             )
 
-@app.route('/api/index', methods=['POST'])
-@app.route('/', methods=['POST'])
+@app.route('/api/index', methods=['GET', 'POST'])
+@app.route('/', methods=['GET', 'POST'])
 def webhook():
-    """Optimized Entry Point"""
+    """Optimized Entry Point for Vercel"""
+    # Fix for 'Method Not Allowed' browser error
+    if request.method == 'GET':
+        return "🍃 Clyde Tech Hub is online and floating in the wind..."
+        
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -124,4 +129,4 @@ def webhook():
         return "OK", 200
     except Exception as e:
         print(f"Server Error: {e}")
-        return "OK", 200 # Return 200 to stop Telegram from retrying on failure
+        return "OK", 200 # Return 200 to keep Telegram quiet
