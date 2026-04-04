@@ -21,7 +21,7 @@ MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N
 INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
-LOADING_GIF   = "https://64.media.tumblr.com/db72631c8145918da5483e302a02c80d/tumblr_otkqp5ljqP1uevyobo1_500.gifv"   # Ghibli wind spirit loading
+LOADING_GIF   = "https://media.giphy.com/media/3o7TKsQ8v0Q6k6v4fK/giphy.gif"
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -112,10 +112,7 @@ async def handle_callback(update: Update):
 
     elif query.data == "check_vamt":
         try:
-            await query.edit_message_caption(
-                caption="🌬️ The wind spirits are searching deep within the forest...",
-                parse_mode='HTML'
-            )
+            await query.edit_message_caption(caption="🌬️ The wind spirits are searching deep within the forest...", parse_mode='HTML')
         except:
             pass
 
@@ -139,9 +136,12 @@ async def handle_callback(update: Update):
 
             masked = key[:4] + "••••••••" + key[-4:] if len(key) > 8 else "••••••••"
 
-            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{masked}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+            report += f"{icon} <b>{product}</b>\n└ 🔑 "
 
-            keyboard_buttons.append([InlineKeyboardButton(f"📋 Copy {product}", callback_data=f"copy:{product}:{key}")])
+            # Make masked key clickable
+            keyboard_buttons.append([InlineKeyboardButton(f"{masked}", callback_data=f"copy:{product}:{key}")])
+
+            report += f"Stock: <b>{count}</b>\n\n"
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
@@ -164,12 +164,12 @@ async def handle_callback(update: Update):
         except:
             await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=custom_kb)
 
-    # ==================== COPY KEY WITH GHIBLI LOADING ====================
+    # ==================== COPY WITH GHIBLI LOADING ====================
     elif query.data.startswith("copy:"):
         _, product, real_key = query.data.split(":", 2)
         masked = real_key[:4] + "••••••••" + real_key[-4:] if len(real_key) > 8 else "••••••••"
 
-        # Ghibli-style loading animation
+        # Ghibli loading animation
         loading = await tg_app.bot.send_animation(
             chat_id=query.message.chat_id,
             animation=LOADING_GIF,
@@ -177,7 +177,7 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.8)   # Magical pause
+        await asyncio.sleep(1.8)
 
         message_text = (
             f"🌿 <b>{product}</b>\n\n"
@@ -186,7 +186,6 @@ async def handle_callback(update: Update):
             "Tap the real key above to copy it."
         )
 
-        # Delete loading animation
         await tg_app.bot.delete_message(chat_id=loading.chat_id, message_id=loading.message_id)
 
         await tg_app.bot.send_message(
