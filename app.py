@@ -8,6 +8,8 @@ from telegram.ext import Application
 from datetime import datetime
 import pytz
 
+# { chat_id: [msg_id1, msg_id2, ...] }
+forest_memory = {}
 app = Flask(__name__)
 
 # ==================== CONFIG ====================
@@ -81,7 +83,12 @@ async def send_initial_welcome(chat_id, first_name):
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
     caption = f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\nThe gentle wind carries whispers from the ancient forest...\nHidden treasures and digital wonders await kind-hearted wanderers.\n\n<i>May the forest spirits watch over you.</i> 🍃✨"
-    await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
+
+    # --- SECRET INGREDIENT START ---
+    msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
+    if chat_id not in forest_memory: forest_memory[chat_id] = []
+    forest_memory[chat_id].append(msg.message_id)
+    # --- SECRET INGREDIENT END ---
 
 async def send_full_menu(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
@@ -89,12 +96,16 @@ async def send_full_menu(chat_id, first_name):
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
     caption = f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n🌿 <b>You have entered the Enchanted Clearing</b>\n\nChoose your path beneath the whispering trees...\n\n<i>May your journey be filled with magic and abundance.</i> 🍃✨"
-    await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
-# --- NEW STATIC ID FUNCTION ---
-async def send_myid(chat_id):
-
+    # --- SECRET INGREDIENT START ---
+    msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
     
+    if chat_id not in forest_memory: forest_memory[chat_id] = []
+    forest_memory[chat_id].append(msg.message_id)
+    # --- SECRET INGREDIENT END ---
+
+
+async def send_myid(chat_id):
     caption_text = (
         "🌿 <b>Forest Spirit Identification</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -103,33 +114,43 @@ async def send_myid(chat_id):
         "🍃 <i>Safe travels through the clearing, wanderer.</i>"
     )
     
-    await tg_app.bot.send_animation(
+    # 1. Capture the message when it is sent
+    msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
         caption=caption_text,
         parse_mode="HTML"
     )
+    
+    # 2. Add it to the memory for the /clear sweep
+    if chat_id not in forest_memory: 
+        forest_memory[chat_id] = []
+    forest_memory[chat_id].append(msg.message_id)
 
 # --- CLEAR FUNCTION ---
-async def handle_clear(chat_id, current_message_id):
-    try:
-        await tg_app.bot.delete_message(chat_id=chat_id, message_id=current_message_id)
-    except:
-        pass
+async def handle_clear(chat_id, user_msg_id):
+    # 1. Delete the user's /clear command
+    try: await tg_app.bot.delete_message(chat_id, user_msg_id)
+    except: pass
 
-    caption = (
-        "🍃 <b>The Forest Mist Clears...</b>\n\n"
-        "The winds of the clearing have swept away previous whispers.\n"
-        "<i>Your path is now fresh and open.</i> ✨"
-    )
+    # 2. Sweep away all previous bot messages
+    if chat_id in forest_memory:
+        for msg_id in forest_memory[chat_id]:
+            try: await tg_app.bot.delete_message(chat_id, msg_id)
+            except: pass
+        forest_memory[chat_id] = [] # Reset memory after cleaning
 
-    await tg_app.bot.send_animation(
+    # 3. Send a fresh start message
+    sent_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
-        animation=CLEAN_GIF,
-        caption=caption,
+        animation=LOADING_GIF,
+        caption="🍃 <b>The Forest Mist Clears...</b>\n\nYour path is now fresh and open.",
         parse_mode="HTML",
         reply_markup=get_start_keyboard()
     )
+    
+    # Track this new message so it can be cleared next time
+    forest_memory[chat_id].append(sent_msg.message_id)
 
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
