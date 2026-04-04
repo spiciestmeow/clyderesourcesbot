@@ -21,7 +21,6 @@ MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N
 INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
-LOADING_GIF   = "https://media.giphy.com/media/3o7TKsQ8v0Q6k6v4fK/giphy.gif"
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -112,7 +111,10 @@ async def handle_callback(update: Update):
 
     elif query.data == "check_vamt":
         try:
-            await query.edit_message_caption(caption="🌬️ The wind spirits are searching deep within the forest...", parse_mode='HTML')
+            await query.edit_message_caption(
+                caption="🌬️ The wind spirits are searching deep within the forest...",
+                parse_mode='HTML'
+            )
         except:
             pass
 
@@ -125,7 +127,6 @@ async def handle_callback(update: Update):
             return
 
         report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-        keyboard_buttons = []
 
         for item in data:
             product = item.get('service_type', 'Product')
@@ -134,17 +135,9 @@ async def handle_callback(update: Update):
             name_l = str(product).lower()
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
 
-            report += f"{icon} <b>{product}</b>\n└ 📦 Stock: <b>{count}</b>\n"
-
-            # Key as inline button (clean inline-style)
-            keyboard_buttons.append([InlineKeyboardButton(key, callback_data=f"copy:{product}:{key}")])
-
-            report += "\n\n"
+            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
-
-        keyboard_buttons.append([InlineKeyboardButton("⬅️ Return to the Enchanted Clearing", callback_data="main_menu")])
-        custom_kb = InlineKeyboardMarkup(keyboard_buttons)
 
         try:
             await query.message.delete()
@@ -157,36 +150,10 @@ async def handle_callback(update: Update):
                 animation=INVENTORY_GIF,
                 caption=report,
                 parse_mode='HTML',
-                reply_markup=custom_kb
+                reply_markup=get_back_keyboard()
             )
         except:
-            await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=custom_kb)
-
-    # ==================== COPY WITH LOADING + TOAST ====================
-    elif query.data.startswith("copy:"):
-        _, product, real_key = query.data.split(":", 2)
-
-        # Ghibli loading animation
-        loading = await tg_app.bot.send_animation(
-            chat_id=query.message.chat_id,
-            animation=LOADING_GIF,
-            caption="🌬️ The wind spirit is retrieving your key from the ancient tree...\n\nPlease wait a moment... ✨",
-            parse_mode='HTML'
-        )
-
-        await asyncio.sleep(1.8)
-
-        await tg_app.bot.delete_message(chat_id=loading.chat_id, message_id=loading.message_id)
-
-        # Send the actual key
-        await tg_app.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=f"🌿 <b>{product}</b>\n\n<code>{real_key}</code>\n\nTap to copy the key.",
-            parse_mode='HTML'
-        )
-
-        # Ghibli success toast
-        await query.answer("🌿 Key successfully retrieved from the forest! ✨", show_alert=True)
+            await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=get_back_keyboard())
 
     elif query.data == "about":
         try: await query.message.delete()
