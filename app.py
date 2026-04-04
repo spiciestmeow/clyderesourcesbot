@@ -133,31 +133,38 @@ async def send_help(chat_id):
         await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
 
-# ==================== CALLBACK HANDLER (FIXED) ====================
+# ==================== CALLBACK HANDLER (with cleanup) ====================
 async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
+    # Delete the previous message to keep chat clean
+    try:
+        await query.message.delete()
+    except:
+        pass
+
     if query.data in ["show_main_menu", "main_menu"]:
-        try: await query.message.delete()
-        except: pass
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
-            await query.edit_message_caption(
-                caption="🌬️ The wind spirits are searching deep within the forest...",
-                parse_mode='HTML'
+            loading_msg = await tg_app.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🌬️ The wind spirits are searching deep within the forest..."
             )
         except:
-            pass
+            loading_msg = None
 
         data = await get_vamt_data()
         if not data:
-            try:
-                await query.edit_message_caption(caption="🌫️ The forest spirits lost their way...", reply_markup=get_back_keyboard())
-            except:
-                pass
+            if loading_msg:
+                await tg_app.bot.edit_message_text(
+                    chat_id=loading_msg.chat_id,
+                    message_id=loading_msg.message_id,
+                    text="🌫️ The forest spirits lost their way...",
+                    reply_markup=get_back_keyboard()
+                )
             return
 
         report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -173,30 +180,29 @@ async def handle_callback(update: Update):
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
-        try:
-            await query.message.delete()
-        except:
-            pass
+        if loading_msg:
+            await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
 
         try:
             await tg_app.bot.send_animation(
-                chat_id=query.message.chat_id,
+                chat_id=update.effective_chat.id,
                 animation=INVENTORY_GIF,
                 caption=report,
                 parse_mode='HTML',
                 reply_markup=get_back_keyboard()
             )
         except:
-            await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=get_back_keyboard())
+            await tg_app.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=report,
+                parse_mode='HTML',
+                reply_markup=get_back_keyboard()
+            )
 
     elif query.data == "about":
-        try: await query.message.delete()
-        except: pass
         await send_about(update.effective_chat.id)
 
     elif query.data == "help":
-        try: await query.message.delete()
-        except: pass
         await send_help(update.effective_chat.id)
 
 
