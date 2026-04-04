@@ -27,34 +27,13 @@ async def get_vamt_data():
         response.raise_for_status()
         return response.json()
 
-def mask_license_key(key_string):
-    """Adds masking + glitched particles for double security."""
-    if not key_string or key_string == "No Key Found":
-        return "No Key Assigned"
-    
-    key_str = str(key_string).strip()
-    if len(key_str) < 15:
-        return key_str
-    
-    # Symbols to create the 'particle' effect from your screenshot
-    p = "▓▒░"
-    n = "҉" # Combining Cyrillic Millions Sign (creates the dust effect)
-    
-    first = key_str[:4]
-    last = key_str[-5:]
-    
-    # Creating the scrambled 'particle' middle
-    mid = f"{p[0]}{n}{p[1]}{n}{p[2]}{n}-{p[1]}{n}{p[0]}{n}{p[2]}{n}-{p[2]}{n}{p[1]}{n}{p[0]}{n}"
-    
-    return f"{first}{mid}-{last}"
-
 def get_main_menu_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
             InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
-        [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
+        [InlineKeyboardButton("📊 Check Activation Key Stats", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/YOUR_USERNAME")]
     ])
@@ -67,13 +46,17 @@ async def send_welcome_message(chat_id, first_name):
 
     caption = (
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
-        "<b>You've stumbled upon our hidden clearing. Explore the paths below to begin. 🍃</b>"
+        "<b>Welcome to the hidden clearing. This space is built to help "
+        "you find the resources you need, simply and peacefully.</b>\n\n"
+        "<b>Explore the paths below to begin. 🍃</b>"
     )
     GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 
+    # Protecting this message from being screenshotted/forwarded
     await tg_app.bot.send_animation(
         chat_id=chat_id, animation=GIF_URL, caption=caption,
-        parse_mode='HTML', reply_markup=get_main_menu_keyboard()
+        parse_mode='HTML', reply_markup=get_main_menu_keyboard(),
+        protect_content=True # THIS IS THE KEY SETTING
     )
 
 async def handle_callback(update: Update):
@@ -81,13 +64,15 @@ async def handle_callback(update: Update):
     await query.answer()
 
     if query.data == "main_menu":
-        await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
+        # Delete original message and re-send to keep it protected
         await query.message.delete()
+        await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
+            # First, indicate loading by editing the current message
             await query.edit_message_caption(
-                caption="🔎 <i>Applying protective forest mist...</i>",
+                caption="🔎 <i>Checking the inventory...</i>",
                 parse_mode='HTML', reply_markup=query.message.reply_markup
             )
 
@@ -97,30 +82,38 @@ async def handle_callback(update: Update):
             for item in data:
                 product = item.get('service_type', 'Unknown Product')
                 count = item.get('remaining', 0)
-                blurred_key = mask_license_key(item.get('key_id', 'No Key Found'))
+                # Showing the ACTUAL KEY now as requested
+                actual_key = item.get('key_id', 'No Key Found')
                 
                 name_lower = str(product).lower()
                 icon = "📑" if "office" in name_lower else "🪟" if "win" in name_lower else "📦"
 
                 report += f"{icon} <b>{product}</b>\n"
-                report += f"└ 🔑 Key: <code>{blurred_key}</code>\n"
+                report += f"└ 🔑 Key: <code>{actual_key}</code>\n"
                 report += f"└ 📦 Stock: <b>{count}</b> left\n\n"
             
             report += f"<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🍃"
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
-            await query.edit_message_caption(caption=report, parse_mode='HTML', reply_markup=back_kb)
+            
+            # Since you cannot change protect_content on an EDIT, 
+            # we delete the old message and send a NEW one to activate protection.
+            await query.message.delete()
+            await tg_app.bot.send_animation(
+                chat_id=update.effective_chat.id,
+                animation="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif",
+                caption=report,
+                parse_mode='HTML',
+                reply_markup=back_kb,
+                protect_content=True # PREVENTS SCREENSHOTS
+            )
 
         except Exception as e:
-            await query.edit_message_caption(
-                caption=f"⚠️ Hub Error: <code>{str(e)}</code>", 
-                parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]])
-            )
+            await query.message.reply_text(f"⚠️ Hub Error: <code>{str(e)}</code>", parse_mode='HTML')
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET': return "🍃 Clyde Tech Hub is online.", 200
+    if request.method == 'GET': return "🍃 Clyde's Resource Hub is online.", 200
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
