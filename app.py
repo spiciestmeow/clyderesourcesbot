@@ -42,31 +42,23 @@ async def get_vamt_data():
 
 # ==================== KEYBOARDS ====================
 def get_start_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")]
-    ])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")]])
 
 def get_full_menu_keyboard():
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
-            InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
-        ],
+        [InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
+         InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
-        [
-            InlineKeyboardButton("❓ Help", callback_data="help"),
-            InlineKeyboardButton("ℹ️ About", callback_data="about")
-        ],
+        [InlineKeyboardButton("❓ Help", callback_data="help"),
+         InlineKeyboardButton("ℹ️ About", callback_data="about")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
     ])
 
 def get_inventory_categories():
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🪟 Windows Keys", callback_data="vamt_filter_win"),
-            InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office")
-        ],
+        [InlineKeyboardButton("🪟 Windows Keys", callback_data="vamt_filter_win"),
+         InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
     ])
 
@@ -77,9 +69,7 @@ def get_back_to_inventory_keyboard():
     ])
 
 def get_back_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Return to the Clearing", callback_data="main_menu")]
-    ])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to the Clearing", callback_data="main_menu")]])
 
 # ==================== MESSAGES ====================
 async def send_initial_welcome(chat_id, first_name):
@@ -87,7 +77,7 @@ async def send_initial_welcome(chat_id, first_name):
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
-    caption = f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\nThe gentle wind carries whispers from the ancient forest...\nHidden treasures and digital wonders await kind-hearted wanderers.\n\n<i>May the forest spirits watch over you.</i> 🍃✨"
+    caption = f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\nThe gentle wind carries whispers from the ancient forest...\nHidden treasures and digital wonders await kind-hearted wanderers.\n\n<i>May the forest spirits watch over you.</i> 🍃✨"
     await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
 
 async def send_full_menu(chat_id, first_name):
@@ -95,7 +85,7 @@ async def send_full_menu(chat_id, first_name):
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
-    caption = f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n🌿 <b>You have entered the Enchanted Clearing</b>\n\nChoose your path beneath the whispering trees...\n\n<i>May your journey be filled with magic and abundance.</i> 🍃✨"
+    caption = f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n🌿 <b>You have entered the Enchanted Clearing</b>\n\nChoose your path beneath the whispering trees...\n\n<i>May your journey be filled with magic and abundance.</i> 🍃✨"
     await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
 # ==================== CALLBACK ====================
@@ -109,7 +99,6 @@ async def handle_callback(update: Update):
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
-        # Transition menu to Category selection
         await query.message.edit_caption(
             caption="🌿 <b>The Ancient Library</b>\n\nWhich digital scrolls are you looking for today, wanderer?\n\n<i>The forest spirits wait for your choice.</i>",
             parse_mode='HTML',
@@ -118,74 +107,47 @@ async def handle_callback(update: Update):
 
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "")
-        
-        # 🌟 DIALOG 1: SEARCH START
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id,
-            animation=LOADING_GIF,
-            caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>",
-            parse_mode='HTML'
-        )
+        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.5); await tg_app.bot.edit_message_caption(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id, caption="🍃 <i>The trees whisper... counting hidden treasures...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.5); await tg_app.bot.edit_message_caption(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id, caption=f"✨ <i>Ancient magic is revealing the {category.upper()} inventory...</i>", parse_mode='HTML')
 
-        # 🌟 DIALOG 2: WHISPERING
-        await asyncio.sleep(1.5)
-        await tg_app.bot.edit_message_caption(
-            chat_id=loading_msg.chat_id,
-            message_id=loading_msg.message_id,
-            caption="🍃 <i>The trees whisper... counting hidden treasures...</i>",
-            parse_mode='HTML'
-        )
-
-        # 🌟 DIALOG 3: MAGIC REVEALING
-        await asyncio.sleep(1.5)
-        await tg_app.bot.edit_message_caption(
-            chat_id=loading_msg.chat_id,
-            message_id=loading_msg.message_id,
-            caption=f"✨ <i>Ancient magic is revealing the {category.upper()} inventory...</i>",
-            parse_mode='HTML'
-        )
-
-        # FETCH DATA
         data = await get_vamt_data()
         if not data:
             await loading_msg.edit_caption(caption="🌫️ The forest mist is too thick... I cannot find the scrolls.")
             return
 
         filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
-
-        # BUILD THE SCROLL
         report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
         if not filtered_data:
             report += "<i>Alas, these scrolls are currently hidden from view.</i>"
         else:
             for item in filtered_data:
-                product = item.get('service_type', 'Product')
-                count = item.get('remaining', 0)
-                key = item.get('key_id', 'HIDDEN')
+                product = item.get('service_type', 'Product'); count = item.get('remaining', 0); key = item.get('key_id', 'HIDDEN')
                 report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Revealed at: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
-
         try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
         except: pass
-
-        await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id,
-            animation=INVENTORY_GIF,
-            caption=report,
-            parse_mode='HTML',
-            reply_markup=get_back_to_inventory_keyboard(),
-            protect_content=True
-        )
+        await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=INVENTORY_GIF, caption=report, parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard(), protect_content=True)
 
     elif query.data == "about":
+        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="✨ <i>Consulting the ancient records of the clearing...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await tg_app.bot.edit_message_caption(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id, caption="🍃 <i>Gathering history from the whispering leaves...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await tg_app.bot.edit_message_caption(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id, caption="✨ <i>The story of the forest is ready...</i>", parse_mode='HTML')
+        
         text = "<b>🌿 About Clyde's Enchanted Clearing</b>\n\nThis is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\nWe gather digital treasures like Steam accounts, learning guides, and activation keys.\n\n<i>May this small corner bring you joy.</i> 🍃✨"
-        await query.message.delete()
+        try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
+        except: pass
         await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=ABOUT_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
     elif query.data == "help":
+        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="✨ <i>Calling the forest guides to assist you...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await tg_app.bot.edit_message_caption(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id, caption="🍃 <i>Clearing the path for a weary wanderer...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2); await tg_app.bot.edit_message_caption(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id, caption="✨ <i>The map of the clearing is revealed...</i>", parse_mode='HTML')
+        
         text = "<b>❓ Help - How to Use</b>\n\n🌿 <b>Navigation:</b>\n• Tap buttons to move through the clearing.\n• Use <b>/menu</b> for the full list.\n\n📋 <b>Activation Keys:</b>\n1. Go to Inventory.\n2. Choose a category.\n3. Long-press the code to copy."
-        await query.message.delete()
+        try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
+        except: pass
         await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=HELP_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
 # ==================== WEBHOOK ====================
@@ -197,27 +159,31 @@ loop.run_until_complete(start_tg_app())
 
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET':
-        return "🌿 Clyde's Enchanted Clearing is awake.", 200
-
+    if request.method == 'GET': return "🌿 Clyde's Enchanted Clearing is awake.", 200
     update_data = request.get_json(silent=True)
     if not update_data: return "No data", 400
 
     async def process_update():
         update = Update.de_json(update_data, tg_app.bot)
-        if update.message and update.message.text:
-            text = update.message.text.lower().strip()
+        # Fix: Check for both command and general message
+        if update.message:
+            chat_id = update.effective_chat.id
+            first_name = update.effective_user.first_name if update.effective_user else "Traveler"
+            text = (update.message.text or "").lower().strip()
+
             if text.startswith("/start"):
-                await send_initial_welcome(update.effective_chat.id, update.effective_user.first_name)
+                await send_initial_welcome(chat_id, first_name)
             elif text.startswith("/menu"):
-                await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
+                await send_full_menu(chat_id, first_name)
+                
         elif update.callback_query:
             await handle_callback(update)
 
-    try: loop.run_until_complete(process_update())
-    except Exception as e: print(f"🔴 Error: {e}")
+    try: 
+        loop.run_until_complete(process_update())
+    except Exception as e: 
+        print(f"🔴 Webhook Error: {e}")
     return "OK", 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
