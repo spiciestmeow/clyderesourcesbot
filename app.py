@@ -202,7 +202,7 @@ async def handle_callback(update: Update):
         filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
         
         # --- NEW: PROGRESSIVE DISCLOSURE (Limit to 5) ---
-        limit = 5
+        limit = 3
         preview = filtered_data[:limit]
         has_more = len(filtered_data) > limit
 
