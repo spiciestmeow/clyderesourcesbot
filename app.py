@@ -57,10 +57,10 @@ def get_full_menu_keyboard():
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
-            InlineKeyboardButton("❓ Help", callback_data="help"),
+            InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals"),
             InlineKeyboardButton("ℹ️ About", callback_data="about")
         ],
-        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals")]
+        [InlineKeyboardButton("❓ Help", callback_data="help")]
     ])
 
 
@@ -77,29 +77,12 @@ async def send_initial_welcome(chat_id, first_name):
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
 
-    caption = (
-        f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
-        "🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\n"
-        "The gentle wind carries whispers from the ancient forest...\n"
-        "Hidden treasures and digital wonders await kind-hearted wanderers.\n\n"
-        "<i>May the forest spirits watch over you.</i> 🍃✨"
-    )
+    caption = f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\nThe gentle wind carries whispers from the ancient forest...\nHidden treasures and digital wonders await kind-hearted wanderers.\n\n<i>May the forest spirits watch over you.</i> 🍃✨"
 
     try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=WELCOME_GIF,
-            caption=caption,
-            parse_mode='HTML',
-            reply_markup=get_start_keyboard()
-        )
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
     except:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
-            parse_mode='HTML',
-            reply_markup=get_start_keyboard()
-        )
+        await tg_app.bot.send_message(chat_id=chat_id, text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}", parse_mode='HTML', reply_markup=get_start_keyboard())
 
 
 async def send_full_menu(chat_id, first_name):
@@ -108,40 +91,56 @@ async def send_full_menu(chat_id, first_name):
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
 
-    caption = (
-        f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
-        "🌿 <b>You have entered the Enchanted Clearing</b>\n\n"
-        "Choose your path beneath the whispering trees...\n\n"
-        "<i>May your journey be filled with magic and abundance.</i> 🍃✨"
-    )
+    caption = f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n🌿 <b>You have entered the Enchanted Clearing</b>\n\nChoose your path beneath the whispering trees...\n\n<i>May your journey be filled with magic and abundance.</i> 🍃✨"
 
     try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=MENU_GIF,
-            caption=caption,
-            parse_mode='HTML',
-            reply_markup=get_full_menu_keyboard()
-        )
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
     except:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
-            parse_mode='HTML',
-            reply_markup=get_full_menu_keyboard()
-        )
+        await tg_app.bot.send_message(chat_id=chat_id, text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}", parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
 
-# ==================== CALLBACK HANDLER ====================
+async def send_about(chat_id):
+    text = (
+        "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
+        "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
+        "We gather and share useful digital treasures such as Steam accounts, "
+        "learning guides, Windows & Office activation keys — all with care and good spirit.\n\n"
+        "<i>May this small corner of the internet bring you joy and usefulness.</i> 🍃✨"
+    )
+    try:
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=ABOUT_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    except:
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+
+
+async def send_help(chat_id):
+    text = (
+        "<b>❓ Help - How to Use This Bot</b>\n\n"
+        "🌿 <b>Navigation:</b>\n"
+        "• Tap <b>🌿 Enter the Enchanted Clearing</b> to begin\n"
+        "• Use <b>/menu</b> anytime to open the full menu\n\n"
+        "📋 <b>How to get keys:</b>\n"
+        "1. Go to <b>🌿 Check Forest Inventory</b>\n"
+        "2. Long-press the key (in the blue code box)\n"
+        "3. Tap <b>Copy</b>\n\n"
+        "🕊️ <b>Contact:</b>\n"
+        "Use <b>Messenger of the Wind</b> to reach us\n\n"
+        "<i>May the forest spirits guide your path.</i> 🍃✨"
+    )
+    try:
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=HELP_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    except:
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+
+
+# ==================== CALLBACK HANDLER (FIXED) ====================
 async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
     if query.data in ["show_main_menu", "main_menu"]:
-        try:
-            await query.message.delete()
-        except:
-            pass
+        try: await query.message.delete()
+        except: pass
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
@@ -156,10 +155,7 @@ async def handle_callback(update: Update):
         data = await get_vamt_data()
         if not data:
             try:
-                await query.edit_message_caption(
-                    caption="🌫️ The forest spirits lost their way...",
-                    reply_markup=get_back_keyboard()
-                )
+                await query.edit_message_caption(caption="🌫️ The forest spirits lost their way...", reply_markup=get_back_keyboard())
             except:
                 pass
             return
@@ -191,12 +187,7 @@ async def handle_callback(update: Update):
                 reply_markup=get_back_keyboard()
             )
         except:
-            await tg_app.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=report,
-                parse_mode='HTML',
-                reply_markup=get_back_keyboard()
-            )
+            await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=get_back_keyboard())
 
     elif query.data == "about":
         try: await query.message.delete()
