@@ -168,10 +168,10 @@ async def handle_callback(update: Update):
         except: pass
         
         await asyncio.sleep(0.8)
-        try: await query.message.delete()
-        except: pass
-        
-        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="🍃 <i>Guided by the fireflies through the thicket...</i>", parse_mode='HTML')
+        await query.message.edit_caption(
+        caption="🍃 <i>Guided by the fireflies through the thicket...</i>", 
+        parse_mode='HTML'
+        )
         await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🌲 <i>The ancient trees bow to reveal a hidden path...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>You have arrived at the heart of the clearing.</i>", parse_mode='HTML')
         await asyncio.sleep(0.8)
