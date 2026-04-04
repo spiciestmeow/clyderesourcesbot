@@ -136,12 +136,12 @@ async def handle_callback(update: Update):
 
             masked = key[:4] + "••••••••" + key[-4:] if len(key) > 8 else "••••••••"
 
-            report += f"{icon} <b>{product}</b>\n└ 🔑 "
+            report += f"{icon} <b>{product}</b>\n"
 
-            # Make masked key clickable
-            keyboard_buttons.append([InlineKeyboardButton(f"{masked}", callback_data=f"copy:{product}:{key}")])
+            # Make masked key a clickable button (this is the best we can do)
+            keyboard_buttons.append([InlineKeyboardButton(f"🔑 {masked}", callback_data=f"copy:{product}:{key}")])
 
-            report += f"Stock: <b>{count}</b>\n\n"
+            report += f"└ 📦 Stock: <b>{count}</b>\n\n"
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
@@ -164,12 +164,12 @@ async def handle_callback(update: Update):
         except:
             await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=custom_kb)
 
-    # ==================== COPY WITH GHIBLI LOADING ====================
+    # ==================== COPY WITH LOADING ====================
     elif query.data.startswith("copy:"):
         _, product, real_key = query.data.split(":", 2)
         masked = real_key[:4] + "••••••••" + real_key[-4:] if len(real_key) > 8 else "••••••••"
 
-        # Ghibli loading animation
+        # Ghibli loading
         loading = await tg_app.bot.send_animation(
             chat_id=query.message.chat_id,
             animation=LOADING_GIF,
