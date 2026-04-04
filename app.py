@@ -200,7 +200,6 @@ async def handle_callback(update: Update):
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
-        # Loading message
         try:
             await query.edit_message_caption(
                 caption="🌬️ The wind spirits are searching deep within the forest...",
@@ -220,8 +219,9 @@ async def handle_callback(update: Update):
                 pass
             return
 
-        # Build report with proper tg-spoiler
-        report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        # Build report using MarkdownV2 - Most reliable for spoilers
+        report = "*🌿 CLYDE'S RESOURCE HUB INVENTORY*\n━━━━━━━━━━━━━━━━━━━━\n"
+        
         for item in data:
             product = item.get('service_type', 'Product')
             count = item.get('remaining', 0)
@@ -229,10 +229,10 @@ async def handle_callback(update: Update):
             name_l = str(product).lower()
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
             
-            # This is the most reliable way for spoiler in bots
-            report += f"{icon} <b>{product}</b>\n└ 🔑 <tg-spoiler><code>{key}</code></tg-spoiler>\n└ 📦 Stock: <b>{count}</b>\n\n"
+            # Correct MarkdownV2 spoiler syntax
+            report += f"{icon} *{product}*\n└ 🔑 ||`{key}`||\n└ 📦 Stock: *{count}*\n\n"
 
-        report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
+        report += f"━━━━━━━━━━━━━━━━━━━━\n_Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}_ 🌿"
 
         try:
             await query.message.delete()
@@ -244,15 +244,15 @@ async def handle_callback(update: Update):
                 chat_id=query.message.chat_id,
                 animation=INVENTORY_GIF,
                 caption=report,
-                parse_mode='HTML',
+                parse_mode='MarkdownV2',      # ← This is important
                 reply_markup=get_back_keyboard()
             )
         except Exception as e:
-            print(f"Inventory error: {e}")
-            # Simple fallback without spoiler
+            print(f"MarkdownV2 failed: {e}")
+            # Fallback
             await tg_app.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=report.replace("<tg-spoiler>", "").replace("</tg-spoiler>", ""),
+                text="⚠️ Could not load inventory with spoiler. Showing normal version.",
                 parse_mode='HTML',
                 reply_markup=get_back_keyboard()
             )
