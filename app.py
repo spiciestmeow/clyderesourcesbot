@@ -225,7 +225,7 @@ async def handle_callback(update: Update):
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
             
             # ✅ Correct way for nice particles + monospace key
-            report += f"{icon} <b>{product}</b>\n└ 🔑 <tg-spoiler><code>{key}</code></tg-spoiler>\n└ 📦 Stock: <b>{count}</b>\n\n"
+            report += f"{icon} <b>{product}</b>\n└ 🔑 ||<code>{key}</code>||\n└ 📦 Stock: <b>{count}</b>\n\n"
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
