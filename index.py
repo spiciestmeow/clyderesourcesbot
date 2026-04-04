@@ -1,8 +1,26 @@
-# ... (Keep your imports and config the same)
+import os
+import asyncio
+import html
+import httpx
+from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application
+from datetime import datetime
+import pytz
 
-# 💡 PRO-TIP: Once the bot sends the GIF successfully, check your logs for the 'file_id' 
-# and use that instead of the URL for 10x faster loading.
+# --- GLOBAL VARIABLES (Vercel looks here) ---
+app = Flask(__name__)
+
+TOKEN = os.getenv("BOT_TOKEN")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Initialize the TG app globally
+tg_app = Application.builder().token(TOKEN).build()
+
 LOGO_GIF = "https://media.giphy.com/media/cBKMTJGAE8y2Y/giphy.gif" 
+
+# ... (Keep your get_vamt_data, get_main_menu_keyboard, and handle_callback functions here)
 
 async def send_welcome_message(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
@@ -18,19 +36,17 @@ async def send_welcome_message(chat_id, first_name):
     )
 
     try:
-        # Force Telegram to treat this as an animation (GIF)
         await tg_app.bot.send_animation(
             chat_id=chat_id, 
             animation=LOGO_GIF, 
             caption=caption,
             parse_mode='HTML', 
             reply_markup=get_main_menu_keyboard(),
-            connect_timeout=10, # Give it time to load the GIF
-            read_timeout=10
+            connect_timeout=15, # Increased for Giphy stability
+            read_timeout=15
         )
     except Exception as e:
         print(f"GIF Error: {e}")
-        # Reliable Fallback
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🍃 CLYDE'S RESOURCE HUB</b>\n\n{caption}",
@@ -38,7 +54,6 @@ async def send_welcome_message(chat_id, first_name):
             reply_markup=get_main_menu_keyboard()
         )
 
-# --- WEBHOOK LOGIC FIX ---
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
@@ -47,20 +62,16 @@ def webhook():
     update_data = request.get_json(force=True)
     
     async def process():
-        # Ensure the bot is fully ready before processing
         if not tg_app.bot_data: 
             await tg_app.initialize()
-            await tg_app.start() # Critical for some environments
+            await tg_app.start()
 
         update = Update.de_json(update_data, tg_app.bot)
         
-        # Handle /start or any text that looks like a start command
         if update.message and update.message.text:
             text = update.message.text.lower()
             if text.startswith("/start") or text.startswith("/menu"):
                 await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
-        
-        # Handle Buttons
         elif update.callback_query:
             await handle_callback(update)
 
