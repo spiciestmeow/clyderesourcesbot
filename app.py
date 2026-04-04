@@ -220,15 +220,25 @@ async def handle_callback(update: Update):
 
 
 # ==================== WEBHOOK ====================
+# Initialize the app once at the global level
+async def start_tg_app():
+    await tg_app.initialize()
+    await tg_app.start()
+
+# Pre-initialize the loop to run the startup task
+loop.run_until_complete(start_tg_app())
+
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
         return "🌿 Clyde's Enchanted Clearing is awake.", 200
 
     update_data = request.get_json(silent=True)
+    if not update_data:
+        return "No data", 400
 
     async def process_update():
-        await tg_app.initialize()
+        # DO NOT call initialize() here anymore
         update = Update.de_json(update_data, tg_app.bot)
 
         if update.message and update.message.text:
@@ -239,11 +249,18 @@ def webhook():
                 await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
         elif update.callback_query:
+            # This is where your buttons are handled
             await handle_callback(update)
 
-    loop.run_until_complete(process_update())
+    # Use the existing loop to run the process
+    try:
+        loop.run_until_complete(process_update())
+    except Exception as e:
+        print(f"🔴 Error processing update: {e}")
+        
     return "OK", 200
 
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    # Ensure port is an integer
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
