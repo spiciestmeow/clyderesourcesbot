@@ -184,31 +184,67 @@ async def handle_callback(update: Update):
     elif query.data == "check_vamt":
         await query.message.edit_caption(caption="🌿 <b>The Ancient Library</b>\n\nWhich digital scrolls are you looking for today, wanderer?\n\n<i>The forest spirits wait for your choice.</i>", parse_mode='HTML', reply_markup=get_inventory_categories())
 
-    # 🌟 FILTERED INVENTORY (WITH LOADING)
+# 🌟 FILTERED INVENTORY (PREVIEW MODE)
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "")
-        try: await query.message.delete()
-        except: pass
-
-        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.5); await loading_msg.edit_caption(caption="🍃 <i>The trees whisper... counting hidden treasures...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.5); await loading_msg.edit_caption(caption=f"✨ <i>Ancient magic is revealing the {category.upper()} inventory...</i>", parse_mode='HTML')
+        
+        # CHANGED: Use edit_caption on the existing message to show loading
+        await query.message.edit_caption(caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.0)
+        await query.message.edit_caption(caption="🍃 <i>The trees whisper... counting hidden treasures...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.0)
 
         data = await get_vamt_data()
         if not data:
-            await loading_msg.edit_caption(caption="🌫️ The forest mist is too thick...")
+            await query.message.edit_caption(caption="🌫️ The forest mist is too thick...")
             return
 
         filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
-        report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n\n"
-        for item in filtered_data:
-            product = item.get('service_type', 'Product'); count = item.get('remaining', 0); key = item.get('key_id', 'HIDDEN')
-            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
-        report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Revealed at: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
         
-        try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
-        except: pass
-        await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=INVENTORY_GIF, caption=report, parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard(), protect_content=True)
+        # --- NEW: PROGRESSIVE DISCLOSURE (Limit to 5) ---
+        limit = 5
+        preview = filtered_data[:limit]
+        has_more = len(filtered_data) > limit
+
+        report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n\n"
+        for item in preview:
+            product = item.get('service_type', 'Product')
+            count = item.get('remaining', 0)
+            key = item.get('key_id', 'HIDDEN')
+            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+
+        if has_more:
+            report += f"<i>... and {len(filtered_data) - limit} more hidden in the mist.</i>"
+            # Show "Unroll" button if there are more items
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📜 Unroll Full Scroll", callback_data=f"vamt_all_{category}")],
+                [InlineKeyboardButton("⬅️ Back to Selection", callback_data="check_vamt")]
+            ])
+        else:
+            keyboard = get_back_to_inventory_keyboard()
+        
+        # CHANGED: Use edit_caption to show the results on the same message
+        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=keyboard)
+
+    # 🌟 NEW HANDLER: REVEAL ALL (FULL VIEW)
+    elif query.data.startswith("vamt_all_"):
+        category = query.data.replace("vamt_all_", "")
+        
+        await query.message.edit_caption(caption="✨ <i>Unrolling the ancient parchment...</i>", parse_mode='HTML')
+        
+        data = await get_vamt_data()
+        filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
+        
+        report = f"<b>📜 ALL {category.upper()} SCROLLS REVEALED</b>\n\n"
+        for item in filtered_data:
+            product = item.get('service_type', 'Product')
+            count = item.get('remaining', 0)
+            key = item.get('key_id', 'HIDDEN')
+            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+            
+        report += f"━━━━━━━━━━━━━━━━━━━━\n<i>The full clearing is visible.</i> 🌿"
+        
+        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard())
 
     # 🌟 ABOUT (WITH LOADING)
     elif query.data == "about":
