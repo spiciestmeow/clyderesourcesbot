@@ -18,8 +18,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 tg_app = Application.builder().token(TOKEN).build()
 
 # 2. Media Settings
-# IMPORTANT: Use a direct .mp4 link or a Telegram File ID for the best stability.
-LOGO_GIF = "https://your-gif-link-here.mp4" 
+LOGO_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHB0ZHI5ZDJ2cGN3bXZyNmhvbmdnM2l3M3BjaWFkOGJhc2w1YmwyNyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif" 
 
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -67,11 +66,8 @@ async def handle_callback(update: Update):
     user_name = html.escape(update.effective_user.first_name)
     await query.answer()
 
-    # Delete the previous menu/inventory before showing the new one
-    try:
-        await query.message.delete()
-    except:
-        pass
+    # REMOVED: query.message.delete() 
+    # The old message will now stay in the chat history.
 
     if query.data == "main_menu":
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
@@ -79,8 +75,6 @@ async def handle_callback(update: Update):
     elif query.data == "check_vamt":
         try:
             data = await get_vamt_data()
-            
-            # --- Inventory Header ---
             report = "<b>🍃 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
             report += f"━━━━━━━━━━━━━━━━━━━━\n"
             report += f"📜 <i>Hello {user_name}, here is the latest stock:</i>\n\n"
@@ -94,7 +88,6 @@ async def handle_callback(update: Update):
                 icon = "📑" if "office" in name_lower else "🪟" if "win" in name_lower else "📦"
 
                 report += f"{icon} <b>{product}</b>\n"
-                # Mono-spaced code tags make the key copyable on tap
                 report += f"└ 🔑 Key: <code>{actual_key}</code>\n"
                 report += f"└ 📦 Stock: <b>{count}</b> left\n\n"
             
@@ -111,14 +104,8 @@ async def handle_callback(update: Update):
                 reply_markup=back_kb,
                 protect_content=True
             )
-
         except Exception as e:
-            await tg_app.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"📜 <b>The mist is too thick...</b>\n\nInventory could not be retrieved.\n\n⚠️ Error: <code>{str(e)}</code>",
-                parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]])
-            )
+            await tg_app.bot.send_message(chat_id=update.effective_chat.id, text=f"Error: {e}")
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
@@ -133,16 +120,8 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
             
             if update.message:
-                # Targeted Delete: ONLY delete the user's /start or /menu command
-                # This keeps the bot's own inventory list from being deleted!
-                try:
-                    await tg_app.bot.delete_message(
-                        chat_id=update.effective_chat.id, 
-                        message_id=update.message.message_id
-                    )
-                except:
-                    pass
-                
+                # REMOVED: All delete_message logic.
+                # The /start command will now stay visible in the chat.
                 if update.message.text in ["/start", "/menu"]:
                     await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
             
@@ -153,7 +132,6 @@ def webhook():
         loop.close()
         return "OK", 200
     except Exception as e:
-        print(f"Webhook error: {e}")
         return "OK", 200
 
 if __name__ == "__main__":
