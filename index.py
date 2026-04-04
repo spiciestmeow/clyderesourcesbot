@@ -33,7 +33,7 @@ def get_main_menu_keyboard():
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
             InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
-        [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
+        [InlineKeyboardButton("📊 Check Activation Key Stats", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/YOUR_USERNAME")]
     ])
@@ -66,21 +66,22 @@ async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
+    # EVERY callback (Back or Check) starts by deleting the previous message
+    try:
+        await query.message.delete()
+    except:
+        pass
+
     if query.data == "main_menu":
-        # RESET: Delete the current message (Inventory) before sending the menu
-        try:
-            await query.message.delete()
-        except:
-            pass # Handle cases where message is already gone
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
-            # Edit current message to show loading status
-            await query.edit_message_caption(
-                caption="🔎 <i>Checking the inventory...</i>",
-                parse_mode='HTML', 
-                reply_markup=query.message.reply_markup
+            # Temporary "Loading" message (will also be deleted soon)
+            loading_msg = await tg_app.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🔎 <i>Consulting the hidden scrolls...</i>",
+                parse_mode='HTML'
             )
 
             data = await get_vamt_data()
@@ -102,8 +103,10 @@ async def handle_callback(update: Update):
             
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
             
-            # To keep protect_content active, we delete and send NEW
-            await query.message.delete()
+            # Delete the "Loading" message
+            await loading_msg.delete()
+
+            # Send the protected Inventory
             await tg_app.bot.send_animation(
                 chat_id=update.effective_chat.id,
                 animation="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif",
@@ -114,12 +117,16 @@ async def handle_callback(update: Update):
             )
 
         except Exception as e:
-            await query.message.reply_text(f"⚠️ Hub Error: <code>{str(e)}</code>", parse_mode='HTML')
+            await tg_app.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"⚠️ Hub Error: <code>{str(e)}</code>", 
+                parse_mode='HTML'
+            )
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET': return "🍃 Clyde Tech Hub is online.", 200
+    if request.method == 'GET': return "🍃 Clyde's Resource Hub is online.", 200
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -128,10 +135,9 @@ def webhook():
             if not tg_app.bot_data: await tg_app.initialize()
             update = Update.de_json(update_data, tg_app.bot)
             
-            # Reset on /start or /menu commands
             if update.message and update.message.text in ["/start", "/menu"]:
+                # DELETE the user's "/start" command to keep the chat empty
                 try:
-                    # Optional: attempt to delete the command message to keep it clean
                     await update.message.delete()
                 except:
                     pass
