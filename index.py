@@ -15,14 +15,20 @@ TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+# Initialize the bot application once
 tg_app = Application.builder().token(TOKEN).build()
 
 async def get_vamt_data():
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    """Fetches VAMT data from your Supabase 'vamt_keys' table"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # Pulls data sorted by service_type
         url = f"{SUPABASE_URL}/rest/v1/vamt_keys?select=*&order=service_type.asc"
         response = await client.get(url, headers=headers)
-        response.raise_for_status()
+        response.raise_for_status() # This will trigger the 'except' block if the URL/Key is wrong
         return response.json()
 
 async def send_welcome_message(chat_id, first_name):
@@ -54,25 +60,18 @@ async def send_welcome_message(chat_id, first_name):
 
 async def handle_callback(update: Update):
     query = update.callback_query
-    
-    # CRITICAL FIX: Answer the query INSTANTLY so Telegram doesn't timeout
-    await query.answer("Fetching from the forest... 🍃")
+    await query.answer("Checking stock... 🍃")
 
     if query.data == "check_vamt":
         try:
-            # Inform the user we are working on it
-            await query.edit_message_caption(
-                caption="🔎 <i>Syncing with the clearing, please wait...</i>",
-                parse_mode='HTML', reply_markup=query.message.reply_markup
-            )
-
             data = await get_vamt_data()
             if not data:
-                await query.edit_message_caption(caption="❌ Empty clearing.", reply_markup=query.message.reply_markup)
+                await query.edit_message_caption(caption="❌ Empty clearing. No keys found.", reply_markup=query.message.reply_markup)
                 return
 
-            report = "<b>📊 Clyde's Resource Hub Inventory:</b>\n\n"
+            report = "<b>📊 Clyde Tech Hub Inventory:</b>\n\n"
             for item in data:
+                # Matches your column: 'service_type' and 'remaining'
                 product = item.get('service_type', 'Unknown Product')
                 count = item.get('remaining', 0)
                 
@@ -86,6 +85,7 @@ async def handle_callback(update: Update):
             await query.edit_message_caption(caption=report, parse_mode='HTML', reply_markup=query.message.reply_markup)
 
         except Exception as e:
+            # Displays the exact error in Telegram to help you debug
             await query.edit_message_caption(
                 caption=f"⚠️ <b>Hub Error:</b>\n<code>{str(e)}</code>", 
                 parse_mode='HTML', reply_markup=query.message.reply_markup
@@ -93,25 +93,32 @@ async def handle_callback(update: Update):
 
 @app.route('/api/index', methods=['POST'])
 def webhook():
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        update_data = request.get_json(force=True)
-        
-        async def process():
-            if not tg_app.bot_data:
-                await tg_app.initialize()
-            update = Update.de_json(update_data, tg_app.bot)
+    """Optimized Entry Point for Vercel"""
+    if request.method == "POST":
+        try:
+            # This is the "Magic" part that prevents the 500 loop errors
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             
-            if update.message and update.message.text in ["/start", "/menu"]:
-                await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
-            elif update.callback_query:
-                await handle_callback(update)
+            update_data = request.get_json(force=True)
+            
+            async def process():
+                if not tg_app.bot_data:
+                    await tg_app.initialize()
+                update = Update.de_json(update_data, tg_app.bot)
+                
+                if update.message and update.message.text in ["/start", "/menu"]:
+                    await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
+                elif update.callback_query:
+                    await handle_callback(update)
 
-        loop.run_until_complete(process())
-        loop.close()
-        return "OK", 200
-    except Exception as e:
-        print(f"Server Error: {e}")
-        return "OK", 200 # We return 200 even on error to stop Telegram from retrying 500 times
+            loop.run_until_complete(process())
+            return "OK", 200
+        except Exception as e:
+            print(f"Server Error: {e}")
+            return "Internal Error", 500
+    return "Method Not Allowed", 405
+
+@app.route('/')
+def index():
+    return "🍃 Clyde Tech Hub is online."
