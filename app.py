@@ -16,18 +16,14 @@ TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Logo GIF (you can replace with Telegram File ID later for better reliability)
 LOGO_GIF = "https://media.giphy.com/media/cBKMTJGAE8y2Y/giphy.gif"
 
-# Build Telegram Application once
 tg_app = Application.builder().token(TOKEN).build()
-
-# Global event loop for Vercel
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
 
-# ==================== DATABASE FETCH ====================
+# ==================== DATABASE ====================
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -41,20 +37,20 @@ async def get_vamt_data():
             return None
 
 
-# ==================== KEYBOARD ====================
+# ==================== GHIBLI THEMED KEYBOARDS ====================
 def get_main_menu_keyboard():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
-            InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
+            InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
+            InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
-        [InlineKeyboardButton("📊 Check Activation Key Stats", callback_data="check_vamt")],
-        [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/clydedigitals")]
+        [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
+        [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
+        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals")]
     ])
 
 
-# ==================== WELCOME MESSAGE WITH GIF ====================
+# ==================== GHIBLI WELCOME MESSAGE ====================
 async def send_welcome_message(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
@@ -63,9 +59,10 @@ async def send_welcome_message(chat_id, first_name):
 
     caption = (
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
-        "<b>You've wandered into our hidden clearing. The wind whispers of new "
-        "treasures found deep within the digital thicket.</b>\n\n"
-        "<i>May your path be clear and your scrolls be plenty.</i> 🍃"
+        "🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\n"
+        "The wind carries whispers from the ancient forest... "
+        "Hidden treasures, forgotten spells, and digital wonders await those who wander with a pure heart.\n\n"
+        "<i>May the spirits guide your path and your scrolls never run dry.</i> 🍃✨"
     )
 
     try:
@@ -83,13 +80,13 @@ async def send_welcome_message(chat_id, first_name):
         print(f"GIF failed (welcome): {e}")
         await tg_app.bot.send_message(
             chat_id=chat_id,
-            text=f"<b>🍃 CLYDE'S RESOURCE HUB</b>\n\n{caption}",
+            text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
             parse_mode='HTML',
             reply_markup=get_main_menu_keyboard()
         )
 
 
-# ==================== CALLBACK HANDLER (NOW SHOWS GIF IN STATS) ====================
+# ==================== CALLBACK HANDLER (Ghibli Theme + GIF in Stats) ====================
 async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
@@ -102,40 +99,39 @@ async def handle_callback(update: Update):
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
-        # Show loading state
+        # Loading with Ghibli flavor
         try:
             await query.edit_message_caption(
-                caption="📜 <i>Searching the thicket for scrolls...</i>",
+                caption="🌬️ <i>The wind spirits are searching the deepest part of the forest...</i>",
                 parse_mode='HTML'
             )
         except:
             try:
                 await query.edit_message_text(
-                    text="📜 <i>Searching the thicket for scrolls...</i>",
+                    text="🌬️ <i>The wind spirits are searching the deepest part of the forest...</i>",
                     parse_mode='HTML'
                 )
             except:
                 pass
 
-        # Fetch data
         data = await get_vamt_data()
 
         if data is None:
             try:
                 await query.edit_message_caption(
-                    caption="⚠️ Connection lost. Try again.",
+                    caption="🌫️ The forest spirits lost connection... Please try again.",
                     reply_markup=get_main_menu_keyboard()
                 )
             except:
                 await tg_app.bot.send_message(
                     chat_id=query.message.chat_id,
-                    text="⚠️ Connection lost. Try again.",
+                    text="🌫️ The forest spirits lost connection... Please try again.",
                     reply_markup=get_main_menu_keyboard()
                 )
             return
 
-        # Build inventory report
-        report = "<b>🍃 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
+        # ==================== MAIN INVENTORY CONTENT (UNCHANGED) ====================
+        report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
         report += "━━━━━━━━━━━━━━━━━━━━\n"
         for item in data:
             product = item.get('service_type', 'Product')
@@ -148,16 +144,16 @@ async def handle_callback(update: Update):
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
         back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Return to Clearing", callback_data="main_menu")]
+            [InlineKeyboardButton("⬅️ Return to the Enchanted Clearing", callback_data="main_menu")]
         ])
 
-        # Delete old message (loading or welcome GIF)
+        # Delete old message
         try:
             await query.message.delete()
         except:
             pass
 
-        # Send NEW message with GIF + Report (This fixes the missing GIF)
+        # Send new message with GIF + Ghibli-themed report
         try:
             await tg_app.bot.send_animation(
                 chat_id=query.message.chat_id,
@@ -171,7 +167,6 @@ async def handle_callback(update: Update):
             )
         except Exception as e:
             print(f"GIF failed in stats: {e}")
-            # Fallback to text only
             await tg_app.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=report,
@@ -180,11 +175,11 @@ async def handle_callback(update: Update):
             )
 
 
-# ==================== WEBHOOK (Main Entry Point) ====================
+# ==================== WEBHOOK ====================
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        return "🍃 Clyde Hub is Rooted and Online.", 200
+        return "🌿 Clyde's Enchanted Clearing is awake.", 200
 
     update_data = request.get_json(silent=True)
     if not update_data:
@@ -206,7 +201,7 @@ def webhook():
                 await handle_callback(update)
 
         except Exception as e:
-            print(f"🔴 Error processing update: {e}")
+            print(f"🔴 Error: {e}")
 
     try:
         loop.run_until_complete(process_update())
@@ -217,6 +212,5 @@ def webhook():
     return "OK", 200
 
 
-# For local testing
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
