@@ -26,18 +26,21 @@ async def get_vamt_data():
         return response.json()
 
 def get_main_menu_keyboard():
-    """Returns your original Clyde Resource Hub buttons"""
+    """Updated with a single Contact & Advertise button"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
             InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
         [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
-        [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")]
+        [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
+        [
+            # Combined into one button
+            InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/YOUR_USERNAME")
+        ]
     ])
 
 async def send_welcome_message(chat_id, first_name):
-    """Original Ghibli-themed content preserved"""
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -63,19 +66,14 @@ async def send_welcome_message(chat_id, first_name):
 
 async def handle_callback(update: Update):
     query = update.callback_query
-    
-    # ANSWER IMMEDIATELY to fix the double-click bug
     await query.answer()
 
     if query.data == "main_menu":
-        # Returns exactly to the starting message
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
-        # Optional: Delete the inventory message to keep the chat clean
         await query.message.delete()
 
     elif query.data == "check_vamt":
         try:
-            # Inform user while the 'Cold Start' happens
             await query.edit_message_caption(
                 caption="🔎 <i>Consulting the forest spirits...</i>",
                 parse_mode='HTML', reply_markup=query.message.reply_markup
@@ -90,23 +88,15 @@ async def handle_callback(update: Update):
             for item in data:
                 product = item.get('service_type', 'Unknown Product')
                 count = item.get('remaining', 0)
-                
                 name_lower = str(product).lower()
                 icon = "📑" if "office" in name_lower else "🪟" if "win" in name_lower else "📦"
                 cat = "Office" if "office" in name_lower else "Windows" if "win" in name_lower else "Software"
-
                 report += f"{icon} <b>[{cat}]</b>\n└ <code>{product}</code>: <b>{count}</b> left\n\n"
             
             report += f"<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🍃"
-
-            # Added the Back Button here
+            
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
-
-            await query.edit_message_caption(
-                caption=report,
-                parse_mode='HTML',
-                reply_markup=back_kb
-            )
+            await query.edit_message_caption(caption=report, parse_mode='HTML', reply_markup=back_kb)
 
         except Exception as e:
             await query.edit_message_caption(
@@ -124,14 +114,12 @@ def webhook():
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
         update_data = request.get_json(force=True)
         
         async def process():
             if not tg_app.bot_data:
                 await tg_app.initialize()
             update = Update.de_json(update_data, tg_app.bot)
-            
             if update.message and update.message.text in ["/start", "/menu"]:
                 await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
             elif update.callback_query:
