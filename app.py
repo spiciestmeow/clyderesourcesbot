@@ -15,12 +15,15 @@ TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# ==================== DIFFERENT GIFS ====================
+# ==================== GHIBLI GIFS ====================
 WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
 MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
+
+# Ghibli-style loading GIF (wind/spirit searching)
+LOADING_GIF   = "https://media.giphy.com/media/3o7TKsQ8v0Q6k6v4fK/giphy.gif"   # Wind/forest magic
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -86,20 +89,9 @@ async def send_initial_welcome(chat_id, first_name):
     )
 
     try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=WELCOME_GIF,
-            caption=caption,
-            parse_mode='HTML',
-            reply_markup=get_start_keyboard()
-        )
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
     except:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
-            parse_mode='HTML',
-            reply_markup=get_start_keyboard()
-        )
+        await tg_app.bot.send_message(chat_id=chat_id, text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}", parse_mode='HTML', reply_markup=get_start_keyboard())
 
 
 async def send_full_menu(chat_id, first_name):
@@ -116,30 +108,13 @@ async def send_full_menu(chat_id, first_name):
     )
 
     try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=MENU_GIF,
-            caption=caption,
-            parse_mode='HTML',
-            reply_markup=get_full_menu_keyboard()
-        )
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
     except:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
-            parse_mode='HTML',
-            reply_markup=get_full_menu_keyboard()
-        )
+        await tg_app.bot.send_message(chat_id=chat_id, text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}", parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
 
 async def send_about(chat_id):
-    text = (
-        "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
-        "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
-        "We gather and share useful digital treasures such as Steam accounts, "
-        "learning guides, Windows & Office activation keys — all with care and good spirit.\n\n"
-        "<i>May this small corner of the internet bring you joy and usefulness.</i> 🍃✨"
-    )
+    text = "<b>🌿 About Clyde's Enchanted Clearing</b>\n\nThis is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\nWe gather and share useful digital treasures such as Steam accounts, learning guides, Windows & Office activation keys — all with care and good spirit.\n\n<i>May this small corner of the internet bring you joy and usefulness.</i> 🍃✨"
     try:
         await tg_app.bot.send_animation(chat_id=chat_id, animation=ABOUT_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
     except:
@@ -147,17 +122,7 @@ async def send_about(chat_id):
 
 
 async def send_help(chat_id):
-    text = (
-        "<b>❓ Help - Button Guide</b>\n\n"
-        "🪄 <b>Spirit Treasures</b>\n→ Steam Accounts and game-related digital items\n\n"
-        "📜 <b>Ancient Scrolls</b>\n→ Learning guides, tutorials, and useful resources\n\n"
-        "🌿 <b>Check Forest Inventory</b>\n→ Shows current stock of Activation Keys\n\n"
-        "🌲 <b>The Whispering Forest</b>\n→ Our main website and resource hub\n\n"
-        "🕊️ <b>Messenger of the Wind</b>\n→ Contact and advertising\n\n"
-        "ℹ️ <b>About</b>\n→ Information about this bot\n\n"
-        "❓ <b>Help</b>\n→ Shows this help message\n\n"
-        "<i>Tap any button to continue your journey through the forest.</i> 🍃"
-    )
+    text = "<b>❓ Help - Button Guide</b>\n\n🪄 <b>Spirit Treasures</b>\n→ Steam Accounts and game-related digital items\n\n📜 <b>Ancient Scrolls</b>\n→ Learning guides, tutorials, and useful resources\n\n🌿 <b>Check Forest Inventory</b>\n→ Shows current stock of Activation Keys\n\n🌲 <b>The Whispering Forest</b>\n→ Our main website and resource hub\n\n🕊️ <b>Messenger of the Wind</b>\n→ Contact and advertising\n\nℹ️ <b>About</b>\n→ Information about this bot\n\n❓ <b>Help</b>\n→ Shows this help message\n\n<i>Tap any button to continue your journey through the forest.</i> 🍃"
     try:
         await tg_app.bot.send_animation(chat_id=chat_id, animation=HELP_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
     except:
@@ -170,18 +135,13 @@ async def handle_callback(update: Update):
     await query.answer()
 
     if query.data in ["show_main_menu", "main_menu"]:
-        try:
-            await query.message.delete()
-        except:
-            pass
+        try: await query.message.delete()
+        except: pass
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
-            await query.edit_message_caption(
-                caption="🌬️ The wind spirits are searching deep within the forest...",
-                parse_mode='HTML'
-            )
+            await query.edit_message_caption(caption="🌬️ The wind spirits are searching deep within the forest...", parse_mode='HTML')
         except:
             pass
 
@@ -203,18 +163,11 @@ async def handle_callback(update: Update):
             name_l = str(product).lower()
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
 
-            # Mask the key (show first 4 + last 4 characters)
-            if len(key) > 8:
-                masked = key[:4] + "••••••••" + key[-4:]
-            else:
-                masked = "••••••••"
+            masked = key[:4] + "••••••••" + key[-4:] if len(key) > 8 else "••••••••"
 
             report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{masked}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
 
-            # Add copy button for each key
-            keyboard_buttons.append([
-                InlineKeyboardButton(f"📋 Copy {product}", callback_data=f"copy_key:{key}")
-            ])
+            keyboard_buttons.append([InlineKeyboardButton(f"📋 Copy {product}", callback_data=f"copy:{product}:{key}")])
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
@@ -234,23 +187,36 @@ async def handle_callback(update: Update):
                 parse_mode='HTML',
                 reply_markup=custom_kb
             )
-        except Exception as e:
-            print(f"GIF failed (inventory): {e}")
-            await tg_app.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=report,
-                parse_mode='HTML',
-                reply_markup=custom_kb
-            )
+        except:
+            await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=custom_kb)
 
-    elif query.data.startswith("copy_key:"):
-        real_key = query.data.split(":", 1)[1]
-        await query.answer("✅ Key copied!", show_alert=True)
-        
-        # Send real key so user can easily copy it
+    elif query.data.startswith("copy:"):
+        _, product, real_key = query.data.split(":", 2)
+        masked = real_key[:4] + "••••••••" + real_key[-4:] if len(real_key) > 8 else "••••••••"
+
+        # Ghibli-style loading message
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=query.message.chat_id,
+            animation=LOADING_GIF,
+            caption="🌬️ The wind spirit is bringing your key from the depths of the forest...\n\nPlease wait a moment...",
+            parse_mode='HTML'
+        )
+
+        # Small delay for dramatic effect
+        await asyncio.sleep(1.5)
+
+        message_text = (
+            f"🌿 <b>{product}</b>\n\n"
+            f"Masked Key:\n<code>{masked}</code>\n\n"
+            f"Real Key:\n<code>{real_key}</code>\n\n"
+            f"Tap the real key above to copy it to your clipboard."
+        )
+
+        await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
+
         await tg_app.bot.send_message(
             chat_id=query.message.chat_id,
-            text=f"🔑 Here is your key:\n\n<code>{real_key}</code>\n\nTap the key above to copy it.",
+            text=message_text,
             parse_mode='HTML'
         )
 
