@@ -22,6 +22,7 @@ INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uO
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
 LOADING_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
+MYID_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -89,7 +90,8 @@ async def send_full_menu(chat_id, first_name):
     await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
 
 # --- NEW STATIC ID FUNCTION ---
-def send_id_status(chat_id):
+async def send_myid(chat_id):
+
     caption_text = (
         "🌿 <b>Forest Spirit Identification</b>\n\n"
         "Registration is currently undergoing a ritual of growth...\n\n"
@@ -97,12 +99,14 @@ def send_id_status(chat_id):
         "<b>Status:</b> Coming Soon"
     )
     
-    bot.send_animation(
+    # Use 'await' and reference 'tg_app.bot' correctly
+    await tg_app.bot.send_animation(
         chat_id=chat_id,
-        animation="YOUR_GIF_FILE_ID_OR_URL",
+        animation=MYID_GIF,
         caption=caption_text,
         parse_mode="HTML"
     )
+
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
     query = update.callback_query
