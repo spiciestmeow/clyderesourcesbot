@@ -8,25 +8,21 @@ from telegram.ext import Application
 from datetime import datetime
 import pytz
 
-# --- VERCEL GLOBAL INSTANCE ---
+# --- CONFIG ---
 app = Flask(__name__)
 
-# 1. Configuration
 TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Use a more reliable GIF or switch to Telegram File ID later
 LOGO_GIF = "https://media.giphy.com/media/cBKMTJGAE8y2Y/giphy.gif"
 
-# Build application once globally
 tg_app = Application.builder().token(TOKEN).build()
 
-# Create a single event loop for Vercel serverless
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-# 2. Database Fetcher
+# ====================== DATABASE ======================
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -39,7 +35,7 @@ async def get_vamt_data():
             print(f"🔴 Supabase Error: {e}")
             return None
 
-# 3. Keyboards
+# ====================== KEYBOARDS ======================
 def get_main_menu_keyboard():
     return InlineKeyboardMarkup([
         [
@@ -51,7 +47,7 @@ def get_main_menu_keyboard():
         [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/clydedigitals")]
     ])
 
-# 4. Welcome Message with GIF
+# ====================== WELCOME MESSAGE ======================
 async def send_welcome_message(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
@@ -78,7 +74,6 @@ async def send_welcome_message(chat_id, first_name):
         )
     except Exception as e:
         print(f"GIF failed: {e}")
-        # Fallback to text message
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🍃 CLYDE'S RESOURCE HUB</b>\n\n{caption}",
@@ -86,13 +81,12 @@ async def send_welcome_message(chat_id, first_name):
             reply_markup=get_main_menu_keyboard()
         )
 
-# 5. Callback Handler
+# ====================== CALLBACK HANDLER (FIXED) ======================
 async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
     if query.data == "main_menu":
-        # Delete old message and send fresh welcome
         try:
             await query.message.delete()
         except:
@@ -100,7 +94,7 @@ async def handle_callback(update: Update):
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
-        # Show loading state
+        # Show loading
         try:
             await query.edit_message_caption(
                 caption="📜 <i>Searching the thicket for scrolls...</i>",
@@ -116,19 +110,18 @@ async def handle_callback(update: Update):
                 pass
 
         data = await get_vamt_data()
+
         if data is None:
             try:
-                await query.edit_message_caption(
-                    caption="⚠️ Connection lost. Try again.",
-                    reply_markup=get_main_menu_keyboard()
-                )
+                await query.edit_message_caption(caption="⚠️ Connection lost. Try again.", 
+                                               reply_markup=get_main_menu_keyboard())
             except:
-                await query.edit_message_text(
-                    text="⚠️ Connection lost. Try again.",
-                    reply_markup=get_main_menu_keyboard()
-                )
+                await tg_app.bot.send_message(chat_id=query.message.chat_id,
+                                            text="⚠️ Connection lost. Try again.",
+                                            reply_markup=get_main_menu_keyboard())
             return
 
+        # Build report
         report = "<b>🍃 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
         report += "━━━━━━━━━━━━━━━━━━━━\n"
         for item in data:
@@ -145,12 +138,13 @@ async def handle_callback(update: Update):
             [InlineKeyboardButton("⬅️ Return to Clearing", callback_data="main_menu")]
         ])
 
-        # IMPORTANT FIX: Delete animation message and send clean text report
+        # 🔥 FIXED PART: Delete the GIF message and send fresh text message
         try:
             await query.message.delete()
         except:
             pass
 
+        # Send clean text message with report (this will show properly)
         await tg_app.bot.send_message(
             chat_id=query.message.chat_id,
             text=report,
@@ -158,7 +152,7 @@ async def handle_callback(update: Update):
             reply_markup=back_kb
         )
 
-# 6. Webhook Entry Point (Fixed)
+# ====================== WEBHOOK ======================
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -170,9 +164,7 @@ def webhook():
 
     async def process_update():
         try:
-            # Initialize the application (safe for Vercel)
             await tg_app.initialize()
-
             update = Update.de_json(update_data, tg_app.bot)
 
             if update.message and update.message.text:
@@ -186,9 +178,8 @@ def webhook():
                 await handle_callback(update)
 
         except Exception as e:
-            print(f"🔴 Error processing update: {e}")
+            print(f"🔴 Error: {e}")
 
-    # Run async code in Flask + Vercel
     try:
         loop.run_until_complete(process_update())
     except RuntimeError as e:
@@ -198,6 +189,5 @@ def webhook():
     return "OK", 200
 
 
-# For local testing only (remove or keep for dev)
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
