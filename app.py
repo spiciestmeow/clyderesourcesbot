@@ -134,14 +134,12 @@ async def handle_callback(update: Update):
             name_l = str(product).lower()
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
 
-            masked = key[:4] + "••••••••" + key[-4:] if len(key) > 8 else "••••••••"
+            report += f"{icon} <b>{product}</b>\n└ 📦 Stock: <b>{count}</b>\n"
 
-            report += f"{icon} <b>{product}</b>\n"
+            # Key as inline button (clean inline-style)
+            keyboard_buttons.append([InlineKeyboardButton(key, callback_data=f"copy:{product}:{key}")])
 
-            # Make masked key a clickable button (this is the best we can do)
-            keyboard_buttons.append([InlineKeyboardButton(f"🔑 {masked}", callback_data=f"copy:{product}:{key}")])
-
-            report += f"└ 📦 Stock: <b>{count}</b>\n\n"
+            report += "\n\n"
 
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
@@ -164,12 +162,11 @@ async def handle_callback(update: Update):
         except:
             await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=custom_kb)
 
-    # ==================== COPY WITH LOADING ====================
+    # ==================== COPY WITH LOADING + TOAST ====================
     elif query.data.startswith("copy:"):
         _, product, real_key = query.data.split(":", 2)
-        masked = real_key[:4] + "••••••••" + real_key[-4:] if len(real_key) > 8 else "••••••••"
 
-        # Ghibli loading
+        # Ghibli loading animation
         loading = await tg_app.bot.send_animation(
             chat_id=query.message.chat_id,
             animation=LOADING_GIF,
@@ -179,20 +176,17 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.8)
 
-        message_text = (
-            f"🌿 <b>{product}</b>\n\n"
-            f"Masked: <code>{masked}</code>\n\n"
-            f"Real Key:\n<code>{real_key}</code>\n\n"
-            "Tap the real key above to copy it."
-        )
-
         await tg_app.bot.delete_message(chat_id=loading.chat_id, message_id=loading.message_id)
 
+        # Send the actual key
         await tg_app.bot.send_message(
             chat_id=query.message.chat_id,
-            text=message_text,
+            text=f"🌿 <b>{product}</b>\n\n<code>{real_key}</code>\n\nTap to copy the key.",
             parse_mode='HTML'
         )
+
+        # Ghibli success toast
+        await query.answer("🌿 Key successfully retrieved from the forest! ✨", show_alert=True)
 
     elif query.data == "about":
         try: await query.message.delete()
