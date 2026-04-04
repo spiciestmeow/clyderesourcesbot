@@ -37,8 +37,16 @@ async def get_vamt_data():
             return None
 
 
-# ==================== GHIBLI KEYBOARDS ====================
+# ==================== KEYBOARDS ====================
+def get_start_keyboard():
+    """Initial welcome - only big Start button"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")]
+    ])
+
+
 def get_main_menu_keyboard():
+    """Full Ghibli menu"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
@@ -50,15 +58,9 @@ def get_main_menu_keyboard():
     ])
 
 
-def get_start_button():
-    """Custom big Start button shown in the message"""
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="main_menu")]
-    ])
-
-
-# ==================== WELCOME MESSAGE (with custom Start button) ====================
-async def send_welcome_message(chat_id, first_name):
+# ==================== MESSAGES ====================
+async def send_initial_welcome(chat_id, first_name):
+    """First message when user types /start - shows only big button"""
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -68,9 +70,8 @@ async def send_welcome_message(chat_id, first_name):
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
         "🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\n"
         "The gentle wind carries whispers from the ancient forest...\n"
-        "Here lie hidden digital treasures, forgotten spells, and wonders "
-        "waiting for kind-hearted wanderers like you.\n\n"
-        "<i>May the forest spirits guide your steps and your scrolls remain ever plentiful.</i> 🍃✨"
+        "Here lie hidden digital treasures and wonders waiting for you.\n\n"
+        "<i>May the forest spirits guide your steps.</i> 🍃✨"
     )
 
     try:
@@ -79,7 +80,7 @@ async def send_welcome_message(chat_id, first_name):
             animation=LOGO_GIF,
             caption=caption,
             parse_mode='HTML',
-            reply_markup=get_start_button(),   # ← Custom Start Button
+            reply_markup=get_start_keyboard(),
             connect_timeout=30,
             read_timeout=30,
             write_timeout=30
@@ -90,7 +91,42 @@ async def send_welcome_message(chat_id, first_name):
             chat_id=chat_id,
             text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
             parse_mode='HTML',
-            reply_markup=get_start_button()
+            reply_markup=get_start_keyboard()
+        )
+
+
+async def send_main_menu(chat_id, first_name):
+    """Full menu with all buttons"""
+    user_tz = pytz.timezone('Asia/Manila')
+    current_hour = datetime.now(user_tz).hour
+    time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
+    greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
+
+    caption = (
+        f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
+        "🌿 <b>You have entered the Enchanted Clearing</b>\n\n"
+        "Choose your path among the whispering trees...\n\n"
+        "<i>May your journey be filled with magic and abundance.</i> 🍃✨"
+    )
+
+    try:
+        await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=LOGO_GIF,
+            caption=caption,
+            parse_mode='HTML',
+            reply_markup=get_main_menu_keyboard(),
+            connect_timeout=30,
+            read_timeout=30,
+            write_timeout=30
+        )
+    except Exception as e:
+        print(f"GIF failed: {e}")
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
+            parse_mode='HTML',
+            reply_markup=get_main_menu_keyboard()
         )
 
 
@@ -99,12 +135,21 @@ async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "main_menu":
+    if query.data == "show_main_menu":
+        # User clicked the big start button → show full menu
         try:
             await query.message.delete()
         except:
             pass
-        await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
+        await send_main_menu(update.effective_chat.id, update.effective_user.first_name)
+
+    elif query.data == "main_menu":
+        # Return to full menu from anywhere
+        try:
+            await query.message.delete()
+        except:
+            pass
+        await send_main_menu(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
@@ -137,7 +182,7 @@ async def handle_callback(update: Update):
                 )
             return
 
-        # Main Inventory Content (Unchanged)
+        # Inventory Content (Unchanged)
         report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
         report += "━━━━━━━━━━━━━━━━━━━━\n"
         for item in data:
@@ -197,7 +242,7 @@ def webhook():
 
             if update.message and update.message.text:
                 if update.message.text.lower().startswith("/start"):
-                    await send_welcome_message(
+                    await send_initial_welcome(
                         update.effective_chat.id,
                         update.effective_user.first_name
                     )
