@@ -131,7 +131,7 @@ async def handle_callback(update: Update):
             return
 
         filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
-        report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n\n"
         for item in filtered_data:
             product = item.get('service_type', 'Product'); count = item.get('remaining', 0); key = item.get('key_id', 'HIDDEN')
             report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
@@ -164,7 +164,7 @@ async def handle_callback(update: Update):
         
         # Merged data: Original instructions + New Button Guide
         text = (
-            "<b>❓ Help - How to Use</b>\n\n"
+            "<b>❓ Guidance - How to Use</b>\n\n"
             "🌿 <b>Navigation:</b>\n"
             "• Tap buttons to move through the clearing.\n"
             "• Use <b>/menu</b> for the full list.\n\n"
@@ -172,7 +172,7 @@ async def handle_callback(update: Update):
             "1. Go to Inventory.\n"
             "2. Choose a category.\n"
             "3. Long-press the code (e.g. <code>XXXXX</code>) to copy.\n\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
+            "\n"
             "✨ <b>Button Guide:</b>\n"
             "• 🪄 <b>Spirit Treasures:</b> Steam Account collection.\n"
             "• 📜 <b>Ancient Scrolls:</b> Library of learning guides.\n"
