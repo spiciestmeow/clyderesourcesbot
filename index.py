@@ -26,7 +26,7 @@ async def get_vamt_data():
         return response.json()
 
 def get_main_menu_keyboard():
-    """Returns the standard Ghibli clearing buttons"""
+    """Returns your original Clyde Resource Hub buttons"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
@@ -37,72 +37,80 @@ def get_main_menu_keyboard():
     ])
 
 async def send_welcome_message(chat_id, first_name):
+    """Original Ghibli-themed content preserved"""
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
 
+    safe_name = html.escape(first_name)
     caption = (
-        f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
-        "<b>Welcome to the hidden clearing. Explore the paths below to begin. 🍃</b>"
+        f"{time_icon} {greeting}, <b>{safe_name}</b>!\n\n"
+        "<b>You've stumbled upon our hidden clearing. This space is built "
+        "to help you find the resources you need, simply and peacefully.</b>\n\n"
+        "<b>We're glad to have you! Explore the paths below to begin. 🍃</b>"
     )
 
     GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 
     await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=GIF_URL, caption=caption,
-        parse_mode='HTML', reply_markup=get_main_menu_keyboard()
+        chat_id=chat_id,
+        animation=GIF_URL,
+        caption=caption,
+        parse_mode='HTML',
+        reply_markup=get_main_menu_keyboard()
     )
 
 async def handle_callback(update: Update):
     query = update.callback_query
     
-    # FIX: Answer immediately to stop the "Double Click" requirement
+    # ANSWER IMMEDIATELY to fix the double-click bug
     await query.answer()
 
     if query.data == "main_menu":
-        # Returns the message back to the original welcome state
-        user_tz = pytz.timezone('Asia/Manila')
-        current_hour = datetime.now(user_tz).hour
-        greeting = "Welcome back" 
-        
-        await query.edit_message_caption(
-            caption=f"🍃 {greeting}, <b>{html.escape(update.effective_user.first_name)}</b>!\n\nThe forest remains peaceful. What do you need?",
-            parse_mode='HTML',
-            reply_markup=get_main_menu_keyboard()
-        )
+        # Returns exactly to the starting message
+        await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
+        # Optional: Delete the inventory message to keep the chat clean
+        await query.message.delete()
 
     elif query.data == "check_vamt":
         try:
-            # Show loading state so user knows the bot is "waking up"
+            # Inform user while the 'Cold Start' happens
             await query.edit_message_caption(
-                caption="🔎 <i>Syncing with the clearing...</i>",
+                caption="🔎 <i>Consulting the forest spirits...</i>",
                 parse_mode='HTML', reply_markup=query.message.reply_markup
             )
 
             data = await get_vamt_data()
+            if not data:
+                await query.edit_message_caption(caption="❌ Empty clearing.", reply_markup=query.message.reply_markup)
+                return
+
             report = "<b>📊 Clyde Tech Hub Inventory:</b>\n\n"
-            
             for item in data:
-                product = item.get('service_type', 'Unknown')
+                product = item.get('service_type', 'Unknown Product')
                 count = item.get('remaining', 0)
+                
                 name_lower = str(product).lower()
                 icon = "📑" if "office" in name_lower else "🪟" if "win" in name_lower else "📦"
-                
-                report += f"{icon} <code>{product}</code>: <b>{count}</b>\n"
-            
-            report += f"\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i>"
+                cat = "Office" if "office" in name_lower else "Windows" if "win" in name_lower else "Software"
 
-            # Added the "Back to Main Menu" button here
-            back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")]])
+                report += f"{icon} <b>[{cat}]</b>\n└ <code>{product}</code>: <b>{count}</b> left\n\n"
+            
+            report += f"<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🍃"
+
+            # Added the Back Button here
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
 
             await query.edit_message_caption(
-                caption=report, parse_mode='HTML', reply_markup=back_keyboard
+                caption=report,
+                parse_mode='HTML',
+                reply_markup=back_kb
             )
 
         except Exception as e:
             await query.edit_message_caption(
-                caption=f"⚠️ Hub Error: <code>{str(e)}</code>",
+                caption=f"⚠️ <b>Hub Error:</b>\n<code>{str(e)}</code>", 
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]])
             )
