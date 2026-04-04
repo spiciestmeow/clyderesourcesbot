@@ -223,7 +223,10 @@ async def handle_callback(update: Update):
             key = item.get('key_id', 'HIDDEN')
             name_l = str(product).lower()
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
-            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+            
+            # This creates the particle effect
+            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>||{key}||</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
 
         try:
