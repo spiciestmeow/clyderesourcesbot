@@ -10,7 +10,7 @@ import pytz
 
 app = Flask(__name__)
 
-# 1. Configuration (Vercel Environment Variables)
+# 1. Configuration
 TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -20,27 +20,35 @@ tg_app = Application.builder().token(TOKEN).build()
 # --- Helper Functions ---
 
 async def get_vamt_data():
-    """Fetches key data from Supabase vamt_keys table"""
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Pulls service_type, key_id, and remaining
         url = f"{SUPABASE_URL}/rest/v1/vamt_keys?select=*&order=service_type.asc"
         response = await client.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
 
 def mask_license_key(key_string):
-    """Blurs the middle of the key for security"""
+    """Adds masking + glitched particles for double security."""
     if not key_string or key_string == "No Key Found":
         return "No Key Assigned"
+    
     key_str = str(key_string).strip()
     if len(key_str) < 15:
         return key_str
-    # Pattern: 6V38****-****-****-****-92FDB
-    return f"{key_str[:4]}****-****-****-****-{key_str[-5:]}"
+    
+    # Symbols to create the 'particle' effect from your screenshot
+    p = "▓▒░"
+    n = "҉" # Combining Cyrillic Millions Sign (creates the dust effect)
+    
+    first = key_str[:4]
+    last = key_str[-5:]
+    
+    # Creating the scrambled 'particle' middle
+    mid = f"{p[0]}{n}{p[1]}{n}{p[2]}{n}-{p[1]}{n}{p[0]}{n}{p[2]}{n}-{p[2]}{n}{p[1]}{n}{p[0]}{n}"
+    
+    return f"{first}{mid}-{last}"
 
 def get_main_menu_keyboard():
-    """Original Clyde Resource Hub buttons with combined Contact & Advertise"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
@@ -48,11 +56,10 @@ def get_main_menu_keyboard():
         ],
         [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/caydigitals")]
+        [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/YOUR_USERNAME")]
     ])
 
 async def send_welcome_message(chat_id, first_name):
-    """Ghibli-themed welcome message with original content"""
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -60,9 +67,7 @@ async def send_welcome_message(chat_id, first_name):
 
     caption = (
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
-        "<b>You've stumbled upon our hidden clearing. This space is built "
-        "to help you find the resources you need, simply and peacefully.</b>\n\n"
-        "<b>We're glad to have you! Explore the paths below to begin. 🍃</b>"
+        "<b>You've stumbled upon our hidden clearing. Explore the paths below to begin. 🍃</b>"
     )
     GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 
@@ -72,9 +77,7 @@ async def send_welcome_message(chat_id, first_name):
     )
 
 async def handle_callback(update: Update):
-    """Handles logic for Check Status and Back to Menu"""
     query = update.callback_query
-    # Fix for double-click requirement
     await query.answer()
 
     if query.data == "main_menu":
@@ -84,7 +87,7 @@ async def handle_callback(update: Update):
     elif query.data == "check_vamt":
         try:
             await query.edit_message_caption(
-                caption="🔎 <i>Consulting the hidden scrolls...</i>",
+                caption="🔎 <i>Applying protective forest mist...</i>",
                 parse_mode='HTML', reply_markup=query.message.reply_markup
             )
 
@@ -94,7 +97,6 @@ async def handle_callback(update: Update):
             for item in data:
                 product = item.get('service_type', 'Unknown Product')
                 count = item.get('remaining', 0)
-                # Masking the key_id for security
                 blurred_key = mask_license_key(item.get('key_id', 'No Key Found'))
                 
                 name_lower = str(product).lower()
@@ -115,13 +117,10 @@ async def handle_callback(update: Update):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]])
             )
 
-# --- Webhook Entry Point ---
-
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET':
-        return "🍃 Clyde Tech Hub is online.", 200
+    if request.method == 'GET': return "🍃 Clyde Tech Hub is online.", 200
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -136,5 +135,4 @@ def webhook():
         loop.run_until_complete(process())
         loop.close()
         return "OK", 200
-    except:
-        return "OK", 200
+    except: return "OK", 200
