@@ -18,10 +18,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 tg_app = Application.builder().token(TOKEN).build()
 
 # 2. Media Settings
-# Replace this URL with your GIF link (direct link ending in .mp4 or .gif)
-# TIP: If it still says "Blocked in your region," upload the GIF to Telegram manually, 
-# get its File ID, and paste that ID string here instead of a URL.
-LOGO_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHB0ZHI5ZDJ2cGN3bXZyNmhvbmdnM2l3M3BjaWFkOGJhc2w1YmwyNyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif" 
+# Replace with your GIF URL or Telegram File ID
+LOGO_GIF = "https://your-gif-link-here.mp4" 
 
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -55,7 +53,6 @@ async def send_welcome_message(chat_id, first_name):
         "<i>May your path be clear and your scrolls be plenty.</i> 🍃"
     )
 
-    # Use send_animation to ensure the GIF loops and plays automatically
     await tg_app.bot.send_animation(
         chat_id=chat_id, 
         animation=LOGO_GIF, 
@@ -70,7 +67,6 @@ async def handle_callback(update: Update):
     user_name = html.escape(update.effective_user.first_name)
     await query.answer()
 
-    # Clear current message to keep the "Clearing" clean
     try:
         await query.message.delete()
     except:
@@ -82,7 +78,10 @@ async def handle_callback(update: Update):
     elif query.data == "check_vamt":
         try:
             data = await get_vamt_data()
-            report = f"📜 <b>Hello {user_name}, here is today's latest update:</b>\n\n"
+            # Added the specific Header Title here
+            report = "<b>🍃 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
+            report += f"━━━━━━━━━━━━━━━━━━━━\n"
+            report += f"📜 <i>Hello {user_name}, here is the latest stock:</i>\n\n"
             
             for item in data:
                 product = item.get('service_type', 'Unknown Product')
@@ -93,14 +92,15 @@ async def handle_callback(update: Update):
                 icon = "📑" if "office" in name_lower else "🪟" if "win" in name_lower else "📦"
 
                 report += f"{icon} <b>{product}</b>\n"
+                # Mono-spaced code block for easy copying
                 report += f"└ 🔑 Key: <code>{actual_key}</code>\n"
                 report += f"└ 📦 Stock: <b>{count}</b> left\n\n"
             
+            report += f"━━━━━━━━━━━━━━━━━━━━\n"
             report += f"<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
             
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to Clearing", callback_data="main_menu")]])
 
-            # Also using animation here so the logo stays consistent on the stats page
             await tg_app.bot.send_animation(
                 chat_id=update.effective_chat.id,
                 animation=LOGO_GIF,
@@ -113,7 +113,7 @@ async def handle_callback(update: Update):
         except Exception as e:
             await tg_app.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"📜 <b>The mist is too thick, {user_name}...</b>\n\nScroll could not be read.\n\n⚠️ Error: <code>{str(e)}</code>",
+                text=f"📜 <b>The mist is too thick...</b>\n\nInventory could not be retrieved.\n\n⚠️ Error: <code>{str(e)}</code>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]])
             )
@@ -132,7 +132,6 @@ def webhook():
             
             if update.message:
                 msg_id = update.message.message_id
-                # Attempt to clear previous command messages
                 for i in range(2): 
                     try:
                         await tg_app.bot.delete_message(chat_id=update.effective_chat.id, message_id=msg_id - i)
