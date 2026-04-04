@@ -128,19 +128,24 @@ async def send_myid(chat_id):
     forest_memory[chat_id].append(msg.message_id)
 
 # --- CLEAR FUNCTION ---
-async def handle_clear(chat_id, user_msg_id):
-    # 1. Delete the user's /clear command
-    try: await tg_app.bot.delete_message(chat_id, user_msg_id)
-    except: pass
+async def handle_clear(chat_id, user_command_id):
+    # 1. Delete the user's "/clear" message immediately
+    try: 
+        await tg_app.bot.delete_message(chat_id=chat_id, message_id=user_command_id)
+    except: 
+        pass
 
-    # 2. Sweep away all previous bot messages
+    # 2. Sweep away all previous commands and bot messages
     if chat_id in forest_memory:
         for msg_id in forest_memory[chat_id]:
-            try: await tg_app.bot.delete_message(chat_id, msg_id)
-            except: pass
-        forest_memory[chat_id] = [] # Reset memory after cleaning
+            try: 
+                await tg_app.bot.send_chat_action(chat_id, "typing") # Optional: adds a 'magical' feel
+                await tg_app.bot.delete_message(chat_id, msg_id)
+            except: 
+                pass
+        forest_memory[chat_id] = [] # Reset memory
 
-    # 3. Send a fresh start message
+    # 3. Send the "Fresh Start" message
     sent_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=LOADING_GIF,
@@ -149,9 +154,9 @@ async def handle_clear(chat_id, user_msg_id):
         reply_markup=get_start_keyboard()
     )
     
-    # Track this new message so it can be cleared next time
+    # Save this new message ID so it can be cleared later
     forest_memory[chat_id].append(sent_msg.message_id)
-
+    
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
     query = update.callback_query
@@ -268,11 +273,15 @@ def webhook():
         if update.message and update.message.text:
             text = update.message.text.lower().strip()
             chat_id = update.effective_chat.id
+            user_msg_id = update.message.message_id
             name = update.effective_user.first_name if update.effective_user else "Traveler"
+            if chat_id not in forest_memory: forest_memory[chat_id] = []
+            forest_memory[chat_id].append(user_msg_id)
+        
             if text.startswith("/start"): await send_initial_welcome(chat_id, name)
             elif text.startswith("/menu"): await send_full_menu(chat_id, name)
             elif text.startswith("/myid"): await send_myid(chat_id)
-            elif text.startswith("/clear"): await handle_clear(chat_id, update.message.message_id)
+            elif text.startswith("/clear"): await handle_clear(chat_id, user_msg_id)
         elif update.callback_query: await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
