@@ -21,6 +21,7 @@ MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N
 INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
+LOADING_GIF   = "https://media.giphy.com/media/3o7TKsQ8v0Q6k6v4fK/giphy.gif"
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -57,10 +58,10 @@ def get_full_menu_keyboard():
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
-            InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals"),
+            InlineKeyboardButton("❓ Help", callback_data="help"),
             InlineKeyboardButton("ℹ️ About", callback_data="about")
         ],
-        [InlineKeyboardButton("❓ Help", callback_data="help")]
+        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals")]
     ])
 
 
@@ -154,6 +155,35 @@ async def handle_callback(update: Update):
             )
         except:
             await tg_app.bot.send_message(chat_id=query.message.chat_id, text=report, parse_mode='HTML', reply_markup=get_back_keyboard())
+
+    # ==================== COPY KEY WITH LOADING + CUSTOM GHIBLI TOAST ====================
+    elif query.data.startswith("copy:"):
+        _, product, real_key = query.data.split(":", 2)
+
+        # Ghibli loading animation
+        loading = await tg_app.bot.send_animation(
+            chat_id=query.message.chat_id,
+            animation=LOADING_GIF,
+            caption="🌬️ The wind spirit is retrieving your key from the ancient tree...\n\nPlease wait a moment... ✨",
+            parse_mode='HTML'
+        )
+
+        await asyncio.sleep(1.8)
+
+        # Delete loading animation
+        await tg_app.bot.delete_message(chat_id=loading.chat_id, message_id=loading.message_id)
+
+        # Send the actual key
+        message_text = f"🌿 <b>{product}</b>\n\n<code>{real_key}</code>\n\nTap the key above to copy it."
+
+        await tg_app.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=message_text,
+            parse_mode='HTML'
+        )
+
+        # Custom Ghibli Toast
+        await query.answer("🌿 Key successfully retrieved from the forest! ✨", show_alert=True)
 
     elif query.data == "about":
         try: await query.message.delete()
