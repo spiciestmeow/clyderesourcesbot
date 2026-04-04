@@ -16,7 +16,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # ==================== GIFS ====================
-WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6mWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
+WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6mcbMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
 MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
@@ -119,7 +119,7 @@ async def handle_callback(update: Update):
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "")
         
-        # Show searching animation
+        # 🌟 DIALOG 1: SEARCH START
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -127,14 +127,33 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
+        # 🌟 DIALOG 2: WHISPERING
+        await asyncio.sleep(1.5)
+        await tg_app.bot.edit_message_caption(
+            chat_id=loading_msg.chat_id,
+            message_id=loading_msg.message_id,
+            caption="🍃 <i>The trees whisper... counting hidden treasures...</i>",
+            parse_mode='HTML'
+        )
+
+        # 🌟 DIALOG 3: MAGIC REVEALING
+        await asyncio.sleep(1.5)
+        await tg_app.bot.edit_message_caption(
+            chat_id=loading_msg.chat_id,
+            message_id=loading_msg.message_id,
+            caption=f"✨ <i>Ancient magic is revealing the {category.upper()} inventory...</i>",
+            parse_mode='HTML'
+        )
+
+        # FETCH DATA
         data = await get_vamt_data()
-        
         if not data:
             await loading_msg.edit_caption(caption="🌫️ The forest mist is too thick... I cannot find the scrolls.")
             return
 
         filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
 
+        # BUILD THE SCROLL
         report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
         if not filtered_data:
             report += "<i>Alas, these scrolls are currently hidden from view.</i>"
