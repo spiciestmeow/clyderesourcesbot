@@ -33,12 +33,13 @@ def get_main_menu_keyboard():
             InlineKeyboardButton("🎮 Steam Accs", url="https://clyderesourcehub.short.gy/steam-account"),
             InlineKeyboardButton("🛠️ Digital Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")
         ],
-        [InlineKeyboardButton("📊 Check Activation Key Stats", callback_data="check_vamt")],
+        [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/YOUR_USERNAME")]
     ])
 
 async def send_welcome_message(chat_id, first_name):
+    """Sends a fresh, protected welcome message"""
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -52,11 +53,13 @@ async def send_welcome_message(chat_id, first_name):
     )
     GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 
-    # Protecting this message from being screenshotted/forwarded
     await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=GIF_URL, caption=caption,
-        parse_mode='HTML', reply_markup=get_main_menu_keyboard(),
-        protect_content=True # THIS IS THE KEY SETTING
+        chat_id=chat_id, 
+        animation=GIF_URL, 
+        caption=caption,
+        parse_mode='HTML', 
+        reply_markup=get_main_menu_keyboard(),
+        protect_content=True 
     )
 
 async def handle_callback(update: Update):
@@ -64,16 +67,20 @@ async def handle_callback(update: Update):
     await query.answer()
 
     if query.data == "main_menu":
-        # Delete original message and re-send to keep it protected
-        await query.message.delete()
+        # RESET: Delete the current message (Inventory) before sending the menu
+        try:
+            await query.message.delete()
+        except:
+            pass # Handle cases where message is already gone
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
         try:
-            # First, indicate loading by editing the current message
+            # Edit current message to show loading status
             await query.edit_message_caption(
                 caption="🔎 <i>Checking the inventory...</i>",
-                parse_mode='HTML', reply_markup=query.message.reply_markup
+                parse_mode='HTML', 
+                reply_markup=query.message.reply_markup
             )
 
             data = await get_vamt_data()
@@ -82,7 +89,6 @@ async def handle_callback(update: Update):
             for item in data:
                 product = item.get('service_type', 'Unknown Product')
                 count = item.get('remaining', 0)
-                # Showing the ACTUAL KEY now as requested
                 actual_key = item.get('key_id', 'No Key Found')
                 
                 name_lower = str(product).lower()
@@ -93,10 +99,10 @@ async def handle_callback(update: Update):
                 report += f"└ 📦 Stock: <b>{count}</b> left\n\n"
             
             report += f"<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🍃"
+            
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
             
-            # Since you cannot change protect_content on an EDIT, 
-            # we delete the old message and send a NEW one to activate protection.
+            # To keep protect_content active, we delete and send NEW
             await query.message.delete()
             await tg_app.bot.send_animation(
                 chat_id=update.effective_chat.id,
@@ -104,7 +110,7 @@ async def handle_callback(update: Update):
                 caption=report,
                 parse_mode='HTML',
                 reply_markup=back_kb,
-                protect_content=True # PREVENTS SCREENSHOTS
+                protect_content=True
             )
 
         except Exception as e:
@@ -113,7 +119,7 @@ async def handle_callback(update: Update):
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET': return "🍃 Clyde's Resource Hub is online.", 200
+    if request.method == 'GET': return "🍃 Clyde Tech Hub is online.", 200
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -121,7 +127,14 @@ def webhook():
         async def process():
             if not tg_app.bot_data: await tg_app.initialize()
             update = Update.de_json(update_data, tg_app.bot)
+            
+            # Reset on /start or /menu commands
             if update.message and update.message.text in ["/start", "/menu"]:
+                try:
+                    # Optional: attempt to delete the command message to keep it clean
+                    await update.message.delete()
+                except:
+                    pass
                 await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
             elif update.callback_query:
                 await handle_callback(update)
