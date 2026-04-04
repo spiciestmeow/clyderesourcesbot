@@ -37,7 +37,7 @@ async def get_vamt_data():
             return None
 
 
-# ==================== GHIBLI THEMED KEYBOARDS ====================
+# ==================== GHIBLI KEYBOARDS ====================
 def get_main_menu_keyboard():
     return InlineKeyboardMarkup([
         [
@@ -50,7 +50,14 @@ def get_main_menu_keyboard():
     ])
 
 
-# ==================== GHIBLI WELCOME MESSAGE ====================
+def get_start_button():
+    """Custom big Start button shown in the message"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="main_menu")]
+    ])
+
+
+# ==================== WELCOME MESSAGE (with custom Start button) ====================
 async def send_welcome_message(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
@@ -60,9 +67,10 @@ async def send_welcome_message(chat_id, first_name):
     caption = (
         f"{time_icon} {greeting}, <b>{html.escape(first_name)}</b>!\n\n"
         "🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\n"
-        "The wind carries whispers from the ancient forest... "
-        "Hidden treasures, forgotten spells, and digital wonders await those who wander with a pure heart.\n\n"
-        "<i>May the spirits guide your path and your scrolls never run dry.</i> 🍃✨"
+        "The gentle wind carries whispers from the ancient forest...\n"
+        "Here lie hidden digital treasures, forgotten spells, and wonders "
+        "waiting for kind-hearted wanderers like you.\n\n"
+        "<i>May the forest spirits guide your steps and your scrolls remain ever plentiful.</i> 🍃✨"
     )
 
     try:
@@ -71,22 +79,22 @@ async def send_welcome_message(chat_id, first_name):
             animation=LOGO_GIF,
             caption=caption,
             parse_mode='HTML',
-            reply_markup=get_main_menu_keyboard(),
+            reply_markup=get_start_button(),   # ← Custom Start Button
             connect_timeout=30,
             read_timeout=30,
             write_timeout=30
         )
     except Exception as e:
-        print(f"GIF failed (welcome): {e}")
+        print(f"GIF failed: {e}")
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
             parse_mode='HTML',
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_start_button()
         )
 
 
-# ==================== CALLBACK HANDLER (Ghibli Theme + GIF in Stats) ====================
+# ==================== CALLBACK HANDLER ====================
 async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
@@ -99,16 +107,15 @@ async def handle_callback(update: Update):
         await send_welcome_message(update.effective_chat.id, update.effective_user.first_name)
 
     elif query.data == "check_vamt":
-        # Loading with Ghibli flavor
         try:
             await query.edit_message_caption(
-                caption="🌬️ <i>The wind spirits are searching the deepest part of the forest...</i>",
+                caption="🌬️ <i>The wind spirits are searching deep within the forest...</i>",
                 parse_mode='HTML'
             )
         except:
             try:
                 await query.edit_message_text(
-                    text="🌬️ <i>The wind spirits are searching the deepest part of the forest...</i>",
+                    text="🌬️ <i>The wind spirits are searching deep within the forest...</i>",
                     parse_mode='HTML'
                 )
             except:
@@ -119,18 +126,18 @@ async def handle_callback(update: Update):
         if data is None:
             try:
                 await query.edit_message_caption(
-                    caption="🌫️ The forest spirits lost connection... Please try again.",
+                    caption="🌫️ The forest spirits lost their way... Please try again.",
                     reply_markup=get_main_menu_keyboard()
                 )
             except:
                 await tg_app.bot.send_message(
                     chat_id=query.message.chat_id,
-                    text="🌫️ The forest spirits lost connection... Please try again.",
+                    text="🌫️ The forest spirits lost their way... Please try again.",
                     reply_markup=get_main_menu_keyboard()
                 )
             return
 
-        # ==================== MAIN INVENTORY CONTENT (UNCHANGED) ====================
+        # Main Inventory Content (Unchanged)
         report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n"
         report += "━━━━━━━━━━━━━━━━━━━━\n"
         for item in data:
@@ -147,13 +154,11 @@ async def handle_callback(update: Update):
             [InlineKeyboardButton("⬅️ Return to the Enchanted Clearing", callback_data="main_menu")]
         ])
 
-        # Delete old message
         try:
             await query.message.delete()
         except:
             pass
 
-        # Send new message with GIF + Ghibli-themed report
         try:
             await tg_app.bot.send_animation(
                 chat_id=query.message.chat_id,
