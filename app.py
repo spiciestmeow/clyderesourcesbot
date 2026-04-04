@@ -57,10 +57,10 @@ def get_full_menu_keyboard():
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
-            InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals"),
+            InlineKeyboardButton("❓ Help", callback_data="help"),
             InlineKeyboardButton("ℹ️ About", callback_data="about")
         ],
-        [InlineKeyboardButton("❓ Help", callback_data="help")]
+        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals")]
     ])
 
 
@@ -189,7 +189,8 @@ async def handle_callback(update: Update):
                 animation=INVENTORY_GIF,
                 caption=report,
                 parse_mode='HTML',
-                reply_markup=get_back_keyboard()
+                reply_markup=get_back_keyboard(),
+                protect_content=True
             )
         except:
             await tg_app.bot.send_message(
