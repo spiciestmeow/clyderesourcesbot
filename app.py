@@ -15,12 +15,12 @@ TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# ==================== DIFFERENT GIFS FOR EACH SECTION ====================
-WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"   # /start
-MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"   # /menu
-INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"   # Inventory
-ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"   # About
-HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"   # Help
+# ==================== DIFFERENT GIFS ====================
+WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
+MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
+INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
+ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
+HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -57,10 +57,10 @@ def get_full_menu_keyboard():
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
-            InlineKeyboardButton("❓ Help", callback_data="help"),
+            InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/clydedigitals"),
             InlineKeyboardButton("ℹ️ About", callback_data="about")
         ],
-        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
+        [InlineKeyboardButton("❓ Help", callback_data="help")]
     ])
 
 
@@ -70,7 +70,7 @@ def get_back_keyboard():
     ])
 
 
-# ==================== MESSAGES WITH DIFFERENT GIFS ====================
+# ==================== MESSAGES ====================
 async def send_initial_welcome(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
@@ -93,8 +93,7 @@ async def send_initial_welcome(chat_id, first_name):
             parse_mode='HTML',
             reply_markup=get_start_keyboard()
         )
-    except Exception as e:
-        print(f"GIF failed (welcome): {e}")
+    except:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
@@ -124,8 +123,7 @@ async def send_full_menu(chat_id, first_name):
             parse_mode='HTML',
             reply_markup=get_full_menu_keyboard()
         )
-    except Exception as e:
-        print(f"GIF failed (menu): {e}")
+    except:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"<b>🌿 Clyde's Enchanted Clearing</b>\n\n{caption}",
@@ -143,47 +141,26 @@ async def send_about(chat_id):
         "<i>May this small corner of the internet bring you joy and usefulness.</i> 🍃✨"
     )
     try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=ABOUT_GIF,
-            caption=text,
-            parse_mode='HTML',
-            reply_markup=get_back_keyboard()
-        )
-    except Exception as e:
-        print(f"GIF failed (about): {e}")
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=ABOUT_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    except:
         await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
 
 async def send_help(chat_id):
     text = (
         "<b>❓ Help - Button Guide</b>\n\n"
-        "🪄 <b>Spirit Treasures</b>\n"
-        "→ Steam Accounts and game-related digital items\n\n"
-        "📜 <b>Ancient Scrolls</b>\n"
-        "→ Learning guides, tutorials, and useful resources\n\n"
-        "🌿 <b>Check Forest Inventory</b>\n"
-        "→ Shows current stock of Activation Keys (Windows, Office, etc.)\n\n"
-        "🌲 <b>The Whispering Forest</b>\n"
-        "→ Our main website and resource hub\n\n"
-        "🕊️ <b>Messenger of the Wind</b>\n"
-        "→ Contact and advertising\n\n"
-        "ℹ️ <b>About</b>\n"
-        "→ Information about this bot\n\n"
-        "❓ <b>Help</b>\n"
-        "→ Shows this help message\n\n"
+        "🪄 <b>Spirit Treasures</b>\n→ Steam Accounts and game-related digital items\n\n"
+        "📜 <b>Ancient Scrolls</b>\n→ Learning guides, tutorials, and useful resources\n\n"
+        "🌿 <b>Check Forest Inventory</b>\n→ Shows current stock of Activation Keys\n\n"
+        "🌲 <b>The Whispering Forest</b>\n→ Our main website and resource hub\n\n"
+        "🕊️ <b>Messenger of the Wind</b>\n→ Contact and advertising\n\n"
+        "ℹ️ <b>About</b>\n→ Information about this bot\n\n"
+        "❓ <b>Help</b>\n→ Shows this help message\n\n"
         "<i>Tap any button to continue your journey through the forest.</i> 🍃"
     )
     try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=HELP_GIF,
-            caption=text,
-            parse_mode='HTML',
-            reply_markup=get_back_keyboard()
-        )
-    except Exception as e:
-        print(f"GIF failed (help): {e}")
+        await tg_app.bot.send_animation(chat_id=chat_id, animation=HELP_GIF, caption=text, parse_mode='HTML', reply_markup=get_back_keyboard())
+    except:
         await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', reply_markup=get_back_keyboard())
 
 
@@ -211,28 +188,38 @@ async def handle_callback(update: Update):
         data = await get_vamt_data()
         if not data:
             try:
-                await query.edit_message_caption(
-                    caption="🌫️ The forest spirits lost their way...", 
-                    reply_markup=get_back_keyboard()
-                )
+                await query.edit_message_caption(caption="🌫️ The forest spirits lost their way...", reply_markup=get_back_keyboard())
             except:
                 pass
             return
 
-        # Build report using MarkdownV2 - Most reliable for spoilers
-        report = "*🌿 CLYDE'S RESOURCE HUB INVENTORY*\n━━━━━━━━━━━━━━━━━━━━\n"
-        
+        report = "<b>🌿 CLYDE'S RESOURCE HUB INVENTORY</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        keyboard_buttons = []
+
         for item in data:
             product = item.get('service_type', 'Product')
             count = item.get('remaining', 0)
             key = item.get('key_id', 'HIDDEN')
             name_l = str(product).lower()
             icon = "📑" if "office" in name_l else "🪟" if "win" in name_l else "📦"
-            
-            # Correct MarkdownV2 spoiler syntax
-            report += f"{icon} *{product}*\n└ 🔑 ||`{key}`||\n└ 📦 Stock: *{count}*\n\n"
 
-        report += f"━━━━━━━━━━━━━━━━━━━━\n_Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}_ 🌿"
+            # Mask the key (show first 4 + last 4 characters)
+            if len(key) > 8:
+                masked = key[:4] + "••••••••" + key[-4:]
+            else:
+                masked = "••••••••"
+
+            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{masked}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+
+            # Add copy button for each key
+            keyboard_buttons.append([
+                InlineKeyboardButton(f"📋 Copy {product}", callback_data=f"copy_key:{key}")
+            ])
+
+        report += f"━━━━━━━━━━━━━━━━━━━━\n<i>Last Sync: {datetime.now(pytz.timezone('Asia/Manila')).strftime('%I:%M %p')}</i> 🌿"
+
+        keyboard_buttons.append([InlineKeyboardButton("⬅️ Return to the Enchanted Clearing", callback_data="main_menu")])
+        custom_kb = InlineKeyboardMarkup(keyboard_buttons)
 
         try:
             await query.message.delete()
@@ -244,18 +231,28 @@ async def handle_callback(update: Update):
                 chat_id=query.message.chat_id,
                 animation=INVENTORY_GIF,
                 caption=report,
-                parse_mode='MarkdownV2',      # ← This is important
-                reply_markup=get_back_keyboard()
+                parse_mode='HTML',
+                reply_markup=custom_kb
             )
         except Exception as e:
-            print(f"MarkdownV2 failed: {e}")
-            # Fallback
+            print(f"GIF failed (inventory): {e}")
             await tg_app.bot.send_message(
                 chat_id=query.message.chat_id,
-                text="⚠️ Could not load inventory with spoiler. Showing normal version.",
+                text=report,
                 parse_mode='HTML',
-                reply_markup=get_back_keyboard()
+                reply_markup=custom_kb
             )
+
+    elif query.data.startswith("copy_key:"):
+        real_key = query.data.split(":", 1)[1]
+        await query.answer("✅ Key copied!", show_alert=True)
+        
+        # Send real key so user can easily copy it
+        await tg_app.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"🔑 Here is your key:\n\n<code>{real_key}</code>\n\nTap the key above to copy it.",
+            parse_mode='HTML'
+        )
 
     elif query.data == "about":
         try: await query.message.delete()
@@ -285,10 +282,8 @@ def webhook():
 
             if update.message and update.message.text:
                 text = update.message.text.lower().strip()
-
                 if text.startswith("/start"):
                     await send_initial_welcome(update.effective_chat.id, update.effective_user.first_name)
-
                 elif text.startswith("/menu"):
                     await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
