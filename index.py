@@ -17,7 +17,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 tg_app = Application.builder().token(TOKEN).build()
 
-# --- Helper Functions ---
+# Direct GIF links to avoid "Wrong type" errors
+WELCOME_GIF = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
+STATUS_GIF = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExOHpueXJ3bm80Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/H76dbzJB3ALV6/giphy.gif"
 
 async def get_vamt_data():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -35,11 +37,10 @@ def get_main_menu_keyboard():
         ],
         [InlineKeyboardButton("📊 Check Key Status", callback_data="check_vamt")],
         [InlineKeyboardButton("🍃 The Digital Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/YOUR_USERNAME")]
+        [InlineKeyboardButton("📞 Contact & Advertise", url="https://t.me/clydedigital")]
     ])
 
 async def send_welcome_message(chat_id, first_name):
-    """Sends a fresh, protected welcome message"""
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
@@ -51,14 +52,10 @@ async def send_welcome_message(chat_id, first_name):
         "treasures found deep within the digital thicket.</b>\n\n"
         "<i>May your path be clear and your scrolls be plenty.</i> 🍃"
     )
-    GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExanJlb3NqOHlwNDNmbmtlMnZtc2NramxmOXMydnU0a3B4amN3YnBiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 
     await tg_app.bot.send_animation(
-        chat_id=chat_id, 
-        animation=GIF_URL, 
-        caption=caption,
-        parse_mode='HTML', 
-        reply_markup=get_main_menu_keyboard(),
+        chat_id=chat_id, animation=WELCOME_GIF, caption=caption,
+        parse_mode='HTML', reply_markup=get_main_menu_keyboard(),
         protect_content=True 
     )
 
@@ -67,7 +64,7 @@ async def handle_callback(update: Update):
     user_name = html.escape(update.effective_user.first_name)
     await query.answer()
 
-    # DELETE the current message to keep the clearing clean
+    # RESET: Delete the previous message immediately
     try:
         await query.message.delete()
     except:
@@ -78,18 +75,17 @@ async def handle_callback(update: Update):
 
     elif query.data == "check_vamt":
         try:
-            # Temporary "Loading" scroll
+            # Temporary loading text
             loading_msg = await tg_app.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"🍃 <i>Hush, <b>{user_name}</b>... the forest spirits are counting the seeds...</i>",
+                text=f"🍃 <i>Hush, <b>{user_name}</b>... the forest spirits are reading the scrolls...</i>",
                 parse_mode='HTML'
             )
 
             data = await get_vamt_data()
             
-            # PERSONALIZED HEADER
-            report = f"📜 <b>Greetings, {user_name}!</b>\n"
-            report += "Here is the latest inventory from the Hub's clearing:\n\n"
+            # THEMED STATUS CONTENT
+            report = f"📜 <b>Hello {user_name}, here is today's latest update:</b>\n\n"
             
             for item in data:
                 product = item.get('service_type', 'Unknown Product')
@@ -107,13 +103,12 @@ async def handle_callback(update: Update):
             
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to Clearing", callback_data="main_menu")]])
             
-            # Clean up the loading message
             await loading_msg.delete()
 
-            # Send the protected Inventory Scroll
+            # SEND PROTECTED STATUS
             await tg_app.bot.send_animation(
                 chat_id=update.effective_chat.id,
-                animation="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3ZtcHdwOHB4Znd4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4ZzJ4JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/H76dbzJB3ALV6/giphy.gif", # Totoro/Ghibli Rain GIF
+                animation=STATUS_GIF,
                 caption=report,
                 parse_mode='HTML',
                 reply_markup=back_kb,
@@ -140,7 +135,6 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
             
             if update.message and update.message.text in ["/start", "/menu"]:
-                # DELETE the command message immediately
                 try:
                     await update.message.delete()
                 except:
