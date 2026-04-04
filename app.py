@@ -22,6 +22,7 @@ INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uO
 ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
 HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
 LOADING_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
+COMING_SOON_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -87,6 +88,15 @@ async def send_full_menu(chat_id, first_name):
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
     caption = f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n🌿 <b>You have entered the Enchanted Clearing</b>\n\nChoose your path beneath the whispering trees...\n\n<i>May your journey be filled with magic and abundance.</i> 🍃✨"
     await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
+# --- NEW FUNCTION FOR TELEGRAM ID ---
+async def send_myid(chat_id, user_id):
+    keyboard = [
+        [InlineKeyboardButton(f"Your ID: {user_id}", callback_data="id_info")],
+        [InlineKeyboardButton("Comming Soon....", callback_data="coming_soon")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    caption = "🌿 <b>Forest Spirit Identification</b>\n\nThe whispers of the trees recognize your presence in the clearing."
+    await tg_app.bot.send_animation(chat_id=chat_id, animation=HELP_GIF, caption=caption, parse_mode='HTML', reply_markup=reply_markup)
 
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
@@ -207,6 +217,7 @@ def webhook():
             name = update.effective_user.first_name if update.effective_user else "Traveler"
             if text.startswith("/start"): await send_initial_welcome(chat_id, name)
             elif text.startswith("/menu"): await send_full_menu(chat_id, name)
+            elif text.startswith("/myid"): await send_myid(chat_id, user_id)
         elif update.callback_query: await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
