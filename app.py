@@ -189,47 +189,35 @@ async def handle_callback(update: Update):
 # 🌟 FILTERED INVENTORY (PREVIEW MODE)
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "").lower()
-
-        # Debug print to see what category we're getting
-        print(f"🔍 Filtering for category: {category}")
         
-        # CHANGED: Use edit_caption on the existing message to show loading
-        await query.message.edit_caption(caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.0)
-        await query.message.edit_caption(caption="🍃 <i>The trees whisper... counting hidden treasures...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.0)
+        # 1. Update visual state to show the search is starting
+        await query.message.edit_caption(
+            caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", 
+            parse_mode='HTML'
+        )
+        await asyncio.sleep(0.8)
 
+        # 2. Fetch data from Supabase
         data = await get_vamt_data()
 
-        if data is None:
+        if data is None or not data:
+            error_msg = "🌫️ <i>The forest mist is too thick...</i>" if data is None else "📭 <i>The library is empty...</i>"
             await query.message.edit_caption(
-                caption="🌫️ <i>The forest mist is too thick to see the scrolls...</i>\n\n<i>The spirits cannot reach the ancient library right now.</i>",
-                parse_mode='HTML',
-                reply_markup=get_back_to_inventory_keyboard()                     
-            )
-            return
-    
-        if not data:
-            await query.message.edit_caption(
-                caption="📭 <i>The ancient library is empty...</i>\n\n<i>No scrolls have been added to the clearing yet.</i>",
+                caption=f"{error_msg}\n\n<i>Try again when the winds change.</i>",
                 parse_mode='HTML',
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
 
+        # 3. Robust Filtering Logic
         filtered_data = []
         for item in data:
+            # Safely get service_type and convert to lowercase string
             s_type = str(item.get('service_type', '')).lower()
-
-            # Debug: Print each service_type we're checking
-            print(f"Checking: {s_type} against category: {category}")
-
-            # FIX: Make sure Netflix matching works
+            
             if category == "netflix":
-                # Check if 'netflix' appears ANYWHERE in the service_type
                 if "netflix" in s_type:
                     filtered_data.append(item)
-                    print(f"✅ Added Netflix item: {s_type}")
             elif category == "win":
                 if "windows" in s_type or "win" in s_type:
                     filtered_data.append(item)
@@ -239,25 +227,10 @@ async def handle_callback(update: Update):
             else:
                 if category in s_type:
                     filtered_data.append(item)
-    
-        print(f"📊 Total {category} items found: {len(filtered_data)}")
 
-        # If no matches are found
+        # 4. Handle Empty Results
         if not filtered_data:
-            # Special message for Netflix to help debug
-            if category == "netflix":
-                # Let's check what's actually in the database
-                all_types = [str(item.get('service_type', '')) for item in data]
-                print(f"All service types in DB: {all_types}")
-                
-                caption_text = "🍿 <i>The Netflix scrolls are currently hidden in deep mist...</i>\n\n"
-                caption_text += "✨ <i>The spirits are gathering more cookies. Please check again later!</i>\n\n"
-                caption_text += "📋 <i>Available scroll types in library:</i>\n"
-                for t in all_types[:5]:  # Show first 5 types
-                    caption_text += f"• {t}\n"
-            else:
-                caption_text = f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist in the clearing yet.</i>\n\n✨ <i>Check back later when the forest spirits have gathered more treasures.</i>"
-            
+            caption_text = f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist yet.</i>\n\n✨ <i>Check back later, wanderer.</i>"
             await query.message.edit_caption(
                 caption=caption_text,
                 parse_mode='HTML', 
@@ -265,42 +238,42 @@ async def handle_callback(update: Update):
             )
             return
         
-        # ✅ FIXED: These lines are now INSIDE the elif block with correct indentation
+        # 5. Prepare the Preview (Limit to 3)
         limit = 3
         preview = filtered_data[:limit]
         has_more = len(filtered_data) > limit
 
-        # Create report header
-        if category == "netflix":
-            report = "<b>🍿 THE NETFLIX COOKIE SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        elif category == "win":
-            report = "<b>🪟 THE WINDOWS SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        elif category == "office":
-            report = "<b>📑 THE OFFICE SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        else:
-            report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        # Header Titles
+        headers = {
+            "netflix": "<b>🍿 THE NETFLIX COOKIE SCROLLS</b>",
+            "win": "<b>🪟 THE WINDOWS SCROLLS</b>",
+            "office": "<b>📑 THE OFFICE SCROLLS</b>"
+        }
+        report = headers.get(category, f"<b>📜 THE {category.upper()} SCROLLS</b>") + "\n━━━━━━━━━━━━━━━━━━\n\n"
         
+        # 6. Formatting loop with 'Active' string protection
         for item in preview:
             product = item.get('service_type', 'Product')
             key = item.get('key_id', 'HIDDEN')
-            info_val = item.get('remaining', 'Stable')
-
-            # Special formatting for Netflix
-            if "netflix" in product.lower():
-                icon = "🍿"
-                label = "Status"
-                logo = "🌿"
-                # For Netflix cookies, show if active or not
-                status = "✓ Active" if info_val and str(info_val) != "0" else "⚠️ Check Status"
+            # Get the 'remaining' value safely
+            info_val = item.get('remaining', 'N/A')
+            
+            if category == "netflix":
+                icon, label, logo = "🍿", "Status", "🌿"
+                # Check if info_val is "Active" (from your screenshot) or a positive number
+                val_str = str(info_val).strip().lower()
+                if val_str in ["active", "stable", "working"] or (val_str.isdigit() and int(val_str) > 0):
+                    status = "✓ Active"
+                else:
+                    status = "⚠️ Check Status"
                 report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{status}</b>\n\n"
             else:
-                icon = "✨"
-                label = "Stock"
-                logo = "📦"
+                icon, label, logo = "✨", "Stock", "📦"
                 report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
 
+        # 7. Add footer and buttons
         if has_more:
-            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered_data) - limit} more scrolls hidden in the mist.</i>"
+            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered_data) - limit} more scrolls hidden.</i>"
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📜 Unroll Full Scroll", callback_data=f"vamt_all_{category}")],
                 [InlineKeyboardButton("⬅️ Back to Selection", callback_data="check_vamt")]
@@ -308,6 +281,7 @@ async def handle_callback(update: Update):
         else:
             keyboard = get_back_to_inventory_keyboard()
         
+        # FINAL STEP: This is what stops the animation!
         await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=keyboard)
 
     # 🌟 NEW HANDLER: REVEAL ALL (FULL VIEW)
