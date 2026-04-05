@@ -348,58 +348,73 @@ async def handle_callback(update: Update):
             reply_markup=kb
         )
 
-    # 🌟 ABOUT (Lore)
+    # 🌟 ABOUT (Lore) - Clean & Smooth Version
     elif query.data == "about":
-        try: await query.message.edit_caption(caption="✨ <i>Consulting the ancient records...</i>", parse_mode='HTML', reply_markup=None)
-        except: pass
+        # Step 1: Show loading on the current message
+        try:
+            await query.message.edit_caption(
+                caption="✨ <i>Consulting the ancient records...</i>", 
+                parse_mode='HTML', 
+                reply_markup=None
+            )
+        except:
+            pass
 
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id, 
-            animation=LOADING_GIF, 
-            caption="..."
+        await asyncio.sleep(1.0)
+
+        # Step 2: Intermediate loading message
+        try:
+            await query.message.edit_caption(
+                caption="🍃 <i>Gathering history from the leaves...</i>", 
+                parse_mode='HTML'
+            )
+        except:
+            pass
+
+        await asyncio.sleep(1.2)
+
+        # Step 3: Final content
+        text = (
+            "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
+            "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
+            "We gather digital treasures like Steam accounts, learning guides, and activation keys.\n\n"
+            "<i>May this small corner bring you joy.</i> 🍃✨"
         )
-        
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="🍃 <i>Gathering history from the leaves...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="✨ <i>The story is ready...</i>", parse_mode='HTML')
-        await asyncio.sleep(0.8)
 
-        text = "<b>🌿 About Clyde's Enchanted Clearing</b>\n\nThis is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\nWe gather digital treasures like Steam accounts, learning guides, and activation keys.\n\n<i>May this small corner bring you joy.</i> 🍃✨"
-
-        try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
-        except: pass
-        
-        msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id, 
-            animation=ABOUT_GIF, 
-            caption=text, 
-            parse_mode='HTML', 
+        # Edit the same message with GIF + final text
+        await query.message.edit_animation(
+            animation=ABOUT_GIF,
+            caption=text,
+            parse_mode='HTML',
             reply_markup=get_back_keyboard()
         )
-        
-        # IMPORTANT: Add this message to memory so /clear works properly
-        if update.effective_chat.id not in forest_memory:
-            forest_memory[update.effective_chat.id] = []
-        forest_memory[update.effective_chat.id].append(msg.message_id)
 
-    # 🌟 HELP (Guidance)
+    # 🌟 HELP (Guidance) - Clean & Smooth Version
     elif query.data == "help":
-        try: await query.message.edit_caption(caption="✨ <i>Calling the forest guides...</i>", parse_mode='HTML', reply_markup=None)
-        except: pass
+        # Step 1: Show loading on the current message
+        try:
+            await query.message.edit_caption(
+                caption="✨ <i>Calling the forest guides...</i>", 
+                parse_mode='HTML', 
+                reply_markup=None
+            )
+        except:
+            pass
 
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id, 
-            animation=LOADING_GIF, 
-            caption="..."
-        )
-        
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="🍃 <i>Clearing the path for a wanderer...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="✨ <i>The map is revealed...</i>", parse_mode='HTML')
-        await asyncio.sleep(0.8)
+        await asyncio.sleep(1.0)
 
+        # Step 2: Intermediate loading message
+        try:
+            await query.message.edit_caption(
+                caption="🍃 <i>Clearing the path for a wanderer...</i>", 
+                parse_mode='HTML'
+            )
+        except:
+            pass
+
+        await asyncio.sleep(1.2)
+
+        # Step 3: Final content
         text = (
             "<b>❓ Guidance - How to Use</b>\n\n"
             "🌿 <b>Navigation:</b>\n"
@@ -410,29 +425,21 @@ async def handle_callback(update: Update):
             "2. Choose a category.\n"
             "3. Long-press the code to copy.\n\n"
             "✨ <b>Button Guide:</b>\n"
-            "• 🪄 Spirit Treasures: Steam Account collection.\n"
-            "• 📜 Ancient Scrolls: Library of learning guides.\n"
-            "• 🌿 Forest Inventory: Live stock of keys.\n"
-            "• 🌲 Whispering Forest: Main resource hub.\n"
-            "• ℹ️ Lore: The story of this clearing.\n"
-            "• 🕊️ Messenger: Contact the caretaker."
+            "• 🪄 Spirit Treasures: Steam accounts\n"
+            "• 📜 Ancient Scrolls: Learning guides\n"
+            "• 🌿 Forest Inventory: Windows / Office / Netflix keys\n"
+            "• 🌲 Whispering Forest: Main resource hub\n"
+            "• ℹ️ Lore: The story of this clearing\n"
+            "• 🕊️ Messenger: Contact the caretaker"
         )
 
-        try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
-        except: pass
-        
-        msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id, 
-            animation=HELP_GIF, 
-            caption=text, 
-            parse_mode='HTML', 
+        # Edit the same message with GIF + final text
+        await query.message.edit_animation(
+            animation=HELP_GIF,
+            caption=text,
+            parse_mode='HTML',
             reply_markup=get_back_keyboard()
         )
-        
-        # Add to memory
-        if update.effective_chat.id not in forest_memory:
-            forest_memory[update.effective_chat.id] = []
-        forest_memory[update.effective_chat.id].append(msg.message_id)
         
 # ==================== WEBHOOK ====================
 async def start_tg_app():
