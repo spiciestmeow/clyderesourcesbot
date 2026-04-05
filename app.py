@@ -172,117 +172,77 @@ async def handle_callback(update: Update):
         await asyncio.sleep(0.8)
         try: await query.message.delete()
         except: pass
+
         loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="...")
         
         await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🌲 <i>The ancient trees bow to reveal a hidden path...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>You have arrived at the heart of the clearing.</i>", parse_mode='HTML')
         await asyncio.sleep(0.8)
         
+        await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
         try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
         except: pass
-        await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
-    # 🌟 INVENTORY CATEGORY MENU
     elif query.data == "check_vamt":
-        await query.message.edit_caption(caption="🌿 <b>The Ancient Library</b>\n\nWhich digital scrolls are you looking for today, wanderer?\n\n<i>The forest spirits wait for your choice.</i>", parse_mode='HTML', reply_markup=get_inventory_categories())
-
-# 🌟 FILTERED INVENTORY (PREVIEW MODE)
-    elif query.data.startswith("vamt_filter_"):
-        category = query.data.replace("vamt_filter_", "").lower()
-        
-        # 1. Update visual state to show the search is starting
         await query.message.edit_caption(
-            caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", 
-            parse_mode='HTML'
+            caption="🌿 <b>The Ancient Library</b>\n\nWhich digital scrolls are you looking for today?\n\n<i>The forest spirits wait for your choice.</i>", 
+            parse_mode='HTML', 
+            reply_markup=get_inventory_categories()
         )
-        await asyncio.sleep(0.8)
 
-        # 2. Fetch data from Supabase
+# 🌟 FILTERED INVENTORY (PREVIEW & ALL)
+    elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
+        is_full_view = query.data.startswith("vamt_all_")
+        category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
+        
+        # 1. Loading state
+        loading_text = "📜 <i>Unrolling the full scroll...</i>" if is_full_view else f"✨ <i>Searching for {category.upper()}...</i>"
+        await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
+        
+        # 2. Fetch Data
         data = await get_vamt_data()
-
-        if data is None or not data:
-            error_msg = "🌫️ <i>The forest mist is too thick...</i>" if data is None else "📭 <i>The library is empty...</i>"
-            await query.message.edit_caption(
-                caption=f"{error_msg}\n\n<i>Try again when the winds change.</i>",
-                parse_mode='HTML',
-                reply_markup=get_back_to_inventory_keyboard()
-            )
+        if not data:
+            await query.message.edit_caption(caption="🌫️ <i>The mist is too thick to see the scrolls right now.</i>", reply_markup=get_back_to_inventory_keyboard())
             return
 
-        # 3. Robust Filtering Logic
-        filtered_data = []
-        for item in data:
-            # Safely get service_type and convert to lowercase string
-            s_type = str(item.get('service_type', '')).lower()
-            
-            if category == "netflix":
-                if "netflix" in s_type:
-                    filtered_data.append(item)
-            elif category == "win":
-                if "windows" in s_type or "win" in s_type:
-                    filtered_data.append(item)
-            elif category == "office":
-                if "office" in s_type:
-                    filtered_data.append(item)
-            else:
-                if category in s_type:
-                    filtered_data.append(item)
+        # 3. Filter
+        filtered = [
+            item for item in data 
+            if category in str(item.get('service_type', '')).lower() or 
+            (category == "win" and "windows" in str(item.get('service_type', '')).lower())
+        ]
 
-        # 4. Handle Empty Results
-        if not filtered_data:
-            caption_text = f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist yet.</i>\n\n✨ <i>Check back later, wanderer.</i>"
-            await query.message.edit_caption(
-                caption=caption_text,
-                parse_mode='HTML', 
-                reply_markup=get_back_to_inventory_keyboard()
-            )
+        if not filtered:
+            await query.message.edit_caption(caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing.</i>", reply_markup=get_back_to_inventory_keyboard())
             return
-        
-        # 5. Prepare the Preview (Limit to 3)
-        limit = 3
-        preview = filtered_data[:limit]
-        has_more = len(filtered_data) > limit
 
-        # Header Titles
-        headers = {
-            "netflix": "<b>🍿 THE NETFLIX COOKIE SCROLLS</b>",
-            "win": "<b>🪟 THE WINDOWS SCROLLS</b>",
-            "office": "<b>📑 THE OFFICE SCROLLS</b>"
-        }
-        report = headers.get(category, f"<b>📜 THE {category.upper()} SCROLLS</b>") + "\n━━━━━━━━━━━━━━━━━━\n\n"
+        # 4. Build Report
+        limit = len(filtered) if is_full_view else 3
+        report = f"<b>{'📜' if is_full_view else '🍿'} {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
         
-        # 6. Formatting loop with 'Active' string protection
-        for item in preview:
-            product = item.get('service_type', 'Product')
+        for item in filtered[:limit]:
+            product = item.get('service_type', 'Unknown')
             key = item.get('key_id', 'HIDDEN')
-            # Get the 'remaining' value safely
-            info_val = item.get('remaining', 'N/A')
+            raw_val = str(item.get('remaining', 'N/A')).strip()
             
+            # THE CRITICAL FIX: Treat "Active", "Stable", or any non-zero number as "Active"
             if category == "netflix":
-                icon, label, logo = "🍿", "Status", "🌿"
-                # Check if info_val is "Active" (from your screenshot) or a positive number
-                val_str = str(info_val).strip().lower()
-                if val_str in ["active", "stable", "working"] or (val_str.isdigit() and int(val_str) > 0):
-                    status = "✓ Active"
-                else:
-                    status = "⚠️ Check Status"
-                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{status}</b>\n\n"
+                status = "✓ Active" if raw_val.lower() in ["active", "stable", "fresh"] or (raw_val.isdigit() and int(raw_val) > 0) else "⚠️ Check Status"
+                report += f"🍿 <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 🌿 Status: <b>{status}</b>\n\n"
             else:
-                icon, label, logo = "✨", "Stock", "📦"
-                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
+                report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{raw_val}</b>\n\n"
 
-        # 7. Add footer and buttons
-        if has_more:
-            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered_data) - limit} more scrolls hidden.</i>"
-            keyboard = InlineKeyboardMarkup([
+        if not is_full_view and len(filtered) > 3:
+            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden.</i>"
+            kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📜 Unroll Full Scroll", callback_data=f"vamt_all_{category}")],
-                [InlineKeyboardButton("⬅️ Back to Selection", callback_data="check_vamt")]
+                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
             ])
         else:
-            keyboard = get_back_to_inventory_keyboard()
-        
-        # FINAL STEP: This is what stops the animation!
-        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=keyboard)
+            kb = get_back_to_inventory_keyboard()
+
+        # 5. Send final update (This clears the loading animation)
+        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
     # 🌟 NEW HANDLER: REVEAL ALL (FULL VIEW)
     elif query.data.startswith("vamt_all_"):
