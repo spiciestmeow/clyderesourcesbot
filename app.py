@@ -143,6 +143,7 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
         reply_markup=keyboard
     )
     
+    # ←←← PUT THE MEMORY TRACKING HERE (Best place)
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
@@ -356,12 +357,13 @@ async def handle_callback(update: Update):
     # ====================== MAIN MENU & CLEARING ======================
     if query.data in ["show_main_menu", "main_menu"]:
         try:
-            await query.message.delete()
+            await query.message.delete()   # Delete the button that was clicked
         except:
             pass
 
         await asyncio.sleep(0.8)
 
+        # === Loading animation ===
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -377,14 +379,15 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
 
-        await send_full_menu(update.effective_chat.id, update.effective_user.first_name, is_first_time=False)
+        # === Decide first time or normal menu ===
+        chat_id = update.effective_chat.id
+        message_count = len(forest_memory.get(chat_id, []))
+        is_first_time = message_count <= 8   # You can adjust this number
 
-        # Show guided menu for first time, normal menu afterwards
-        message_count = len(forest_memory.get(update.effective_chat.id, []))
-        is_first_time = message_count <= 6
+        # Send only ONE menu
+        await send_full_menu(chat_id, update.effective_user.first_name, is_first_time=is_first_time)
 
-        await send_full_menu(update.effective_chat.id, update.effective_user.first_name, is_first_time=is_first_time)
-
+        # Clean up loading message
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
         except:
