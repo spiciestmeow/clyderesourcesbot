@@ -164,9 +164,9 @@ async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
-    # Main Menu & Clearing - Improved Smooth Transition
+    # ====================== MAIN MENU & CLEARING ======================
     if query.data in ["show_main_menu", "main_menu"]:
-        # Gentle transition instead of abrupt delete
+        # Gentle transition
         try:
             await query.message.edit_caption(
                 caption="🌿 <i>Returning to the Enchanted Clearing...</i>", 
@@ -178,7 +178,6 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
 
-        # Send loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -200,18 +199,15 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(0.8)
 
-        # Send the main menu
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
-        # Clean up the temporary loading message
+        # Clean up loading animation
         try:
-            await tg_app.bot.delete_message(
-                chat_id=loading_msg.chat_id, 
-                message_id=loading_msg.message_id
-            )
+            await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
         except:
             pass
 
+    # ====================== INVENTORY ======================
     elif query.data == "check_vamt":
         await query.message.edit_caption(
             caption="🌿 <b>The Ancient Library</b>\n\nWhich digital scrolls are you looking for today?\n\n<i>The forest spirits wait for your choice.</i>", 
@@ -236,7 +232,6 @@ async def handle_callback(update: Update):
             )
             return
 
-        # Filter items
         filtered = []
         for item in data:
             s_type = str(item.get('service_type', '')).lower().strip()
@@ -254,8 +249,6 @@ async def handle_callback(update: Update):
                 if category in s_type:
                     filtered.append(item)
 
-        print(f"DEBUG: Loaded {len(data)} total items | Found {len(filtered)} {category} items")
-
         if not filtered:
             await query.message.edit_caption(
                 caption=f"🍃 <i>No {category.upper()} scrolls found right now.</i>",
@@ -263,7 +256,7 @@ async def handle_callback(update: Update):
             )
             return
 
-        # ====================== NETFLIX - MULTIPLE COOKIES ======================
+        # ====================== NETFLIX ======================
         if category == "netflix":
             report = (
                 "<b>🍿 NETFLIX PREMIUM COOKIES</b>\n"
@@ -274,16 +267,11 @@ async def handle_callback(update: Update):
 
             buttons = []
             for idx, item in enumerate(filtered, 1):
-                # Use display_name if filled, otherwise fallback
-                display_name = str(item.get('display_name') or '').strip()
-                if not display_name:
-                    display_name = f"Netflix Cookie {idx}"
-
+                display_name = str(item.get('display_name') or '').strip() or f"Netflix Cookie {idx}"
                 status_text = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Inactive"
 
                 report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n\n"
 
-                # Use idx for callback (we'll keep it stable below)
                 buttons.append([
                     InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}")
                 ])
@@ -292,16 +280,11 @@ async def handle_callback(update: Update):
 
             kb = InlineKeyboardMarkup(buttons)
 
-            await query.message.edit_caption(
-                caption=report, 
-                parse_mode='HTML', 
-                reply_markup=kb
-            )
+            await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
             return
 
         # ====================== WINDOWS & OFFICE ======================
         limit = len(filtered) if is_full_view else 3
-
         report = f"<b>📜 {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
         for item in filtered[:limit]:
@@ -310,11 +293,7 @@ async def handle_callback(update: Update):
             raw_val = int(item.get('remaining') or 0)
             stock_text = f"{raw_val}" if raw_val > 0 else "Out of stock"
 
-            report += (
-                f"✨ <b>{product}</b>\n"
-                f"└ 🔑 <code>{key}</code>\n"
-                f"└ 📦 Stock: <b>{stock_text}</b>\n\n"
-            )
+            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{stock_text}</b>\n\n"
 
         if not is_full_view and len(filtered) > 3:
             report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden.</i>"
@@ -325,13 +304,9 @@ async def handle_callback(update: Update):
         else:
             kb = get_back_to_inventory_keyboard()
 
-        await query.message.edit_caption(
-            caption=report,
-            parse_mode='HTML',
-            reply_markup=kb
-        )
+        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
-    # ====================== REVEAL NETFLIX COOKIE ======================
+    # ====================== REVEAL NETFLIX ======================
     elif query.data.startswith("reveal_nf|"):
         try:
             idx = int(query.data.split("|", 1)[1])
@@ -344,19 +319,8 @@ async def handle_callback(update: Update):
             await query.answer("Database error", show_alert=True)
             return
 
-        # Get Netflix items only
-        netflix_items = [
-            item for item in data 
-            if "netflix" in str(item.get('service_type', '')).lower()
-        ]
-
-        # Stable sort: Use display_name first, then last_updated as backup
-        netflix_items.sort(key=lambda x: (
-            str(x.get('display_name') or ''), 
-            str(x.get('last_updated') or '')
-        ))
-
-        print(f"DEBUG Reveal: Requested #{idx}, Found {len(netflix_items)} Netflix cookies")
+        netflix_items = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
+        netflix_items.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
 
         if idx < 1 or idx > len(netflix_items):
             await query.answer(f"❌ Cookie #{idx} not found", show_alert=True)
@@ -375,28 +339,20 @@ async def handle_callback(update: Update):
             f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
             "<b>📋 Cookie:</b>\n"
             f"<code>{html.escape(cookie[:800])}</code>\n\n"
-            "<i>Long-press the code above to copy.\n"
-            "Use it quickly before it expires 🍃</i>"
+            "<i>Long-press the code above to copy.\nUse it quickly before it expires 🍃</i>"
         )
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="vamt_filter_netflix")]
         ])
 
-        await query.message.edit_caption(
-            caption=report,
-            parse_mode='HTML',
-            reply_markup=kb
-        )
+        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
-    # 🌟 ABOUT (Lore)
+    # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
-        try:
-            await query.message.delete()
-        except:
-            pass
+        try: await query.message.delete()
+        except: pass
 
-        # Send loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -417,7 +373,6 @@ async def handle_callback(update: Update):
             "<i>May this small corner bring you joy.</i> 🍃✨"
         )
 
-        # Send final message
         final_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=ABOUT_GIF,
@@ -426,26 +381,18 @@ async def handle_callback(update: Update):
             reply_markup=get_back_keyboard()
         )
 
-        # Delete the loading animation so it doesn't remain
-        try:
-            await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
-        except:
-            pass
+        try: await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
+        except: pass
 
-        # Save final message to memory
         chat_id = update.effective_chat.id
-        if chat_id not in forest_memory:
-            forest_memory[chat_id] = []
+        if chat_id not in forest_memory: forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
-    # 🌟 HELP (Guidance)
+    # ====================== HELP (Guidance) ======================
     elif query.data == "help":
-        try:
-            await query.message.delete()
-        except:
-            pass
+        try: await query.message.delete()
+        except: pass
 
-        # Send loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -477,7 +424,6 @@ async def handle_callback(update: Update):
             "• 🕊️ Messenger: Contact the caretaker"
         )
 
-        # Send final message
         final_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=HELP_GIF,
@@ -486,16 +432,11 @@ async def handle_callback(update: Update):
             reply_markup=get_back_keyboard()
         )
 
-        # Delete the loading animation
-        try:
-            await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
-        except:
-            pass
+        try: await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
+        except: pass
 
-        # Save final message to memory
         chat_id = update.effective_chat.id
-        if chat_id not in forest_memory:
-            forest_memory[chat_id] = []
+        if chat_id not in forest_memory: forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
         
 # ==================== WEBHOOK ====================
