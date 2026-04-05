@@ -202,36 +202,82 @@ async def handle_callback(update: Update):
         # 2. Fetch Data
         data = await get_vamt_data()
         if not data:
-            await query.message.edit_caption(caption="🌫️ <i>The mist is too thick to see the scrolls right now.</i>", reply_markup=get_back_to_inventory_keyboard())
+            await query.message.edit_caption(
+                caption="🌫️ <i>The mist is too thick to see the scrolls right now.</i>",
+                reply_markup=get_back_to_inventory_keyboard()
+            )
             return
 
         # 3. Filter
-        filtered = [
-            item for item in data 
-            if category in str(item.get('service_type', '')).lower() or 
-            (category == "win" and "windows" in str(item.get('service_type', '')).lower())
-        ]
+        filtered = []
+        for item in data:
+            s_type = str(item.get('service_type', '')).lower()
+
+            if category == "netflix":
+                if "netflix" in s_type:
+                    filtered.append(item)
+            elif category == "win":
+                if "windows" in s_type or "win" in s_type:
+                    filtered.append(item)
+            elif category == "office":
+                if "office" in s_type:
+                    filtered.append(item)
+            else:
+                if category in s_type:
+                    filtered.append(item)
 
         if not filtered:
-            await query.message.edit_caption(caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing.</i>", reply_markup=get_back_to_inventory_keyboard())
+            await query.message.edit_caption(
+                caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing.</i>",
+                reply_markup=get_back_to_inventory_keyboard()
+            )
+            return
+        
+        # =========================
+        # 🍿 NETFLIX SPECIAL HANDLING
+        # =========================
+        if category == "netflix":
+            # Only show ONE entry (since cookies = multiple rows)
+            item = filtered[0]
+
+            status_val = str(item.get('status', '')).lower()
+            status = "✓ Active" if status_val == "active" else "⚠️ Expired"
+
+            report = (
+                "<b>🍿 NETFLIX COOKIE SCROLL</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"🌿 Status: <b>{status}</b>\n\n"
+                "<i>The enchanted cookie is ready for use.</i> 🍃"
+            )
+
+            await query.message.edit_caption(
+                caption=report,
+                parse_mode='HTML',
+                reply_markup=get_back_to_inventory_keyboard()
+            )
             return
 
-        # 4. Build Report
+        # =========================
+        # 🪟 WINDOWS / 📑 OFFICE / OTHERS
+        # =========================
         limit = len(filtered) if is_full_view else 3
-        report = f"<b>{'📜' if is_full_view else '🍿'} {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        
+
+        report = f"<b>📜 {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+
         for item in filtered[:limit]:
             product = item.get('service_type', 'Unknown')
             key = item.get('key_id', 'HIDDEN')
-            raw_val = str(item.get('remaining', 'N/A')).strip()
-            
-            # THE CRITICAL FIX: Treat "Active", "Stable", or any non-zero number as "Active"
-            if category == "netflix":
-                status = "✓ Active" if raw_val.lower() in ["active", "stable", "fresh"] or (raw_val.isdigit() and int(raw_val) > 0) else "⚠️ Check Status"
-                report += f"🍿 <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 🌿 Status: <b>{status}</b>\n\n"
-            else:
-                report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{raw_val}</b>\n\n"
+            raw_val = int(item.get('remaining') or 0)
 
+            stock_text = f"{raw_val}" if raw_val > 0 else "Out of stock"
+
+            report += (
+                f"✨ <b>{product}</b>\n"
+                f"└ 🔑 <code>{key}</code>\n"
+                f"└ 📦 Stock: <b>{stock_text}</b>\n\n"
+            )
+
+        # Show "view all" if needed
         if not is_full_view and len(filtered) > 3:
             report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden.</i>"
             kb = InlineKeyboardMarkup([
@@ -241,8 +287,11 @@ async def handle_callback(update: Update):
         else:
             kb = get_back_to_inventory_keyboard()
 
-        # 5. Send final update (This clears the loading animation)
-        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+        await query.message.edit_caption(
+            caption=report,
+            parse_mode='HTML',
+            reply_markup=kb
+        )
 
     # 🌟 NEW HANDLER: REVEAL ALL (FULL VIEW)
     elif query.data.startswith("vamt_all_"):
