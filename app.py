@@ -348,32 +348,30 @@ async def handle_callback(update: Update):
             reply_markup=kb
         )
 
-    # 🌟 ABOUT (Lore) - Clean & Smooth Version
+    # 🌟 ABOUT (Lore) - Fixed & Clean Version
     elif query.data == "about":
-        # Step 1: Show loading on the current message
+        # Delete current message to avoid conflicts
         try:
-            await query.message.edit_caption(
-                caption="✨ <i>Consulting the ancient records...</i>", 
-                parse_mode='HTML', 
-                reply_markup=None
-            )
+            await query.message.delete()
         except:
             pass
+
+        # Send loading animation
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=update.effective_chat.id,
+            animation=LOADING_GIF,
+            caption="✨ <i>Consulting the ancient records...</i>",
+            parse_mode='HTML'
+        )
 
         await asyncio.sleep(1.0)
-
-        # Step 2: Intermediate loading message
-        try:
-            await query.message.edit_caption(
-                caption="🍃 <i>Gathering history from the leaves...</i>", 
-                parse_mode='HTML'
-            )
-        except:
-            pass
+        await loading_msg.edit_caption(caption="🍃 <i>Gathering history from the leaves...</i>", parse_mode='HTML')
 
         await asyncio.sleep(1.2)
+        await loading_msg.edit_caption(caption="✨ <i>The story is ready...</i>", parse_mode='HTML')
 
-        # Step 3: Final content
+        await asyncio.sleep(0.8)
+
         text = (
             "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
             "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
@@ -381,40 +379,43 @@ async def handle_callback(update: Update):
             "<i>May this small corner bring you joy.</i> 🍃✨"
         )
 
-        # Edit the same message with GIF + final text
-        await query.message.edit_animation(
+        # Send final message
+        final_msg = await tg_app.bot.send_animation(
+            chat_id=update.effective_chat.id,
             animation=ABOUT_GIF,
             caption=text,
             parse_mode='HTML',
             reply_markup=get_back_keyboard()
         )
 
-    # 🌟 HELP (Guidance) - Clean & Smooth Version
+        # Add to memory so /clear works
+        chat_id = update.effective_chat.id
+        if chat_id not in forest_memory:
+            forest_memory[chat_id] = []
+        forest_memory[chat_id].append(final_msg.message_id)
+
+    # 🌟 HELP (Guidance) - Fixed & Clean Version
     elif query.data == "help":
-        # Step 1: Show loading on the current message
         try:
-            await query.message.edit_caption(
-                caption="✨ <i>Calling the forest guides...</i>", 
-                parse_mode='HTML', 
-                reply_markup=None
-            )
+            await query.message.delete()
         except:
             pass
+
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=update.effective_chat.id,
+            animation=LOADING_GIF,
+            caption="✨ <i>Calling the forest guides...</i>",
+            parse_mode='HTML'
+        )
 
         await asyncio.sleep(1.0)
-
-        # Step 2: Intermediate loading message
-        try:
-            await query.message.edit_caption(
-                caption="🍃 <i>Clearing the path for a wanderer...</i>", 
-                parse_mode='HTML'
-            )
-        except:
-            pass
+        await loading_msg.edit_caption(caption="🍃 <i>Clearing the path for a wanderer...</i>", parse_mode='HTML')
 
         await asyncio.sleep(1.2)
+        await loading_msg.edit_caption(caption="✨ <i>The map is revealed...</i>", parse_mode='HTML')
 
-        # Step 3: Final content
+        await asyncio.sleep(0.8)
+
         text = (
             "<b>❓ Guidance - How to Use</b>\n\n"
             "🌿 <b>Navigation:</b>\n"
@@ -433,13 +434,19 @@ async def handle_callback(update: Update):
             "• 🕊️ Messenger: Contact the caretaker"
         )
 
-        # Edit the same message with GIF + final text
-        await query.message.edit_animation(
+        final_msg = await tg_app.bot.send_animation(
+            chat_id=update.effective_chat.id,
             animation=HELP_GIF,
             caption=text,
             parse_mode='HTML',
             reply_markup=get_back_keyboard()
         )
+
+        # Add to memory
+        chat_id = update.effective_chat.id
+        if chat_id not in forest_memory:
+            forest_memory[chat_id] = []
+        forest_memory[chat_id].append(final_msg.message_id)
         
 # ==================== WEBHOOK ====================
 async def start_tg_app():
