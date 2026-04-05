@@ -106,14 +106,29 @@ async def get_user_profile(chat_id):
                 headers=headers
             )
             data = response.json()
-            if data:
-                return data[0]
-            return None
+            return data[0] if data else None
         except:
             return None
 
 
-async def add_xp(chat_id, first_name, amount=10):
+async def add_xp(chat_id, first_name, action="general"):
+    """Add small XP based on user action"""
+    
+    xp_amount = 5
+    
+    if action == "view_win_office":
+        xp_amount = 5
+    elif action == "view_netflix":
+        xp_amount = 5
+    elif action == "reveal_netflix":
+        xp_amount = 5
+    elif action == "profile":
+        xp_amount = 3
+    elif action == "clear":
+        xp_amount = 1
+    elif action == "guidance":
+        xp_amount = 5
+
     profile = await get_user_profile(chat_id)
     
     headers = {
@@ -124,8 +139,8 @@ async def add_xp(chat_id, first_name, amount=10):
     }
 
     if profile:
-        new_xp = profile['xp'] + amount
-        new_level = (new_xp // 300) + 1   # Every 300 XP = 1 level
+        new_xp = profile.get('xp', 0) + xp_amount
+        new_level = (new_xp // 300) + 1
 
         payload = {
             "xp": new_xp,
@@ -141,11 +156,11 @@ async def add_xp(chat_id, first_name, amount=10):
                 json=payload
             )
     else:
-        # Create new profile
+        # New user
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": amount,
+            "xp": xp_amount + 10,   # welcome bonus
             "level": 1
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -154,7 +169,6 @@ async def add_xp(chat_id, first_name, amount=10):
                 headers=headers,
                 json=payload
             )
-
 
 def get_level_title(level):
     titles = {
@@ -255,38 +269,30 @@ async def send_myid(chat_id):
 
 # ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
+    await add_xp(chat_id, first_name, "profile")   # Give XP when viewing profile
+    
     profile = await get_user_profile(chat_id)
     
     if not profile:
-        # First time user
-        await add_xp(chat_id, first_name, amount=20)  # Give welcome bonus
-        profile = await get_user_profile(chat_id)
+        profile = await get_user_profile(chat_id)  # refresh
 
     level = profile['level']
     xp = profile['xp']
-    xp_to_next = (level * 300) - xp   # Simple progression
+    xp_to_next = 300 - (xp % 300)
 
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ **Title:** {get_level_title(level)}\n"
-        f"⭐ **Level:** {level}\n"
-        f"✨ **Experience:** {xp} XP\n"
-    )
-
-    if xp_to_next > 0:
-        caption += f"📈 **Next Level:** {xp_to_next} XP more\n\n"
-    else:
-        caption += "🌟 **You have reached the highest known level!**\n\n"
-
-    caption += (
-        "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i>\n\n"
-        "Keep wandering, kind soul. 🍃"
+        f"🏷️ Title: {get_level_title(level)}\n"
+        f"⭐ Level: {level}\n"
+        f"✨ Experience: {xp} XP\n"
+        f"📈 To Next Level: {xp_to_next} XP\n\n"
+        "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
 
     await tg_app.bot.send_animation(
         chat_id=chat_id,
-        animation=MYID_GIF,        # You can change this GIF later
+        animation=MYID_GIF,
         caption=caption,
         parse_mode='HTML'
     )
@@ -563,6 +569,8 @@ async def handle_clear(chat_id, user_command_id):
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(final_msg.message_id)
 
+    await add_xp(chat_id, "Wanderer", "clear")   # Give small XP for clearing
+
     print(f"🌿 Chat cleared magically for user {chat_id}")
     
 # ==================== CALLBACK ====================
@@ -623,6 +631,12 @@ async def handle_callback(update: Update):
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
         is_full_view = query.data.startswith("vamt_all_")
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
+
+        # Give XP when viewing inventory
+        if category in ["win", "office"]:
+            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_win_office")
+        elif category == "netflix":
+            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_netflix")
 
         loading_text = "📜 <i>Unrolling the ancient scroll...</i>" if is_full_view else f"✨ <i>Searching the glade for {category.upper()}...</i>"
         await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
@@ -753,6 +767,9 @@ async def handle_callback(update: Update):
 
         status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
+        # Give XP for revealing Netflix cookie
+        await add_xp(update.effective_chat.id, update.effective_user.first_name, "reveal_netflix")
+
         report = (
             f"<b>🍿 {display_name} Revealed</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -767,6 +784,7 @@ async def handle_callback(update: Update):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="vamt_filter_netflix")]
         ])
+
 
         await query.message.edit_caption(
             caption=report, 
@@ -816,7 +834,7 @@ async def handle_callback(update: Update):
         if chat_id not in forest_memory: forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
-    # ====================== HELP (Guidance) - Paginated ======================
+    # ====================== HELP (Guidance) - 2 Pages ======================
     elif query.data == "help" or query.data.startswith("help_page_"):
         try: await query.message.delete()
         except: pass
@@ -838,39 +856,54 @@ async def handle_callback(update: Update):
 
         if page == 1:
             text = (
-                "<b>❓ Guidance - Part 1/2</b>\n\n"
-                "🌿 <b>How to Navigate</b>\n"
-                "• Tap any button to explore\n"
-                "• Use <code>/menu</code> to return here\n"
-                "• Use <code>/clear</code> to refresh the path\n\n"
+                "<b>❓ Guidance - Page 1/2</b>\n\n"
+                "🌿 <b>How to Navigate the Clearing</b>\n"
+                "• Tap any button to explore the paths\n"
+                "• Use <code>/menu</code> to return here anytime\n"
+                "• Use <code>/clear</code> to renew your path\n\n"
                 
-                "📜 <b>Commands</b>\n"
-                "• <code>/start</code> — Begin your journey\n"
-                "• <code>/menu</code> — Return to Clearing\n"
-                "• <code>/myid</code> — Reveal your spirit ID\n"
-                "• <code>/profile</code> — View your level & progress\n"
-                "• <code>/clear</code> — Renew the clearing\n"
-                "• <code>/feedback</code> — Message the caretaker\n\n"
-                "<i>Tap Next to continue...</i>"
-            )
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Next →", callback_data="help_page_2")]
-            ])
-        else:
-            text = (
-                "<b>❓ Guidance - Part 2/2</b>\n\n"
-                "🌲 <b>Treasures in the Forest</b>\n"
+                "📜 <b>Available Commands</b>\n"
+                "• <code>/start</code> — Begin your journey anew\n"
+                "• <code>/menu</code> — Return to the Enchanted Clearing\n"
+                "• <code>/myid</code> — Reveal your forest spirit identity\n"
+                "• <code>/profile</code> — View your Forest Profile & Level\n"
+                "• <code>/clear</code> — Cleanse and renew the clearing\n"
+                "• <code>/feedback</code> — Send your thoughts to the caretaker\n\n"
+                
+                "🌲 <b>Treasures You Can Discover</b>\n"
                 "• 🪄 Spirit Treasures — Steam accounts\n"
                 "• 📜 Ancient Scrolls — Learning guides\n"
                 "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
                 "• 🌲 The Whispering Forest — Main resource hub\n\n"
-                
+                "<i>Tap Next → to learn about the Leveling System</i>"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Next →", callback_data="help_page_2")]
+            ])
+
+        else:
+            # ==================== PAGE 2: LEVELING SYSTEM ====================
+            text = (
+                "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
-                "As you explore, you gain <b>Experience (XP)</b>.\n"
-                "Every <b>300 XP</b> = 1 Level Up + New Title\n\n"
-                "• Use <code>/profile</code> to see your progress\n"
-                "• The more you wander, the stronger your bond with the forest grows.\n\n"
-                "<i>May this knowledge light your path.</i> 🍃✨"
+                "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
+                "Every <b>300 XP</b> you collect, you level up and earn a new title.\n\n"
+                
+                "<b>How to Gain XP:</b>\n"
+                "• View Windows or Office Keys → <b>+8 XP</b>\n"
+                "• View Netflix Keys → <b>+10 XP</b>\n"
+                "• Reveal a Netflix Cookie → <b>+10 XP</b>\n"
+                "• Use <code>/profile</code> or <code>/clear</code> → <b>+5 XP</b>\n"
+                "• Read Guidance or Lore → <b>+8 XP</b>\n\n"
+                
+                "<b>Some Forest Titles You Can Earn:</b>\n"
+                "• Level 1  → 🌱 Young Sprout\n"
+                "• Level 3  → 🍃 Gentle Wanderer\n"
+                "• Level 5  → 🌲 Whispering Wanderer\n"
+                "• Level 7  → 🌌 Mist Walker\n"
+                "• Level 10 → 🌟 Eternal Guardian\n\n"
+                
+                "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
             )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")]
