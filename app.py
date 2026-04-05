@@ -165,19 +165,17 @@ async def handle_callback(update: Update):
     await query.answer()
 
     # ====================== MAIN MENU & CLEARING ======================
+    # Main Menu & Clearing - Fixed Version
     if query.data in ["show_main_menu", "main_menu"]:
-        # Gentle transition
+        # Delete whatever is currently shown
         try:
-            await query.message.edit_caption(
-                caption="🌿 <i>Returning to the Enchanted Clearing...</i>", 
-                parse_mode='HTML', 
-                reply_markup=None
-            )
+            await query.message.delete()
         except:
             pass
 
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.8)
 
+        # Create loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -185,13 +183,13 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.3)
+        await asyncio.sleep(1.2)
         await loading_msg.edit_caption(
             caption="🌲 <i>The ancient trees bow to welcome you back...</i>", 
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.3)
+        await asyncio.sleep(1.2)
         await loading_msg.edit_caption(
             caption="✨ <i>You have arrived at the heart of the clearing once more.</i>", 
             parse_mode='HTML'
@@ -199,13 +197,14 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(0.8)
 
+        # Send the main menu
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
-        # Clean up loading animation
+        # Force delete the loading animation
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
-        except:
-            pass
+        except Exception as e:
+            print(f"Failed to delete loading msg: {e}")
 
     # ====================== INVENTORY ======================
     elif query.data == "check_vamt":
