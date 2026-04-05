@@ -312,6 +312,58 @@ async def handle_profile(chat_id, first_name):
         parse_mode='HTML'
     )
 
+# ==================== LEADERBOARD COMMAND ======================
+async def handle_leaderboard(chat_id):
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?select=first_name,xp,level&order=xp.desc&limit=10",
+                headers=headers
+            )
+            
+            data = response.json()
+
+            if not data:
+                await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="🌿 The forest leaderboard is currently empty.\nBe the first to climb the ranks!"
+                )
+                return
+
+            text = "🏆 <b>Top Wanderers of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+
+            for rank, user in enumerate(data, 1):
+                name = html.escape(user.get('first_name', 'Mysterious Wanderer'))
+                xp = user.get('xp', 0)
+                level = user.get('level', 1)
+                title = get_level_title(level)
+
+                medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
+                
+                text += f"{medal} <b>{name}</b>\n"
+                text += f"   {title} • Level {level}\n"
+                text += f"   ✨ {xp} XP\n\n"
+
+            text += "<i>May the best wanderer continue to shine brightly.</i> 🍃✨"
+
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode='HTML'
+            )
+
+        except Exception as e:
+            print(f"🔴 Leaderboard error: {e}")
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="🌫️ The ancient trees are having trouble reading the leaderboard right now..."
+            )
+
 # ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
     # Get current time in Philippines timezone for display
@@ -984,6 +1036,9 @@ def webhook():
             # ==================== COMMAND HANDLERS ====================
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
+
+            elif text.startswith("/leaderboard") or text.startswith("/top"):
+                await handle_leaderboard(chat_id)
 
             elif text.startswith("/profile"):
                 await handle_profile(chat_id, name)
