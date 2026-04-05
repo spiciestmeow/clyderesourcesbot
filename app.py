@@ -112,10 +112,10 @@ async def get_user_profile(chat_id):
 
 
 async def add_xp(chat_id, first_name, action="general"):
-    """Add small XP based on user action"""
+    """Add XP with progressive level requirements"""
     
+    # XP per action
     xp_amount = 5
-    
     if action == "view_win_office":
         xp_amount = 5
     elif action == "view_netflix":
@@ -140,7 +140,17 @@ async def add_xp(chat_id, first_name, action="general"):
 
     if profile:
         new_xp = profile.get('xp', 0) + xp_amount
-        new_level = (new_xp // 300) + 1
+        current_level = profile.get('level', 1)
+        
+        # Progressive XP calculation
+        total_xp_needed = 0
+        for lvl in range(1, current_level + 1):
+            total_xp_needed += 300 + (lvl * 100)   # 400, 500, 600, 700, ...
+
+        new_level = current_level
+        while new_xp >= total_xp_needed:
+            new_level += 1
+            total_xp_needed += 300 + (new_level * 100)
 
         payload = {
             "xp": new_xp,
@@ -160,7 +170,7 @@ async def add_xp(chat_id, first_name, action="general"):
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": xp_amount + 10,   # welcome bonus
+            "xp": xp_amount + 10,
             "level": 1
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -268,25 +278,32 @@ async def send_myid(chat_id):
     forest_memory[chat_id].append(msg.message_id)
 
 # ==================== PROFILE COMMAND ======================
+# ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
     await add_xp(chat_id, first_name, "profile")   # Give XP when viewing profile
     
     profile = await get_user_profile(chat_id)
     
     if not profile:
-        profile = await get_user_profile(chat_id)  # refresh
+        profile = await get_user_profile(chat_id)  # refresh if needed
 
     level = profile['level']
     xp = profile['xp']
-    xp_to_next = 300 - (xp % 300)
+
+    # Calculate total XP needed to reach NEXT level (progressive)
+    total_xp_for_next_level = 0
+    for lvl in range(1, level + 1):
+        total_xp_for_next_level += 300 + (lvl * 100)   # 400, 500, 600, 700, ...
+
+    xp_to_next = total_xp_for_next_level - xp
 
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ Title: {get_level_title(level)}\n"
-        f"⭐ Level: {level}\n"
-        f"✨ Experience: {xp} XP\n"
-        f"📈 To Next Level: {xp_to_next} XP\n\n"
+        f"🏷️ **Title:** {get_level_title(level)}\n"
+        f"⭐ **Level:** {level}\n"
+        f"✨ **Experience:** {xp} XP\n"
+        f"📈 **To Next Level:** {xp_to_next} XP\n\n"
         "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
 
@@ -627,7 +644,7 @@ async def handle_callback(update: Update):
             reply_markup=get_inventory_categories()
         )
 
-    # ====================== FILTERED INVENTORY ======================
+    # ====================== FILTERED INVENTORY (Level-based Limit) ======================
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
         is_full_view = query.data.startswith("vamt_all_")
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
@@ -638,11 +655,14 @@ async def handle_callback(update: Update):
         elif category == "netflix":
             await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_netflix")
 
+        # Get user level
+        profile = await get_user_profile(update.effective_chat.id)
+        user_level = profile['level'] if profile else 1
+
         loading_text = "📜 <i>Unrolling the ancient scroll...</i>" if is_full_view else f"✨ <i>Searching the glade for {category.upper()}...</i>"
         await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
 
         data = await get_vamt_data()
-        
         if not data:
             await query.message.edit_caption(
                 caption="🌫️ <i>The mist is too thick... Database connection failed.</i>",
@@ -654,18 +674,12 @@ async def handle_callback(update: Update):
         for item in data:
             s_type = str(item.get('service_type', '')).lower().strip()
 
-            if category == "netflix":
-                if "netflix" in s_type:
-                    filtered.append(item)
-            elif category == "win":
-                if any(x in s_type for x in ["windows", "win"]):
-                    filtered.append(item)
-            elif category == "office":
-                if "office" in s_type:
-                    filtered.append(item)
-            else:
-                if category in s_type:
-                    filtered.append(item)
+            if category == "netflix" and "netflix" in s_type:
+                filtered.append(item)
+            elif category == "win" and any(x in s_type for x in ["windows", "win"]):
+                filtered.append(item)
+            elif category == "office" and "office" in s_type:
+                filtered.append(item)
 
         if not filtered:
             await query.message.edit_caption(
@@ -674,17 +688,29 @@ async def handle_callback(update: Update):
             )
             return
 
+        # === Level-based limit (Same rule for all categories) ===
+        if user_level == 1:
+            limit = 1
+            limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
+        elif user_level <= 4:
+            limit = 3
+            limit_note = f"🌿 At Level {user_level}, you can see up to 3 items."
+        else:
+            limit = len(filtered)
+            limit_note = ""
+
         # ====================== NETFLIX ======================
         if category == "netflix":
             report = (
                 "<b>🍿 Secret Netflix Cookies of the Forest</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"📦 <b>{len(filtered)} Cookies Resting in the Glade</b>\n\n"
+                f"📦 <b>{len(filtered)} Cookies Resting in the Glade</b>\n"
+                f"{limit_note}\n\n"
                 "<i>Which one whispers to your spirit?</i>\n\n"
             )
 
             buttons = []
-            for idx, item in enumerate(filtered, 1):
+            for idx, item in enumerate(filtered[:limit], 1):
                 display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
                 status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
@@ -703,6 +729,23 @@ async def handle_callback(update: Update):
             await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
             return
 
+        # ====================== WINDOWS & OFFICE ======================
+        report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+
+        for item in filtered[:limit]:
+            product = item.get('service_type', 'Unknown')
+            key = item.get('key_id', 'HIDDEN')
+            raw_val = int(item.get('remaining') or 0)
+            stock_text = f"{raw_val}" if raw_val > 0 else "Out of stock"
+
+            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{stock_text}</b>\n\n"
+
+        if limit < len(filtered):
+            report += f"━━━━━━━━━━━━━━━━━━\n<i>Level up to see more scrolls hidden in the shadows...</i>"
+
+        kb = get_back_to_inventory_keyboard()
+
+        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
         # ====================== WINDOWS & OFFICE ======================
         limit = len(filtered) if is_full_view else 3
         report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
@@ -887,18 +930,29 @@ async def handle_callback(update: Update):
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
                 "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
-                "Every <b>300 XP</b> you collect, you level up and earn a new title.\n\n"
+                "The higher your level, the more XP needed to level up again.\n\n"
                 
                 "<b>How to Gain XP:</b>\n"
-                "• View Windows or Office Keys → <b>+8 XP</b>\n"
-                "• View Netflix Keys → <b>+10 XP</b>\n"
-                "• Reveal a Netflix Cookie → <b>+10 XP</b>\n"
-                "• Use <code>/profile</code> or <code>/clear</code> → <b>+5 XP</b>\n"
-                "• Read Guidance or Lore → <b>+8 XP</b>\n\n"
+                "• View Windows or Office Keys → <b>+5 XP</b>\n"
+                "• View Netflix Keys → <b>+5 XP</b>\n"
+                "• Reveal a Netflix Cookie → <b>+5 XP</b>\n"
+                "• Use <code>/profile</code> → <b>+3 XP</b>\n"
+                "• Use <code>/clear</code> → <b>+1 XP</b>\n"
+                "• Read Guidance or Lore → <b>+5 XP</b>\n\n"
                 
-                "<b>Some Forest Titles You Can Earn:</b>\n"
+                "<b>Level Requirements (Increasing):</b>\n"
+                "• Level 2  → 400 XP\n"
+                "• Level 3  → 500 XP\n"
+                "• Level 4  → 600 XP\n"
+                "• Level 5  → 700 XP\n"
+                "• Level 6  → 800 XP\n"
+                "• Level 7  → 900 XP\n"
+                "• Level 8  → 1000 XP\n"
+                "• Level 9  → 1100 XP\n"
+                "• Level 10 → 1200 XP\n\n"
+                
+                "<b>Some Forest Titles:</b>\n"
                 "• Level 1  → 🌱 Young Sprout\n"
-                "• Level 3  → 🍃 Gentle Wanderer\n"
                 "• Level 5  → 🌲 Whispering Wanderer\n"
                 "• Level 7  → 🌌 Mist Walker\n"
                 "• Level 10 → 🌟 Eternal Guardian\n\n"
