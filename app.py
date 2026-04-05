@@ -350,14 +350,14 @@ async def handle_callback(update: Update):
 
     # 🌟 ABOUT (Lore)
     elif query.data == "about":
-        try: await query.message.edit_caption(caption="✨ <i>Consulting the ancient records...</i>", parse_mode='HTML', reply_markup=None)
-        except: pass
+        # try: await query.message.edit_caption(caption="✨ <i>Consulting the ancient records...</i>", parse_mode='HTML', reply_markup=None)
+        # except: pass
 
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id, 
-            animation=LOADING_GIF, 
-            caption="..."
-        )
+        # loading_msg = await tg_app.bot.send_animation(
+        #     chat_id=update.effective_chat.id, 
+        #     animation=LOADING_GIF, 
+        #     caption="..."
+        # )
         
         await asyncio.sleep(1.2)
         await loading_msg.edit_caption(caption="🍃 <i>Gathering history from the leaves...</i>", parse_mode='HTML')
@@ -385,14 +385,14 @@ async def handle_callback(update: Update):
 
     # 🌟 HELP (Guidance)
     elif query.data == "help":
-        try: await query.message.edit_caption(caption="✨ <i>Calling the forest guides...</i>", parse_mode='HTML', reply_markup=None)
-        except: pass
+        # try: await query.message.edit_caption(caption="✨ <i>Calling the forest guides...</i>", parse_mode='HTML', reply_markup=None)
+        # except: pass
 
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id, 
-            animation=LOADING_GIF, 
-            caption="..."
-        )
+        # loading_msg = await tg_app.bot.send_animation(
+        #     chat_id=update.effective_chat.id, 
+        #     animation=LOADING_GIF, 
+        #     caption="..."
+        # )
         
         await asyncio.sleep(1.2)
         await loading_msg.edit_caption(caption="🍃 <i>Clearing the path for a wanderer...</i>", parse_mode='HTML')
