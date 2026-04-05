@@ -92,7 +92,6 @@ def get_first_time_menu_keyboard():
     ])
 
 # ==================== LEVELING SYSTEM HELPERS ====================
-
 async def get_user_profile(chat_id):
     headers = {
         "apikey": SUPABASE_KEY,
@@ -819,32 +818,28 @@ async def handle_callback(update: Update):
         )
         await asyncio.sleep(1.8)
 
-        # === Get user level and rebuild the SAME limited list ===
+        # === Get user level and rebuild the SAME limited list as the display ===
         profile = await get_user_profile(update.effective_chat.id)
         user_level = profile['level'] if profile else 1
 
-        if user_level == 1:
-            limit = 1
-        elif user_level <= 4:
-            limit = 3
-        else:
-            limit = 999   # show all
+        limit = 1 if user_level == 1 else 3 if user_level <= 4 else 999
 
         data = await get_vamt_data()
         if not data:
             await query.answer("Database error", show_alert=True)
             return
 
+        # Build the exact same filtered list that was shown to the user
         filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-
-        # Use the same order as the display
         filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
 
+        # Safety check
         if idx < 1 or idx > len(filtered[:limit]):
             await query.answer(f"❌ Cookie not found", show_alert=True)
             return
 
-        item = filtered[idx - 1]   # Take from the limited list
+        # Take the item from the LIMITED list (this fixes the inconsistency)
+        item = filtered[idx - 1]
 
         cookie = str(item.get('key_id', '')).strip()
         display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
@@ -962,7 +957,8 @@ async def handle_callback(update: Update):
                 "<i>Tap Next → to learn about the Leveling System</i>"
             )
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Next →", callback_data="help_page_2")]
+                [InlineKeyboardButton("Next →", callback_data="help_page_2")],
+                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
         else:
@@ -982,9 +978,9 @@ async def handle_callback(update: Update):
                 "• Read Guidance or Lore → <b>+5 XP</b>\n\n"
                 
                 "<b>Items Shown Per Level:</b>\n"
-                "• Level 1 → Only **1 item** per category\n"
-                "• Level 2–4 → Up to **3 items** per category\n"
-                "• Level 5+ → **All items** shown\n\n"
+                "• Level 1 → Only <b>1 item</b> per category\n"
+                "• Level 2–4 → Up to <b>3 items</b> per category\n"
+                "• Level 5+ → <b>All items</b> shown\n\n"
                 
                 "<b>Level Requirements (Progressive):</b>\n"
                 "• Level 2 → 400 XP\n"
@@ -1000,7 +996,8 @@ async def handle_callback(update: Update):
                 "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
             )
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("← Previous", callback_data="help_page_1")]
+                [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
+                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
         final_msg = await tg_app.bot.send_animation(
