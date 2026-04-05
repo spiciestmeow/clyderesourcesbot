@@ -278,14 +278,12 @@ async def send_myid(chat_id):
     forest_memory[chat_id].append(msg.message_id)
 
 # ==================== PROFILE COMMAND ======================
-# ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
-    await add_xp(chat_id, first_name, "profile")   # Give XP when viewing profile
+    await add_xp(chat_id, first_name, "profile")
     
     profile = await get_user_profile(chat_id)
-    
     if not profile:
-        profile = await get_user_profile(chat_id)  # refresh if needed
+        profile = await get_user_profile(chat_id)
 
     level = profile['level']
     xp = profile['xp']
@@ -293,17 +291,17 @@ async def handle_profile(chat_id, first_name):
     # Calculate total XP needed to reach NEXT level (progressive)
     total_xp_for_next_level = 0
     for lvl in range(1, level + 1):
-        total_xp_for_next_level += 300 + (lvl * 100)   # 400, 500, 600, 700, ...
+        total_xp_for_next_level += 300 + (lvl * 100)
 
     xp_to_next = total_xp_for_next_level - xp
 
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ **Title:** {get_level_title(level)}\n"
-        f"⭐ **Level:** {level}\n"
-        f"✨ **Experience:** {xp} XP\n"
-        f"📈 **To Next Level:** {xp_to_next} XP\n\n"
+        f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
+        f"⭐ <b>Level:</b> {level}\n"
+        f"✨ <b>Experience:</b> {xp} XP\n"
+        f"📈 <b>To Next Level:</b> {xp_to_next} XP\n\n"
         "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
 
@@ -746,28 +744,6 @@ async def handle_callback(update: Update):
         kb = get_back_to_inventory_keyboard()
 
         await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
-        # ====================== WINDOWS & OFFICE ======================
-        limit = len(filtered) if is_full_view else 3
-        report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-
-        for item in filtered[:limit]:
-            product = item.get('service_type', 'Unknown')
-            key = item.get('key_id', 'HIDDEN')
-            raw_val = int(item.get('remaining') or 0)
-            stock_text = f"{raw_val}" if raw_val > 0 else "Out of stock"
-
-            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{stock_text}</b>\n\n"
-
-        if not is_full_view and len(filtered) > 3:
-            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden in the shadows.</i>"
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📜 Show All", callback_data=f"vamt_all_{category}")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
-            ])
-        else:
-            kb = get_back_to_inventory_keyboard()
-
-        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
     # ====================== REVEAL NETFLIX ======================
     elif query.data.startswith("reveal_nf|"):
@@ -898,6 +874,7 @@ async def handle_callback(update: Update):
         await asyncio.sleep(1.2)
 
         if page == 1:
+            # ==================== PAGE 1 ====================
             text = (
                 "<b>❓ Guidance - Page 1/2</b>\n\n"
                 "🌿 <b>How to Navigate the Clearing</b>\n"
@@ -930,7 +907,7 @@ async def handle_callback(update: Update):
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
                 "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
-                "The higher your level, the more XP needed to level up again.\n\n"
+                "The higher your level, the more XP needed to level up.\n\n"
                 
                 "<b>How to Gain XP:</b>\n"
                 "• View Windows or Office Keys → <b>+5 XP</b>\n"
@@ -940,22 +917,21 @@ async def handle_callback(update: Update):
                 "• Use <code>/clear</code> → <b>+1 XP</b>\n"
                 "• Read Guidance or Lore → <b>+5 XP</b>\n\n"
                 
-                "<b>Level Requirements (Increasing):</b>\n"
-                "• Level 2  → 400 XP\n"
-                "• Level 3  → 500 XP\n"
-                "• Level 4  → 600 XP\n"
-                "• Level 5  → 700 XP\n"
-                "• Level 6  → 800 XP\n"
-                "• Level 7  → 900 XP\n"
-                "• Level 8  → 1000 XP\n"
-                "• Level 9  → 1100 XP\n"
-                "• Level 10 → 1200 XP\n\n"
+                "<b>Items Shown Per Level:</b>\n"
+                "• Level 1 → Only **1 item** per category\n"
+                "• Level 2–4 → Up to **3 items** per category\n"
+                "• Level 5+ → **All items** shown\n\n"
                 
-                "<b>Some Forest Titles:</b>\n"
-                "• Level 1  → 🌱 Young Sprout\n"
-                "• Level 5  → 🌲 Whispering Wanderer\n"
-                "• Level 7  → 🌌 Mist Walker\n"
-                "• Level 10 → 🌟 Eternal Guardian\n\n"
+                "<b>Level Requirements (Progressive):</b>\n"
+                "• Level 2 → 400 XP\n"
+                "• Level 3 → 550 XP\n"
+                "• Level 4 → 700 XP\n"
+                "• Level 5 → 850 XP\n"
+                "• Level 6 → 1000 XP\n"
+                "• Level 7 → 1150 XP\n"
+                "• Level 8 → 1300 XP\n"
+                "• Level 9 → 1450 XP\n"
+                "• Level 10 → 1600 XP\n\n"
                 
                 "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
             )
