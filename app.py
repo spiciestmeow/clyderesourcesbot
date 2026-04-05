@@ -352,7 +352,7 @@ async def handle_reset_first_time(chat_id):
 
     print(f"✅ First-time flag reset for owner {chat_id}")
 
-# --- CLEAR FUNCTION - More Magical Version ---
+# --- CLEAR FUNCTION - Magical + Fixed (No Double GIF) ---
 async def handle_clear(chat_id, user_command_id):
     # Delete the user's /clear command message
     try: 
@@ -369,13 +369,54 @@ async def handle_clear(chat_id, user_command_id):
                 pass
         forest_memory[chat_id] = []
 
-    # Magical Clearing Sequence
+    # ====================== MAGICAL CLEARING SEQUENCE ======================
     loading_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
-        animation=CLEAN_GIF,                    # Using your CLEAN_GIF
+        animation=CLEAN_GIF,
         caption="🌫️ <b>The ancient mist begins to thicken...</b>",
         parse_mode="HTML"
     )
+
+    await asyncio.sleep(1.8)
+    await loading_msg.edit_caption(
+        "🍃 <b>The wind spirit awakens...</b>\n"
+        "Whispers of old paths are being carried away...", 
+        parse_mode="HTML"
+    )
+
+    await asyncio.sleep(2.0)
+    await loading_msg.edit_caption(
+        "✨ <b>The forest is resetting...</b>\n"
+        "All footprints are gently erased by the glowing leaves.", 
+        parse_mode="HTML"
+    )
+
+    await asyncio.sleep(1.5)
+
+    # 🔥 IMPORTANT: Delete the loading animation BEFORE showing final message
+    try:
+        await tg_app.bot.delete_message(chat_id, loading_msg.message_id)
+    except:
+        pass
+
+    # ====================== FINAL RENEWED MESSAGE ======================
+    final_msg = await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=LOADING_GIF,           # Change to CLEAN_GIF if you prefer
+        caption="🌿 <b>The Enchanted Clearing has been renewed.</b>\n\n"
+                "The trees stand tall and fresh once more.\n"
+                "Your path is now pure and open.\n\n"
+                "<i>May new adventures find you, kind wanderer.</i> 🍃✨",
+        parse_mode="HTML",
+        reply_markup=get_start_keyboard()
+    )
+
+    # Add only the final message to memory
+    if chat_id not in forest_memory:
+        forest_memory[chat_id] = []
+    forest_memory[chat_id].append(final_msg.message_id)
+
+    print(f"🌿 Chat cleared magically for user {chat_id}")
 
     await asyncio.sleep(1.8)
     await loading_msg.edit_caption("🍃 <b>The wind spirit awakens...</b>\n"
