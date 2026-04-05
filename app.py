@@ -166,22 +166,30 @@ async def handle_callback(update: Update):
 
     # Main Menu & Clearing
     if query.data in ["show_main_menu", "main_menu"]:
-        try: await query.message.edit_caption(caption="✨ <i>The mist begins to part...</i>", parse_mode='HTML', reply_markup=None)
-        except: pass
-        
-        await asyncio.sleep(0.8)
-        try: await query.message.delete()
-        except: pass
+        # Delete current message (About/Help/Guidance) so it disappears
+        try:
+            await query.message.delete()
+        except:
+            pass
 
-        loading_msg = await tg_app.bot.send_animation(chat_id=update.effective_chat.id, animation=LOADING_GIF, caption="...")
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=update.effective_chat.id, 
+            animation=LOADING_GIF, 
+            caption="..."
+        )
         
-        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="🌲 <i>The ancient trees bow to reveal a hidden path...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2); await loading_msg.edit_caption(caption="✨ <i>You have arrived at the heart of the clearing.</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2)
+        await loading_msg.edit_caption(caption="🌲 <i>The ancient trees bow to reveal a hidden path...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2)
+        await loading_msg.edit_caption(caption="✨ <i>You have arrived at the heart of the clearing.</i>", parse_mode='HTML')
         await asyncio.sleep(0.8)
         
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
-        try: await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
-        except: pass
+        
+        try:
+            await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
+        except:
+            pass
 
     elif query.data == "check_vamt":
         await query.message.edit_caption(
@@ -234,7 +242,6 @@ async def handle_callback(update: Update):
             )
             return
 
-        # ====================== NETFLIX - MULTIPLE COOKIES ======================
         # ====================== NETFLIX - MULTIPLE COOKIES ======================
         if category == "netflix":
             report = (
@@ -361,15 +368,13 @@ async def handle_callback(update: Update):
             reply_markup=kb
         )
 
-    # 🌟 ABOUT (Lore) - Fixed & Clean Version
+    # 🌟 ABOUT (Lore)
     elif query.data == "about":
-        # Delete current message to avoid conflicts
         try:
             await query.message.delete()
         except:
             pass
 
-        # Send loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -379,10 +384,8 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
         await loading_msg.edit_caption(caption="🍃 <i>Gathering history from the leaves...</i>", parse_mode='HTML')
-
         await asyncio.sleep(1.2)
         await loading_msg.edit_caption(caption="✨ <i>The story is ready...</i>", parse_mode='HTML')
-
         await asyncio.sleep(0.8)
 
         text = (
@@ -392,7 +395,6 @@ async def handle_callback(update: Update):
             "<i>May this small corner bring you joy.</i> 🍃✨"
         )
 
-        # Send final message
         final_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=ABOUT_GIF,
@@ -401,13 +403,13 @@ async def handle_callback(update: Update):
             reply_markup=get_back_keyboard()
         )
 
-        # Add to memory so /clear works
+        # Save only the final message to memory
         chat_id = update.effective_chat.id
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
-    # 🌟 HELP (Guidance) - Fixed & Clean Version
+    # 🌟 HELP (Guidance)
     elif query.data == "help":
         try:
             await query.message.delete()
@@ -423,10 +425,8 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
         await loading_msg.edit_caption(caption="🍃 <i>Clearing the path for a wanderer...</i>", parse_mode='HTML')
-
         await asyncio.sleep(1.2)
         await loading_msg.edit_caption(caption="✨ <i>The map is revealed...</i>", parse_mode='HTML')
-
         await asyncio.sleep(0.8)
 
         text = (
@@ -455,7 +455,7 @@ async def handle_callback(update: Update):
             reply_markup=get_back_keyboard()
         )
 
-        # Add to memory
+        # Save only the final message to memory
         chat_id = update.effective_chat.id
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
