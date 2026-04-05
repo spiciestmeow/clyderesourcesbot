@@ -211,9 +211,8 @@ async def handle_callback(update: Update):
         report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n\n"
         for item in preview:
             product = item.get('service_type', 'Product')
-            count = item.get('remaining', 0)
+            # count = item.get('remaining', 0)
             key = item.get('key_id', 'HIDDEN')
-            # 'remaining' now holds your text status like "Fresh" or "15 Left"
             info_val = item.get('remaining', 'Stable')
 
             # 🌟 THE SWITCH: Check if it's Netflix to change the label
@@ -227,7 +226,7 @@ async def handle_callback(update: Update):
                 logo = "📦"
 
 
-            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{count}</b>\n\n"
+            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
 
         if has_more:
             report += f"<i>... and {len(filtered_data) - limit} more hidden in the mist.</i>"
@@ -254,9 +253,22 @@ async def handle_callback(update: Update):
         report = f"<b>📜 ALL {category.upper()} SCROLLS REVEALED</b>\n\n"
         for item in filtered_data:
             product = item.get('service_type', 'Product')
-            count = item.get('remaining', 0)
+            # count = item.get('remaining', 0)
             key = item.get('key_id', 'HIDDEN')
-            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+            info_val = item.get('remaining', 'Stable')
+
+            # 🌟 THE SWITCH: Check if it's Netflix to change the label
+            if "netflix" in product.lower():
+                icon = "🍿"
+                label = "Status"
+                logo = "🌿"
+            else:
+                icon = "✨"
+                label = "Stock"
+                logo = "📦"
+
+                
+            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
             
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>The full clearing is visible.</i> 🌿"
         
