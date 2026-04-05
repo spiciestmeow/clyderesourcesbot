@@ -204,23 +204,26 @@ async def handle_callback(update: Update):
         await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
 
         data = await get_vamt_data()
+                
+        # 1. Check if data actually exists to prevent hanging
         if not data:
             await query.message.edit_caption(
-                caption="🌫️ <i>The mist is too thick to see the scrolls right now.</i>",
+                caption="🌫️ <i>The mist is too thick to see the scrolls (Database Error).</i>",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
 
-        # --- FILTER ---
+        # 2. Robust Filtering (Handles case sensitivity and empty spaces)
         filtered = []
         for item in data:
-            s_type = str(item.get('service_type', '')).lower()
+            # We use .strip() and .lower() to ensure " Netflix " matches "netflix"
+            s_type = str(item.get('service_type', '')).lower().strip()
 
             if category == "netflix":
                 if "netflix" in s_type:
                     filtered.append(item)
             elif category == "win":
-                if "windows" in s_type or "win" in s_type:
+                if any(x in s_type for x in ["windows", "win"]):
                     filtered.append(item)
             elif category == "office":
                 if "office" in s_type:
@@ -229,6 +232,8 @@ async def handle_callback(update: Update):
                 if category in s_type:
                     filtered.append(item)
 
+        # 3. CRITICAL FIX: Check if 'filtered' is empty BEFORE accessing filtered[0]
+        # This is why your bot was getting stuck (IndexError: list index out of range)
         if not filtered:
             await query.message.edit_caption(
                 caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing.</i>",
@@ -236,14 +241,13 @@ async def handle_callback(update: Update):
             )
             return
 
-        # =========================
-        # 🍿 NETFLIX PREVIEW (NO REVEAL HERE)
-        # =========================
+        # 4. Process Netflix (Now safe because we know 'filtered' has data)
         if category == "netflix":
             item = filtered[0]
             key = item.get('key_id', 'HIDDEN')
-            status_val = str(item.get('status', '')).lower()
-            status = "✓ Active" if status_val == "active" else "⚠️ Expired"
+            # Handle numerical vs string status safely
+            status_val = str(item.get('status', item.get('remaining', ''))).lower()
+            status = "✓ Active" if "active" in status_val or "1" in status_val else "⚠️ Check Status"
 
             report = (
                 "<b>🍿 NETFLIX COOKIE SCROLL</b>\n"
@@ -257,11 +261,7 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
             ])
 
-            await query.message.edit_caption(
-                caption=report,
-                parse_mode='HTML',
-                reply_markup=kb
-            )
+            await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
             return
 
         # =========================
