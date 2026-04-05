@@ -310,30 +310,31 @@ async def handle_callback(update: Update):
             await query.answer("Database error", show_alert=True)
             return
 
-        # Get Netflix items + sort for stable order
         netflix_items = [
             item for item in data 
             if "netflix" in str(item.get('service_type', '')).lower()
         ]
         netflix_items.sort(key=lambda x: str(x.get('last_updated', '')), reverse=True)
 
-        print(f"DEBUG: Reveal requested for Netflix #{idx} | Found {len(netflix_items)} cookies")
-
         if idx < 1 or idx > len(netflix_items):
             await query.answer("❌ Cookie not found", show_alert=True)
             return
 
         item = netflix_items[idx - 1]
-        cookie = str(item.get('key_id', 'HIDDEN')).strip()
+        cookie = str(item.get('key_id', '')).strip()
+
         status = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Expired / Inactive"
 
+        # Shortened & Safe Version
         report = (
             f"<b>🍿 NETFLIX COOKIE #{idx} REVEALED</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🔑 <code>{html.escape(cookie)}</code>\n\n"
             f"🌿 Status: <b>{status}</b>\n"
             f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
-            "<i>Long-press the code above to copy.\nUse it quickly before it expires 🍃</i>"
+            "<b>📋 Cookie:</b>\n"
+            f"<code>{html.escape(cookie[:800])}</code>\n\n"   # Limit to 800 chars
+            "<i>Long-press the code above to copy.\n"
+            "If it's truncated, copy what you see and try it first.</i>"
         )
 
         kb = InlineKeyboardMarkup([
@@ -345,7 +346,7 @@ async def handle_callback(update: Update):
             parse_mode='HTML',
             reply_markup=kb
         )
-        
+
     # 🌟 ABOUT (WITH LOADING)
     elif query.data == "about":
         try: await query.message.delete()
