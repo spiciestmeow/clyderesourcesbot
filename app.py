@@ -164,7 +164,7 @@ async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
-    # 🌟 ENTERING THE CLEARING (WITH LOADING)
+    # Main Menu & Clearing
     if query.data in ["show_main_menu", "main_menu"]:
         try: await query.message.edit_caption(caption="✨ <i>The mist begins to part...</i>", parse_mode='HTML', reply_markup=None)
         except: pass
@@ -190,7 +190,7 @@ async def handle_callback(update: Update):
             reply_markup=get_inventory_categories()
         )
 
-# 🌟 FILTERED INVENTORY (PREVIEW & ALL)
+    # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
         is_full_view = query.data.startswith("vamt_all_")
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
@@ -207,7 +207,7 @@ async def handle_callback(update: Update):
             )
             return
 
-        # === FILTERING ===
+        # Filter items
         filtered = []
         for item in data:
             s_type = str(item.get('service_type', '')).lower().strip()
@@ -225,33 +225,38 @@ async def handle_callback(update: Update):
                 if category in s_type:
                     filtered.append(item)
 
+        print(f"DEBUG: Loaded {len(data)} total items | Found {len(filtered)} {category} items")
+
         if not filtered:
             await query.message.edit_caption(
-                caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing right now.</i>",
+                caption=f"🍃 <i>No {category.upper()} scrolls found right now.</i>",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
 
-        # ====================== NETFLIX SPECIAL HANDLING ======================
+        # ====================== NETFLIX - MULTIPLE COOKIES ======================
         if category == "netflix":
-            item = filtered[0]   # We know there's at least one now
-            key = item.get('key_id', 'HIDDEN')
-            status_val = str(item.get('status', '')).lower()
-
-            status = "✓ Active" if "active" in status_val else "⚠️ Check Status"
-
             report = (
-                "<b>🍿 NETFLIX PREMIUM COOKIE</b>\n"
+                "<b>🍿 NETFLIX PREMIUM COOKIES</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"🌿 Status: <b>{status}</b>\n"
-                f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
-                "<i>Tap the button below to reveal the cookie.</i> 🍃"
+                f"📦 Available: <b>{len(filtered)}</b>\n\n"
+                "<i>Choose a cookie to reveal:</i>\n\n"
             )
 
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔓 Reveal Cookie", callback_data=f"reveal_netflix|{key}")],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-            ])
+            buttons = []
+            for idx, item in enumerate(filtered, 1):
+                name = f"Netflix Cookie {idx}"
+                status_text = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Inactive"
+
+                report += f"✨ <b>{name}</b>\n   Status: {status_text}\n\n"
+
+                buttons.append([
+                    InlineKeyboardButton(f"🔓 Reveal Cookie {idx}", callback_data=f"reveal_nf|{idx}")
+                ])
+
+            buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+
+            kb = InlineKeyboardMarkup(buttons)
 
             await query.message.edit_caption(
                 caption=report, 
@@ -260,7 +265,7 @@ async def handle_callback(update: Update):
             )
             return
 
-        # ====================== OTHER CATEGORIES (Windows / Office) ======================
+        # ====================== WINDOWS & OFFICE ======================
         limit = len(filtered) if is_full_view else 3
 
         report = f"<b>📜 {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
@@ -292,30 +297,47 @@ async def handle_callback(update: Update):
             reply_markup=kb
         )
 
-    elif query.data.startswith("reveal_netflix|"):
-        key_id = query.data.split("|", 1)[1]
-
-        data = await get_vamt_data()
-        item = next((i for i in data if str(i.get('key_id')) == key_id), None)
-
-        if not item:
-            await query.answer("Cookie not found", show_alert=True)
+    # ====================== REVEAL NETFLIX COOKIE ======================
+    elif query.data.startswith("reveal_nf|"):
+        try:
+            idx = int(query.data.split("|", 1)[1])
+        except:
+            await query.answer("Invalid selection", show_alert=True)
             return
 
-        key = item.get('key_id', 'HIDDEN')
-        status_val = str(item.get('status', '')).lower()
-        status = "✓ Active" if "active" in status_val else "⚠️ Expired / Inactive"
+        data = await get_vamt_data()
+        if not data:
+            await query.answer("Database error", show_alert=True)
+            return
+
+        # Get Netflix items + sort for stable order
+        netflix_items = [
+            item for item in data 
+            if "netflix" in str(item.get('service_type', '')).lower()
+        ]
+        netflix_items.sort(key=lambda x: str(x.get('last_updated', '')), reverse=True)
+
+        print(f"DEBUG: Reveal requested for Netflix #{idx} | Found {len(netflix_items)} cookies")
+
+        if idx < 1 or idx > len(netflix_items):
+            await query.answer("❌ Cookie not found", show_alert=True)
+            return
+
+        item = netflix_items[idx - 1]
+        cookie = str(item.get('key_id', 'HIDDEN')).strip()
+        status = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Expired / Inactive"
 
         report = (
-            "<b>🍿 NETFLIX COOKIE REVEALED</b>\n"
+            f"<b>🍿 NETFLIX COOKIE #{idx} REVEALED</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🔑 <code>{html.escape(key)}</code>\n\n"
-            f"🌿 Status: <b>{status}</b>\n\n"
-            "<i>Handle this cookie with care.</i> 🍃"
+            f"🔑 <code>{html.escape(cookie)}</code>\n\n"
+            f"🌿 Status: <b>{status}</b>\n"
+            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
+            "<i>Long-press the code above to copy.\nUse it quickly before it expires 🍃</i>"
         )
 
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back", callback_data="vamt_filter_netflix")]
+            [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="vamt_filter_netflix")]
         ])
 
         await query.message.edit_caption(
@@ -323,7 +345,7 @@ async def handle_callback(update: Update):
             parse_mode='HTML',
             reply_markup=kb
         )
-
+        
     # 🌟 ABOUT (WITH LOADING)
     elif query.data == "about":
         try: await query.message.delete()
