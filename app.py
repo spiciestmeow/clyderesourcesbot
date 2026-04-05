@@ -164,30 +164,51 @@ async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
 
-    # Main Menu & Clearing
+    # Main Menu & Clearing - Improved Smooth Transition
     if query.data in ["show_main_menu", "main_menu"]:
-        # Delete current message (About/Help/Guidance) so it disappears
+        # Gentle transition instead of abrupt delete
         try:
-            await query.message.delete()
+            await query.message.edit_caption(
+                caption="🌿 <i>Returning to the Enchanted Clearing...</i>", 
+                parse_mode='HTML', 
+                reply_markup=None
+            )
         except:
             pass
 
+        await asyncio.sleep(1.0)
+
+        # Send loading animation
         loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id, 
-            animation=LOADING_GIF, 
-            caption="..."
+            chat_id=update.effective_chat.id,
+            animation=LOADING_GIF,
+            caption="✨ <i>The forest mist is slowly clearing...</i>",
+            parse_mode='HTML'
         )
-        
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="🌲 <i>The ancient trees bow to reveal a hidden path...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="✨ <i>You have arrived at the heart of the clearing.</i>", parse_mode='HTML')
+
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption(
+            caption="🌲 <i>The ancient trees bow to welcome you back...</i>", 
+            parse_mode='HTML'
+        )
+
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption(
+            caption="✨ <i>You have arrived at the heart of the clearing once more.</i>", 
+            parse_mode='HTML'
+        )
+
         await asyncio.sleep(0.8)
-        
+
+        # Send the main menu
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
-        
+
+        # Clean up the temporary loading message
         try:
-            await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
+            await tg_app.bot.delete_message(
+                chat_id=loading_msg.chat_id, 
+                message_id=loading_msg.message_id
+            )
         except:
             pass
 
