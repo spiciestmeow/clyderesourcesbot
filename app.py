@@ -78,6 +78,18 @@ def get_back_to_inventory_keyboard():
 def get_back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to the Clearing", callback_data="main_menu")]])
 
+
+def get_first_time_menu_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("❓ Start Here → Guidance", callback_data="help")],   # Highlighted
+        [InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account")],
+        [InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
+        [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
+        [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
+        [InlineKeyboardButton("ℹ️ Lore", callback_data="about")],
+        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
+    ])
+
 # ==================== MESSAGES ====================
 async def send_initial_welcome(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
@@ -97,23 +109,42 @@ async def send_initial_welcome(chat_id, first_name):
     if chat_id not in forest_memory: forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
-async def send_full_menu(chat_id, first_name):
+async def send_full_menu(chat_id, first_name, is_first_time=False):
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
 
-    caption = (
-        f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-        "🌿 <b>You have stepped into the heart of the Enchanted Clearing</b>\n\n"
-        "Beneath the whispering ancient trees, many paths lie before you...\n"
-        "Choose with care, kind wanderer.\n\n"
-        "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
-    )
+    if is_first_time:
+        caption = (
+            f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+            "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
+            "Beneath the whispering ancient trees, many paths lie before you...\n\n"
+            "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first "
+            "so you don't get lost in the forest.\n\n"
+            "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
+        )
+        keyboard = get_first_time_menu_keyboard()
+    else:
+        caption = (
+            f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+            "🌿 <b>You have stepped into the heart of the Enchanted Clearing</b>\n\n"
+            "Beneath the whispering ancient trees, many paths lie before you...\n"
+            "Choose with care, kind wanderer.\n\n"
+            "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
+        )
+        keyboard = get_full_menu_keyboard()
 
-    msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
+    msg = await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=MENU_GIF,
+        caption=caption,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
     
-    if chat_id not in forest_memory: forest_memory[chat_id] = []
+    if chat_id not in forest_memory:
+        forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
 async def send_myid(chat_id):
@@ -346,7 +377,7 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
 
-        await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
+        await send_full_menu(update.effective_chat.id, update.effective_user.first_name, is_first_time=False)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -622,11 +653,13 @@ def webhook():
             forest_memory[chat_id].append(user_msg_id)
 
             # ==================== COMMAND HANDLERS ====================
-            if text.startswith("/start"):
+            if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
+                await asyncio.sleep(1.2)
+                await send_full_menu(chat_id, name, is_first_time=True)
 
-            elif text.startswith("/menu"):
-                await send_full_menu(chat_id, name)
+            elif text.startswith("/menu"): 
+                await send_full_menu(chat_id, name, is_first_time=False)
 
             elif text.startswith("/myid"):
                 await send_myid(chat_id)
