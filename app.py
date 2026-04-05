@@ -138,11 +138,42 @@ async def send_myid(chat_id):
 
 # ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
-    # Get current time in Philippines timezone
+    # Get current time in Philippines timezone for display
     user_tz = pytz.timezone('Asia/Manila')
     timestamp = datetime.now(user_tz).strftime("%B %d, %Y • %I:%M %p")
 
-    # Thank you message for the user - timestamp at the bottom
+    # === Save Feedback to Supabase ===
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+
+    payload = {
+        "chat_id": int(chat_id),      # ensure it's integer
+        "first_name": str(first_name),
+        "feedback_text": feedback_text.strip()
+    }
+
+    saved = False
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                f"{SUPABASE_URL}/rest/v1/feedback",
+                headers=headers,
+                json=payload
+            )
+            
+            if response.status_code in (200, 201):
+                print(f"✅ Feedback saved to Supabase | User: {chat_id}")
+                saved = True
+            else:
+                print(f"⚠️ Supabase insert failed: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"🔴 Supabase Error while saving feedback: {e}")
+
+    # === Thank you message to user (timestamp at bottom) ===
     thank_you = (
         "🕊️ <b>A Message Carried by the Wind</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -161,6 +192,9 @@ async def handle_feedback(chat_id, first_name, feedback_text):
         parse_mode='HTML'
     )
 
+    # === Notification to owner (timestamp at bottom) ===
+    status = "✅ Saved to database" if saved else "⚠️ Failed to save to database"
+
     owner_message = (
         f"🌿 <b>New Feedback Received from the Forest</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -168,7 +202,8 @@ async def handle_feedback(chat_id, first_name, feedback_text):
         f"🆔 User ID: <code>{chat_id}</code>\n\n"
         f"💬 <b>Message:</b>\n{feedback_text}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"🕒 <b>Received:</b> {timestamp}"
+        f"🕒 <b>Received:</b> {timestamp}\n"
+        f"💾 <b>Status:</b> {status}"
     )
 
     try:
