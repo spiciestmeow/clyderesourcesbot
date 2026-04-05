@@ -84,39 +84,47 @@ async def send_initial_welcome(chat_id, first_name):
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
-    caption = f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n🌿 <b>Welcome to Clyde's Enchanted Clearing</b>\n\nThe gentle wind carries whispers from the ancient forest...\nHidden treasures and digital wonders await kind-hearted wanderers.\n\n<i>May the forest spirits watch over you.</i> 🍃✨"
 
-    # --- SECRET INGREDIENT START ---
+    caption = (
+        f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+        "🌿 <b>Welcome, dear wanderer, to Clyde's Enchanted Clearing</b>\n\n"
+        "The ancient wind carries soft whispers through the leaves...\n"
+        "Hidden wonders and gentle magic await those with kind hearts.\n\n"
+        "<i>May the forest spirits walk beside you on your journey.</i> 🍃✨"
+    )
+
     msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
     if chat_id not in forest_memory: forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
-    # --- SECRET INGREDIENT END ---
 
 async def send_full_menu(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
-    caption = f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n🌿 <b>You have entered the Enchanted Clearing</b>\n\nChoose your path beneath the whispering trees...\n\n<i>May your journey be filled with magic and abundance.</i> 🍃✨"
 
-    # --- SECRET INGREDIENT START ---
+    caption = (
+        f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+        "🌿 <b>You have stepped into the heart of the Enchanted Clearing</b>\n\n"
+        "Beneath the whispering ancient trees, many paths lie before you...\n"
+        "Choose with care, kind wanderer.\n\n"
+        "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
+    )
+
     msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=MENU_GIF, caption=caption, parse_mode='HTML', reply_markup=get_full_menu_keyboard())
     
     if chat_id not in forest_memory: forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
-    # --- SECRET INGREDIENT END ---
-
 
 async def send_myid(chat_id):
     caption_text = (
         "🌿 <b>Forest Spirit Identification</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "✨ <i>The mist clears to reveal your essence...</i>\n\n"
+        "✨ <i>The mist clears to reveal your true essence...</i>\n\n"
         f"🆔 <b>User ID:</b> <code>{chat_id}</code>\n\n"
         "🍃 <i>Safe travels through the clearing, wanderer.</i>"
     )
     
-    # 1. Capture the message when it is sent
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
@@ -124,30 +132,26 @@ async def send_myid(chat_id):
         parse_mode="HTML"
     )
     
-    # 2. Add it to the memory for the /clear sweep
     if chat_id not in forest_memory: 
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
 # --- CLEAR FUNCTION ---
 async def handle_clear(chat_id, user_command_id):
-    # 1. Delete the user's "/clear" message immediately
     try: 
         await tg_app.bot.delete_message(chat_id=chat_id, message_id=user_command_id)
     except: 
         pass
 
-    # 2. Sweep away all previous commands and bot messages
     if chat_id in forest_memory:
         for msg_id in forest_memory[chat_id]:
             try: 
-                await tg_app.bot.send_chat_action(chat_id, "typing") # Optional: adds a 'magical' feel
+                await tg_app.bot.send_chat_action(chat_id, "typing")
                 await tg_app.bot.delete_message(chat_id, msg_id)
             except: 
                 pass
-        forest_memory[chat_id] = [] # Reset memory
+        forest_memory[chat_id] = []
 
-    # 3. Send the "Fresh Start" message
     sent_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=LOADING_GIF,
@@ -156,7 +160,6 @@ async def handle_clear(chat_id, user_command_id):
         reply_markup=get_start_keyboard()
     )
     
-    # Save this new message ID so it can be cleared later
     forest_memory[chat_id].append(sent_msg.message_id)
     
 # ==================== CALLBACK ====================
@@ -165,9 +168,7 @@ async def handle_callback(update: Update):
     await query.answer()
 
     # ====================== MAIN MENU & CLEARING ======================
-    # Main Menu & Clearing - Fixed Version
     if query.data in ["show_main_menu", "main_menu"]:
-        # Delete whatever is currently shown
         try:
             await query.message.delete()
         except:
@@ -175,41 +176,33 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(0.8)
 
-        # Create loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
-            caption="✨ <i>The forest mist is slowly clearing...</i>",
+            caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(
-            caption="🌲 <i>The ancient trees bow to welcome you back...</i>", 
-            parse_mode='HTML'
-        )
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode='HTML')
 
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(
-            caption="✨ <i>You have arrived at the heart of the clearing once more.</i>", 
-            parse_mode='HTML'
-        )
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("✨ <i>You stand again in the heart of the Enchanted Clearing...</i>", parse_mode='HTML')
 
-        await asyncio.sleep(0.8)
+        await asyncio.sleep(1.0)
 
-        # Send the main menu
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name)
 
-        # Force delete the loading animation
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
-        except Exception as e:
-            print(f"Failed to delete loading msg: {e}")
+        except:
+            pass
 
-    # ====================== INVENTORY ======================
     elif query.data == "check_vamt":
         await query.message.edit_caption(
-            caption="🌿 <b>The Ancient Library</b>\n\nWhich digital scrolls are you looking for today?\n\n<i>The forest spirits wait for your choice.</i>", 
+            caption="📜 <i>The doors of the Ancient Library creak open...</i>\n\n"
+                    "Which scrolls call to your heart today, wanderer?\n\n"
+                    "<i>The forest spirits await your choice.</i>", 
             parse_mode='HTML', 
             reply_markup=get_inventory_categories()
         )
@@ -219,14 +212,14 @@ async def handle_callback(update: Update):
         is_full_view = query.data.startswith("vamt_all_")
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
 
-        loading_text = "📜 <i>Unrolling the full scroll...</i>" if is_full_view else f"✨ <i>Searching for {category.upper()}...</i>"
+        loading_text = "📜 <i>Unrolling the ancient scroll...</i>" if is_full_view else f"✨ <i>Searching the glade for {category.upper()}...</i>"
         await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
 
         data = await get_vamt_data()
         
         if not data:
             await query.message.edit_caption(
-                caption="🌫️ <i>Database connection failed. Please try again later.</i>",
+                caption="🌫️ <i>The mist is too thick... Database connection failed.</i>",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
@@ -250,24 +243,24 @@ async def handle_callback(update: Update):
 
         if not filtered:
             await query.message.edit_caption(
-                caption=f"🍃 <i>No {category.upper()} scrolls found right now.</i>",
+                caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing right now.</i>",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
 
-        # ====================== NETFLIX - MULTIPLE COOKIES ======================
+        # ====================== NETFLIX ======================
         if category == "netflix":
             report = (
-                "<b>🍿 NETFLIX PREMIUM COOKIES</b>\n"
+                "<b>🍿 Secret Netflix Cookies of the Forest</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"📦 <b>{len(filtered)} Available</b>\n\n"
-                "<i>Select a cookie to reveal:</i>\n\n"
+                f"📦 <b>{len(filtered)} Cookies Resting in the Glade</b>\n\n"
+                "<i>Which one whispers to your spirit?</i>\n\n"
             )
 
             buttons = []
             for idx, item in enumerate(filtered, 1):
-                display_name = str(item.get('display_name') or '').strip() or f"Netflix Cookie {idx}"
-                status_text = "✅ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Inactive"
+                display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
+                status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
                 report += f"✨ <b>{display_name}</b>\n"
                 report += f"   Status: {status_text}\n"
@@ -277,20 +270,16 @@ async def handle_callback(update: Update):
                     InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}")
                 ])
 
-            buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+            buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
 
             kb = InlineKeyboardMarkup(buttons)
 
-            await query.message.edit_caption(
-                caption=report, 
-                parse_mode='HTML', 
-                reply_markup=kb
-            )
+            await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
             return
 
         # ====================== WINDOWS & OFFICE ======================
         limit = len(filtered) if is_full_view else 3
-        report = f"<b>📜 {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
         for item in filtered[:limit]:
             product = item.get('service_type', 'Unknown')
@@ -301,7 +290,7 @@ async def handle_callback(update: Update):
             report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{stock_text}</b>\n\n"
 
         if not is_full_view and len(filtered) > 3:
-            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden.</i>"
+            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden in the shadows.</i>"
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📜 Show All", callback_data=f"vamt_all_{category}")],
                 [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
@@ -333,18 +322,18 @@ async def handle_callback(update: Update):
 
         item = netflix_items[idx - 1]
         cookie = str(item.get('key_id', '')).strip()
-        display_name = str(item.get('display_name') or '').strip() or f"Netflix Cookie {idx}"
+        display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
 
-        status = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Expired / Inactive"
+        status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
         report = (
-            f"<b>🍿 {display_name} REVEALED</b>\n"
+            f"<b>🍿 {display_name} Revealed</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🌿 Status: <b>{status}</b>\n"
             f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
-            "<b>📋 Cookie:</b>\n"
+            "<b>📋 The Hidden Cookie:</b>\n"
             f"<code>{html.escape(cookie[:800])}</code>\n\n"
-            "<i>Long-press the code above to copy.\nUse it quickly before it expires 🍃</i>"
+            "<i>Long-press the code above to copy.\nUse it quickly before the magic fades.</i> 🍃"
         )
 
         kb = InlineKeyboardMarkup([
@@ -361,21 +350,21 @@ async def handle_callback(update: Update):
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
-            caption="✨ <i>Consulting the ancient records...</i>",
+            caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>",
             parse_mode='HTML'
         )
 
         await asyncio.sleep(1.0)
-        await loading_msg.edit_caption(caption="🍃 <i>Gathering history from the leaves...</i>", parse_mode='HTML')
+        await loading_msg.edit_caption("📜 <i>They gather to share the forgotten tale of this clearing...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="✨ <i>The story is ready...</i>", parse_mode='HTML')
+        await loading_msg.edit_caption("✨ <i>The story of the Enchanted Clearing gently unfolds...</i>", parse_mode='HTML')
         await asyncio.sleep(0.8)
 
         text = (
             "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
             "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
             "We gather digital treasures like Steam accounts, learning guides, and activation keys.\n\n"
-            "<i>May this small corner bring you joy.</i> 🍃✨"
+            "<i>May this small corner bring you joy and wonder.</i> 🍃✨"
         )
 
         final_msg = await tg_app.bot.send_animation(
@@ -401,14 +390,14 @@ async def handle_callback(update: Update):
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
-            caption="✨ <i>Calling the forest guides...</i>",
+            caption="🪶 <i>The wind carries soft voices from the depths of the forest...</i>",
             parse_mode='HTML'
         )
 
         await asyncio.sleep(1.0)
-        await loading_msg.edit_caption(caption="🍃 <i>Clearing the path for a wanderer...</i>", parse_mode='HTML')
+        await loading_msg.edit_caption("🍃 <i>The forest guides gather their ancient wisdom...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2)
-        await loading_msg.edit_caption(caption="✨ <i>The map is revealed...</i>", parse_mode='HTML')
+        await loading_msg.edit_caption("🌟 <i>The path of guidance is now revealed before you...</i>", parse_mode='HTML')
         await asyncio.sleep(0.8)
 
         text = (
