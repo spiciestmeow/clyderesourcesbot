@@ -602,6 +602,21 @@ async def handle_callback(update: Update):
             await query.answer("Invalid selection", show_alert=True)
             return
 
+        # === Double Loading Animation for Magical Feel ===
+        await query.message.edit_caption(
+            caption="🍿 <i>Searching deep within the glowing glade...</i>",
+            parse_mode='HTML'
+        )
+        await asyncio.sleep(1.3)
+
+        await query.message.edit_caption(
+            caption="🌟 <i>The hidden cookie spirit is slowly awakening...</i>\n\n"
+                    "Please wait as the forest carefully reveals its secret...",
+            parse_mode='HTML'
+        )
+        await asyncio.sleep(1.8)
+
+        # === Now fetch and reveal the cookie ===
         data = await get_vamt_data()
         if not data:
             await query.answer("Database error", show_alert=True)
@@ -627,14 +642,19 @@ async def handle_callback(update: Update):
             f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
             "<b>📋 The Hidden Cookie:</b>\n"
             f"<code>{html.escape(cookie[:800])}</code>\n\n"
-            "<i>Long-press the code above to copy.\nUse it quickly before the magic fades.</i> 🍃"
+            "<i>Long-press the code above to copy.\n"
+            "Use it quickly before the magic fades.</i> 🍃"
         )
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="vamt_filter_netflix")]
         ])
 
-        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+        await query.message.edit_caption(
+            caption=report, 
+            parse_mode='HTML', 
+            reply_markup=kb
+        )
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
@@ -648,17 +668,19 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.0)
-        await loading_msg.edit_caption("📜 <i>They gather to share the forgotten tale of this clearing...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2)
-        await loading_msg.edit_caption("✨ <i>The story of the Enchanted Clearing gently unfolds...</i>", parse_mode='HTML')
-        await asyncio.sleep(0.8)
+        await loading_msg.edit_caption("📜 <i>They gather beneath the ancient canopy to share forgotten tales...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("✨ <i>The story of this sacred clearing gently unfolds...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.0)
 
         text = (
-            "<b>🌿 About Clyde's Enchanted Clearing</b>\n\n"
-            "This is a peaceful digital forest inspired by the magic of Studio Ghibli.\n\n"
-            "We gather digital treasures like Steam accounts, learning guides, and activation keys.\n\n"
-            "<i>May this small corner bring you joy and wonder.</i> 🍃✨"
+            "<b>🌿 The Tale of Clyde's Enchanted Clearing</b>\n\n"
+            "Long ago, in a hidden corner of the digital world, a gentle forest spirit named Clyde created this peaceful sanctuary.\n\n"
+            "Inspired by the wonder of Studio Ghibli, this clearing was born as a place where wanderers can find rest, magic, and useful treasures — "
+            "be it Steam accounts, learning guides, or activation keys.\n\n"
+            "Here, kindness is the only key, and every visitor is welcomed with open arms by the whispering trees.\n\n"
+            "<i>May this small enchanted corner bring you joy, wonder, and a little bit of magic in your journey.</i> 🍃✨"
         )
 
         final_msg = await tg_app.bot.send_animation(
@@ -688,34 +710,33 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.0)
-        await loading_msg.edit_caption("🍃 <i>The forest guides gather their ancient wisdom...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2)
-        await loading_msg.edit_caption("🌟 <i>The path of guidance is now revealed before you...</i>", parse_mode='HTML')
-        await asyncio.sleep(0.8)
+        await loading_msg.edit_caption("🍃 <i>The forest guides gather to share their ancient wisdom...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("🌟 <i>The path of guidance now reveals itself...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.0)
 
         text = (
-            "<b>❓ Guidance - How to Use the Enchanted Clearing</b>\n\n"
-            "🌿 <b>Basic Navigation:</b>\n"
-            "• Tap any button to move through the forest.\n"
-            "• Use <b>/menu</b> to return to the main clearing anytime.\n\n"
+            "<b>❓ Guidance from the Forest Spirits</b>\n\n"
+            "🌿 <b>How to Navigate the Clearing</b>\n"
+            "• Tap any button to walk along the paths\n"
+            "• Use <code>/menu</code> anytime to return here\n"
+            "• Use <code>/clear</code> to refresh your path\n\n"
             
-            "📜 <b>Available Commands:</b>\n"
+            "📜 <b>Available Commands</b>\n"
             "• <code>/start</code> — Begin your journey anew\n"
             "• <code>/menu</code> — Return to the Enchanted Clearing\n"
-            "• <code>/myid</code> — Reveal your forest spirit ID\n"
-            "• <code>/clear</code> — Clean the chat and start fresh\n"
-            "• <code>/feedback</code> — Send your thoughts to the caretaker\n\n"
+            "• <code>/myid</code> — Reveal your forest spirit identity\n"
+            "• <code>/clear</code> — Renew the clearing\n"
+            "• <code>/feedback</code> — Send a message to the caretaker\n\n"
             
-            "🌲 <b>Main Features:</b>\n"
-            "• 🪄 Spirit Treasures → Steam accounts\n"
-            "• 📜 Ancient Scrolls → Learning guides\n"
-            "• 🌿 Forest Inventory → Windows, Office & Netflix keys\n"
-            "• 🌲 The Whispering Forest → Main resource hub\n"
-            "• ℹ️ Lore → The story of this clearing\n"
-            "• 🕊️ Messenger → Contact the caretaker directly\n\n"
+            "🌲 <b>What You Can Find Here</b>\n"
+            "• 🪄 Spirit Treasures — Steam accounts\n"
+            "• 📜 Ancient Scrolls — Learning guides & resources\n"
+            "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
+            "• 🌲 The Whispering Forest — Main resource hub\n\n"
             
-            "<i>May these paths guide you well, kind wanderer.</i> 🍃✨"
+            "<i>May these gentle paths guide you safely, kind wanderer.</i> 🍃✨"
         )
 
         final_msg = await tg_app.bot.send_animation(
