@@ -63,7 +63,9 @@ def get_full_menu_keyboard():
 def get_inventory_categories():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🪟 Windows Keys", callback_data="vamt_filter_win"),
-         InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office")],
+         InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office")
+        ],
+        [InlineKeyboardButton("🍿 Netflix Keys", callback_data="vamt_filter_netflix")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
     ])
 
@@ -211,7 +213,21 @@ async def handle_callback(update: Update):
             product = item.get('service_type', 'Product')
             count = item.get('remaining', 0)
             key = item.get('key_id', 'HIDDEN')
-            report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{count}</b>\n\n"
+            # 'remaining' now holds your text status like "Fresh" or "15 Left"
+            info_val = item.get('remaining', 'Stable')
+
+            # 🌟 THE SWITCH: Check if it's Netflix to change the label
+            if "netflix" in product.lower():
+                icon = "🍿"
+                label = "Status"
+                logo = "🌿"
+            else:
+                icon = "✨"
+                label = "Stock"
+                logo = "📦"
+
+
+            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{count}</b>\n\n"
 
         if has_more:
             report += f"<i>... and {len(filtered_data) - limit} more hidden in the mist.</i>"
