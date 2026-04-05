@@ -235,6 +235,7 @@ async def handle_callback(update: Update):
             return
 
         # ====================== NETFLIX - MULTIPLE COOKIES ======================
+        # ====================== NETFLIX - MULTIPLE COOKIES ======================
         if category == "netflix":
             report = (
                 "<b>🍿 NETFLIX PREMIUM COOKIES</b>\n"
@@ -245,12 +246,16 @@ async def handle_callback(update: Update):
 
             buttons = []
             for idx, item in enumerate(filtered, 1):
-                # Use display_name if exists, otherwise fallback to "Netflix Cookie X"
-                display_name = item.get('display_name') or f"Netflix Cookie {idx}"
+                # Use display_name if filled, otherwise fallback
+                display_name = str(item.get('display_name') or '').strip()
+                if not display_name:
+                    display_name = f"Netflix Cookie {idx}"
+
                 status_text = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Inactive"
 
                 report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n\n"
 
+                # Use idx for callback (we'll keep it stable below)
                 buttons.append([
                     InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}")
                 ])
@@ -311,19 +316,27 @@ async def handle_callback(update: Update):
             await query.answer("Database error", show_alert=True)
             return
 
+        # Get Netflix items only
         netflix_items = [
             item for item in data 
             if "netflix" in str(item.get('service_type', '')).lower()
         ]
-        netflix_items.sort(key=lambda x: str(x.get('last_updated', '')), reverse=True)
+
+        # Stable sort: Use display_name first, then last_updated as backup
+        netflix_items.sort(key=lambda x: (
+            str(x.get('display_name') or ''), 
+            str(x.get('last_updated') or '')
+        ))
+
+        print(f"DEBUG Reveal: Requested #{idx}, Found {len(netflix_items)} Netflix cookies")
 
         if idx < 1 or idx > len(netflix_items):
-            await query.answer("❌ Cookie not found", show_alert=True)
+            await query.answer(f"❌ Cookie #{idx} not found", show_alert=True)
             return
 
         item = netflix_items[idx - 1]
         cookie = str(item.get('key_id', '')).strip()
-        display_name = item.get('display_name') or f"Netflix Cookie {idx}"
+        display_name = str(item.get('display_name') or '').strip() or f"Netflix Cookie {idx}"
 
         status = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Expired / Inactive"
 
