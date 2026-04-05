@@ -102,7 +102,7 @@ async def send_initial_welcome(chat_id, first_name):
         "🌿 <b>Welcome, dear wanderer, to Clyde's Enchanted Clearing</b>\n\n"
         "The ancient wind carries soft whispers through the leaves...\n"
         "Hidden wonders and gentle magic await those with kind hearts.\n\n"
-        "<i>May the forest spirits walk beside you on your journey.</i> 🍃✨"
+        "<i>Tap the button below to step into the heart of the forest.</i> 🍃✨"
     )
 
     msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
@@ -378,6 +378,12 @@ async def handle_callback(update: Update):
         await asyncio.sleep(1.0)
 
         await send_full_menu(update.effective_chat.id, update.effective_user.first_name, is_first_time=False)
+
+        # Show guided menu for first time, normal menu afterwards
+        message_count = len(forest_memory.get(update.effective_chat.id, []))
+        is_first_time = message_count <= 6
+
+        await send_full_menu(update.effective_chat.id, update.effective_user.first_name, is_first_time=is_first_time)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -655,8 +661,6 @@ def webhook():
             # ==================== COMMAND HANDLERS ====================
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
-                await asyncio.sleep(1.2)
-                await send_full_menu(chat_id, name, is_first_time=True)
 
             elif text.startswith("/menu"): 
                 await send_full_menu(chat_id, name, is_first_time=False)
