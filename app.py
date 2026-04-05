@@ -188,7 +188,7 @@ async def handle_callback(update: Update):
 
 # 🌟 FILTERED INVENTORY (PREVIEW MODE)
     elif query.data.startswith("vamt_filter_"):
-        category = query.data.replace("vamt_filter_", "")
+        category = query.data.replace("vamt_filter_", "").lower()
         
         # CHANGED: Use edit_caption on the existing message to show loading
         await query.message.edit_caption(caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", parse_mode='HTML')
@@ -198,18 +198,27 @@ async def handle_callback(update: Update):
 
         data = await get_vamt_data()
 
-        if not data:
-            await query.message.edit_caption(caption="🌫️ The forest mist is too thick...")
+        if data is None:
+            await query.message.edit_caption(
+                caption="🌫️ <i>The forest mist is too thick to see the scrolls...</i>",
+                reply_markup=get_back_to_inventory_keyboard()                     
+            )
             return
 
-        filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
+        # 2. Robust Filtering logic
+        filtered_data = []
+        for item in data:
+            s_type = str(item.get('service_type', '')).lower()
+            if category in s_type:
+                filtered_data.append(item)
 
         # ADD THIS: If no matches are found
         if not filtered_data:
-            await query.message.edit_caption(caption=f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist in the clearing yet.</i>", parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard())
+            await query.message.edit_caption(caption=f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist in the clearing yet.</i>",
+            parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard()
+            )
             return
         
-        # --- NEW: PROGRESSIVE DISCLOSURE (Limit to 5) ---
         limit = 3
         preview = filtered_data[:limit]
         has_more = len(filtered_data) > limit
@@ -223,13 +232,9 @@ async def handle_callback(update: Update):
 
             # 🌟 THE SWITCH: Check if it's Netflix to change the label
             if "netflix" in product.lower():
-                icon = "🍿"
-                label = "Status"
-                logo = "🌿"
+                icon, label, logo = "🍿", "Status", "🌿"
             else:
-                icon = "✨"
-                label = "Stock"
-                logo = "📦"
+                icon, label, logo = "✨", "Stock", "📦" 
 
 
             report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
