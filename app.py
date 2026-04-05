@@ -375,6 +375,7 @@ async def handle_callback(update: Update):
         except:
             pass
 
+        # Send loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -395,6 +396,7 @@ async def handle_callback(update: Update):
             "<i>May this small corner bring you joy.</i> 🍃✨"
         )
 
+        # Send final message
         final_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=ABOUT_GIF,
@@ -403,7 +405,13 @@ async def handle_callback(update: Update):
             reply_markup=get_back_keyboard()
         )
 
-        # Save only the final message to memory
+        # Delete the loading animation so it doesn't remain
+        try:
+            await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
+        except:
+            pass
+
+        # Save final message to memory
         chat_id = update.effective_chat.id
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
@@ -416,6 +424,7 @@ async def handle_callback(update: Update):
         except:
             pass
 
+        # Send loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -447,6 +456,7 @@ async def handle_callback(update: Update):
             "• 🕊️ Messenger: Contact the caretaker"
         )
 
+        # Send final message
         final_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=HELP_GIF,
@@ -455,7 +465,13 @@ async def handle_callback(update: Update):
             reply_markup=get_back_keyboard()
         )
 
-        # Save only the final message to memory
+        # Delete the loading animation
+        try:
+            await tg_app.bot.delete_message(chat_id=loading_msg.chat_id, message_id=loading_msg.message_id)
+        except:
+            pass
+
+        # Save final message to memory
         chat_id = update.effective_chat.id
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
