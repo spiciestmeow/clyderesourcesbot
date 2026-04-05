@@ -126,7 +126,12 @@ async def get_user_profile(chat_id):
             return data[0] if data else None
         except:
             return None
-
+def get_cumulative_xp_for_level(target_level: int) -> int:
+    """Returns total XP needed to reach this level (new balanced formula)"""
+    if target_level <= 1:
+        return 0
+    # 200 base + 100 increasing per level (feels good for a Telegram bot)
+    return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit protection"""
@@ -229,12 +234,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     return True
 
-def get_cumulative_xp_for_level(target_level: int) -> int:
-    """Returns total XP needed to reach this level (new balanced formula)"""
-    if target_level <= 1:
-        return 0
-    # 200 base + 100 increasing per level (feels good for a Telegram bot)
-    return sum(200 + (lvl * 100) for lvl in range(1, target_level))
+
 
 def get_level_title(level):
     titles = {
