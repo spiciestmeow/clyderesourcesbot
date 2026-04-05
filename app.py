@@ -237,9 +237,9 @@ async def handle_callback(update: Update):
         # 🍿 NETFLIX SPECIAL HANDLING
         # =========================
         if category == "netflix":
-            # Only show ONE entry (since cookies = multiple rows)
             item = filtered[0]
 
+            key = item.get('key_id', 'HIDDEN')
             status_val = str(item.get('status', '')).lower()
             status = "✓ Active" if status_val == "active" else "⚠️ Expired"
 
@@ -247,13 +247,18 @@ async def handle_callback(update: Update):
                 "<b>🍿 NETFLIX COOKIE SCROLL</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 f"🌿 Status: <b>{status}</b>\n\n"
-                "<i>The enchanted cookie is ready for use.</i> 🍃"
+                "<i>Tap below to reveal the hidden cookie.</i> 🍃"
             )
+
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔓 Reveal Cookie", callback_data="reveal_netflix_0")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
+            ])
 
             await query.message.edit_caption(
                 caption=report,
                 parse_mode='HTML',
-                reply_markup=get_back_to_inventory_keyboard()
+                reply_markup=kb
             )
             return
 
@@ -286,6 +291,45 @@ async def handle_callback(update: Update):
             ])
         else:
             kb = get_back_to_inventory_keyboard()
+
+        await query.message.edit_caption(
+            caption=report,
+            parse_mode='HTML',
+            reply_markup=kb
+        )
+
+    elif query.data.startswith("reveal_netflix_"):
+        index = int(query.data.split("_")[-1])
+
+        data = await get_vamt_data()
+
+        # filter netflix again
+        netflix_items = [
+            item for item in data
+            if "netflix" in str(item.get('service_type', '')).lower()
+        ]
+
+        if not netflix_items:
+            await query.answer("No data found", show_alert=True)
+            return
+
+        item = netflix_items[index]
+        key = item.get('key_id', 'HIDDEN')
+
+        status_val = str(item.get('status', '')).lower()
+        status = "✓ Active" if status_val == "active" else "⚠️ Expired"
+
+        report = (
+            "<b>🍿 NETFLIX COOKIE REVEALED</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔑 <code>{html.escape(key)}</code>\n\n"
+            f"🌿 Status: <b>{status}</b>\n\n"
+            "<i>Handle this cookie with care.</i> 🍃"
+        )
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Back", callback_data="vamt_filter_netflix")]
+        ])
 
         await query.message.edit_caption(
             caption=report,
