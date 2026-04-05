@@ -136,6 +136,41 @@ async def send_myid(chat_id):
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
+ # ==================== FEEDBACK COMMAND ======================
+async def handle_feedback(chat_id, first_name, feedback_text):
+    # Immersive thank you message
+    thank_you = (
+        "🕊️ <b>Message Carried by the Wind</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"Dear <b>{html.escape(str(first_name))}</b>,\n\n"
+        "Your words have been gently carried through the forest to the caretaker.\n"
+        "Thank you for sharing your thoughts with the Enchanted Clearing.\n\n"
+        "<i>May your feedback help this small corner of the forest flourish.</i> 🍃✨"
+    )
+
+    await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=HELP_GIF,
+        caption=thank_you,
+        parse_mode='HTML'
+    )
+
+    # Forward feedback to you (the owner)
+    owner_message = (
+        f"📨 New Feedback Received\n"
+        f"From: {first_name}\n"
+        f"User ID: {chat_id}\n\n"
+        f"{feedback_text}"
+    )
+
+    try:
+        await tg_app.bot.send_message(
+            chat_id=7399488750,
+            text=owner_message
+        )
+    except:
+        pass   
+
 # --- CLEAR FUNCTION ---
 async def handle_clear(chat_id, user_command_id):
     try: 
@@ -401,21 +436,27 @@ async def handle_callback(update: Update):
         await asyncio.sleep(0.8)
 
         text = (
-            "<b>❓ Guidance - How to Use</b>\n\n"
-            "🌿 <b>Navigation:</b>\n"
-            "• Tap buttons to move through the clearing.\n"
-            "• Use <b>/menu</b> for the full list.\n\n"
-            "📋 <b>Activation Keys:</b>\n"
-            "1. Go to Inventory.\n"
-            "2. Choose a category.\n"
-            "3. Long-press the code to copy.\n\n"
-            "✨ <b>Button Guide:</b>\n"
-            "• 🪄 Spirit Treasures: Steam accounts\n"
-            "• 📜 Ancient Scrolls: Learning guides\n"
-            "• 🌿 Forest Inventory: Windows / Office / Netflix keys\n"
-            "• 🌲 Whispering Forest: Main resource hub\n"
-            "• ℹ️ Lore: The story of this clearing\n"
-            "• 🕊️ Messenger: Contact the caretaker"
+            "<b>❓ Guidance - How to Use the Enchanted Clearing</b>\n\n"
+            "🌿 <b>Basic Navigation:</b>\n"
+            "• Tap any button to move through the forest.\n"
+            "• Use <b>/menu</b> to return to the main clearing anytime.\n\n"
+            
+            "📜 <b>Available Commands:</b>\n"
+            "• <code>/start</code> — Begin your journey anew\n"
+            "• <code>/menu</code> — Return to the Enchanted Clearing\n"
+            "• <code>/myid</code> — Reveal your forest spirit ID\n"
+            "• <code>/clear</code> — Clean the chat and start fresh\n"
+            "• <code>/feedback</code> — Send your thoughts to the caretaker\n\n"
+            
+            "🌲 <b>Main Features:</b>\n"
+            "• 🪄 Spirit Treasures → Steam accounts\n"
+            "• 📜 Ancient Scrolls → Learning guides\n"
+            "• 🌿 Forest Inventory → Windows, Office & Netflix keys\n"
+            "• 🌲 The Whispering Forest → Main resource hub\n"
+            "• ℹ️ Lore → The story of this clearing\n"
+            "• 🕊️ Messenger → Contact the caretaker directly\n\n"
+            
+            "<i>May these paths guide you well, kind wanderer.</i> 🍃✨"
         )
 
         final_msg = await tg_app.bot.send_animation(
@@ -456,11 +497,26 @@ def webhook():
             if chat_id not in forest_memory: forest_memory[chat_id] = []
             forest_memory[chat_id].append(user_msg_id)
         
-            if text.startswith("/start"): await send_initial_welcome(chat_id, name)
-            elif text.startswith("/menu"): await send_full_menu(chat_id, name)
-            elif text.startswith("/myid"): await send_myid(chat_id)
-            elif text.startswith("/clear"): await handle_clear(chat_id, user_msg_id)
-        elif update.callback_query: await handle_callback(update)
+            if text.startswith("/start"): 
+                await send_initial_welcome(chat_id, name)
+            elif text.startswith("/menu"): 
+                await send_full_menu(chat_id, name)
+            elif text.startswith("/myid"): 
+                await send_myid(chat_id)
+            elif text.startswith("/clear"): 
+                await handle_clear(chat_id, user_msg_id)
+            elif text.startswith("/feedback"):
+                feedback_text = text.replace("/feedback", "").strip()
+                if feedback_text:
+                    await handle_feedback(chat_id, name, feedback_text)
+                else:
+                    await tg_app.bot.send_message(
+                        chat_id=chat_id,
+                        text="🌿 Please write your feedback after the /feedback command.\n\n"
+                             "Example: `/feedback I really like the immersive captions!`"
+                    )
+        elif update.callback_query: 
+            await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
     except Exception as e: print(f"🔴 Webhook Error: {e}")
