@@ -759,8 +759,10 @@ async def handle_callback(update: Update):
             )
 
             buttons = []
-            for idx, item in enumerate(filtered[:limit], 1):
-                display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
+            # Force sequential numbering (Netflix Cookie 1, 2, 3...) for consistency
+            for display_idx, item in enumerate(filtered[:limit], 1):
+                display_name = f"Netflix Cookie {display_idx}"   # Force correct number
+
                 status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
                 report += f"✨ <b>{display_name}</b>\n"
@@ -768,7 +770,7 @@ async def handle_callback(update: Update):
                 report += f"   Remaining: {item.get('remaining', 0)}\n\n"
 
                 buttons.append([
-                    InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}")
+                    InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")
                 ])
 
             buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
@@ -816,7 +818,7 @@ async def handle_callback(update: Update):
                     "Please wait as the forest carefully reveals its secret...",
             parse_mode='HTML'
         )
-        await asyncio.sleep(1.8)
+        await asyncio.sleep(1.5)
 
         # === Get user level and rebuild the SAME limited list as the display ===
         profile = await get_user_profile(update.effective_chat.id)
@@ -997,7 +999,6 @@ async def handle_callback(update: Update):
             )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
-                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
         final_msg = await tg_app.bot.send_animation(
