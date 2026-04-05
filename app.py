@@ -121,18 +121,17 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
             "Beneath the whispering ancient trees, many paths lie before you...\n\n"
-            "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first "
-            "so you don't get lost in the forest.\n\n"
+            "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
             "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
         )
         keyboard = get_first_time_menu_keyboard()
     else:
+        # Short & subtle returning message (your choice)
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-            "🌿 <b>You have stepped into the heart of the Enchanted Clearing</b>\n\n"
-            "Beneath the whispering ancient trees, many paths lie before you...\n"
-            "Choose with care, kind wanderer.\n\n"
-            "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
+            "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
+            "The clearing welcomes you back, wanderer.\n\n"
+            "<i>May the forest welcome you once more.</i> 🍃✨"
         )
         keyboard = get_full_menu_keyboard()
 
@@ -144,7 +143,6 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
         reply_markup=keyboard
     )
     
-    # ←←← PUT THE MEMORY TRACKING HERE (Best place)
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
