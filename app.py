@@ -151,9 +151,15 @@ async def send_myid(chat_id):
     caption_text = (
         "🌿 <b>Forest Spirit Identification</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "✨ <i>The mist clears to reveal your true essence...</i>\n\n"
-        f"🆔 <b>User ID:</b> <code>{chat_id}</code>\n\n"
-        "🍃 <i>Safe travels through the clearing, wanderer.</i>"
+        "✨ <i>The ancient mist slowly parts before you...</i>\n\n"
+        "Deep within the heart of the Enchanted Clearing,\n"
+        "the oldest trees awaken to reveal your true essence.\n\n"
+        "🪄 <b>The Forest Spirit Whispers:</b>\n"
+        f"🌳 <b>Your Eternal ID:</b> <code>{chat_id}</code>\n\n"
+        "This number is your unique bond with the forest —\n"
+        "a mark carried by only you among all wanderers.\n\n"
+        "<i>May this knowledge guide and protect you on your journey.</i>\n\n"
+        "🍃 <b>The trees shall remember you always.</b>"
     )
     
     msg = await tg_app.bot.send_animation(
