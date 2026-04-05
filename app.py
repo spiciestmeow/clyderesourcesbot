@@ -169,8 +169,9 @@ async def add_xp(chat_id, first_name, action="general"):
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": xp_amount + 10,
-            "level": 1
+            "xp": 10,
+            "level": 1,
+            "last_active": "now()"
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(
@@ -178,6 +179,14 @@ async def add_xp(chat_id, first_name, action="general"):
                 headers=headers,
                 json=payload
             )
+        # Optional: Send a nice welcome message with starting XP
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text="🌱 <b>Welcome to the Enchanted Clearing!</b>\n\n"
+                 "You have received <b>10 XP</b> as a starting gift from the forest spirits.\n"
+                 "Keep exploring to grow stronger! 🍃",
+            parse_mode='HTML'
+        )
 
 def get_level_title(level):
     titles = {
