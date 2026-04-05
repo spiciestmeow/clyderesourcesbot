@@ -136,9 +136,12 @@ async def send_myid(chat_id):
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
- # ==================== FEEDBACK COMMAND ======================
+# ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
-    # Immersive thank you message
+    print(f"[DEBUG] Feedback received from {first_name} (ID: {chat_id})")
+    print(f"[DEBUG] Feedback content: {feedback_text}")
+
+    # Thank the user
     thank_you = (
         "🕊️ <b>Message Carried by the Wind</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -155,7 +158,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
         parse_mode='HTML'
     )
 
-    # Forward feedback to you (the owner)
+    # Forward to you (the owner)
     owner_message = (
         f"📨 New Feedback Received\n"
         f"From: {first_name}\n"
@@ -164,12 +167,14 @@ async def handle_feedback(chat_id, first_name, feedback_text):
     )
 
     try:
+        print(f"[DEBUG] Attempting to send feedback to owner ID: 7399488750")
         await tg_app.bot.send_message(
             chat_id=7399488750,
             text=owner_message
         )
-    except:
-        pass   
+        print("[DEBUG] Feedback successfully sent to owner")
+    except Exception as e:
+        print(f"[ERROR] Failed to send feedback to owner: {e}")
 
 # --- CLEAR FUNCTION ---
 async def handle_clear(chat_id, user_command_id):
