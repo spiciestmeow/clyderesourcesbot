@@ -194,12 +194,15 @@ async def handle_callback(update: Update):
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
         is_full_view = query.data.startswith("vamt_all_")
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
-        
-        # 1. Loading state
-        loading_text = "📜 <i>Unrolling the full scroll...</i>" if is_full_view else f"✨ <i>Searching for {category.upper()}...</i>"
+
+        loading_text = (
+            "📜 <i>Unrolling the full scroll...</i>"
+            if is_full_view
+            else f"✨ <i>Searching for {category.upper()}...</i>"
+        )
+
         await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
-        
-        # 2. Fetch Data
+
         data = await get_vamt_data()
         if not data:
             await query.message.edit_caption(
@@ -208,7 +211,7 @@ async def handle_callback(update: Update):
             )
             return
 
-        # 3. Filter
+        # --- FILTER ---
         filtered = []
         for item in data:
             s_type = str(item.get('service_type', '')).lower()
@@ -232,13 +235,12 @@ async def handle_callback(update: Update):
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
-        
+
         # =========================
-        # 🍿 NETFLIX SPECIAL HANDLING
+        # 🍿 NETFLIX PREVIEW (NO REVEAL HERE)
         # =========================
         if category == "netflix":
             item = filtered[0]
-
             key = item.get('key_id', 'HIDDEN')
             status_val = str(item.get('status', '')).lower()
             status = "✓ Active" if status_val == "active" else "⚠️ Expired"
@@ -263,7 +265,7 @@ async def handle_callback(update: Update):
             return
 
         # =========================
-        # 🪟 WINDOWS / 📑 OFFICE / OTHERS
+        # OTHER CATEGORIES
         # =========================
         limit = len(filtered) if is_full_view else 3
 
@@ -282,7 +284,6 @@ async def handle_callback(update: Update):
                 f"└ 📦 Stock: <b>{stock_text}</b>\n\n"
             )
 
-        # Show "view all" if needed
         if not is_full_view and len(filtered) > 3:
             report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden.</i>"
             kb = InlineKeyboardMarkup([
@@ -302,11 +303,6 @@ async def handle_callback(update: Update):
         key_id = query.data.split("|", 1)[1]
 
         data = await get_vamt_data()
-        if not data:
-            await query.answer("No data found", show_alert=True)
-            return
-
-        # Find the exact item by key_id
         item = next((i for i in data if str(i.get('key_id')) == key_id), None)
 
         if not item:
@@ -334,64 +330,6 @@ async def handle_callback(update: Update):
             parse_mode='HTML',
             reply_markup=kb
         )
-
-    # 🌟 NEW HANDLER: REVEAL ALL (FULL VIEW)
-    elif query.data.startswith("vamt_all_"):
-        category = query.data.replace("vamt_all_", "")
-        
-        await query.message.edit_caption(caption="✨ <i>Unrolling the ancient parchment...</i>", parse_mode='HTML')
-        await asyncio.sleep(1)
-        
-        data = await get_vamt_data()
-        
-        # Filter data for full view
-        filtered_data = []
-        for item in data:
-            s_type = str(item.get('service_type', '')).lower()
-            
-            if category == "netflix":
-                if "netflix" in s_type:
-                    filtered_data.append(item)
-            elif category == "win":
-                if "windows" in s_type or "win" in s_type:
-                    filtered_data.append(item)
-            elif category == "office":
-                if "office" in s_type:
-                    filtered_data.append(item)
-            else:
-                if category in s_type:
-                    filtered_data.append(item)
-        
-        # Create full report
-        if category == "netflix":
-            report = "<b>🍿 ALL NETFLIX COOKIE SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
-        elif category == "win":
-            report = "<b>🪟 ALL WINDOWS SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
-        elif category == "office":
-            report = "<b>📑 ALL OFFICE SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
-        else:
-            report = f"<b>📜 ALL {category.upper()} SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        for item in filtered_data:
-            product = item.get('service_type', 'Product')
-            key = item.get('key_id', 'HIDDEN')
-            info_val = item.get('remaining', 'Stable')
-
-            if "netflix" in product.lower():
-                icon = "🍿"
-                label = "Status"
-                logo = "🌿"
-                status = "✓ Active" if info_val and str(info_val) != "0" else "⚠️ Expired"
-                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{status}</b>\n\n"
-            else:
-                icon = "✨"
-                label = "Stock"
-                logo = "📦"
-                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
-            
-        report += f"━━━━━━━━━━━━━━━━━━━━\n<i>The full clearing is visible.</i> 🌿"
-        
-        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard())
 
     # 🌟 ABOUT (WITH LOADING)
     elif query.data == "about":
