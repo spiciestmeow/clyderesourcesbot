@@ -816,10 +816,14 @@ async def handle_callback(update: Update):
         if chat_id not in forest_memory: forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
-    # ====================== HELP (Guidance) ======================
-    elif query.data == "help":
+    # ====================== HELP (Guidance) - Paginated ======================
+    elif query.data == "help" or query.data.startswith("help_page_"):
         try: await query.message.delete()
         except: pass
+
+        page = 1
+        if query.data.startswith("help_page_"):
+            page = int(query.data.split("_")[2])
 
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
@@ -828,41 +832,56 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption("🍃 <i>The forest guides gather to share their ancient wisdom...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.3)
-        await loading_msg.edit_caption("🌟 <i>The path of guidance now reveals itself...</i>", parse_mode='HTML')
         await asyncio.sleep(1.0)
+        await loading_msg.edit_caption("🌟 <i>The forest guides are preparing wisdom for you...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.2)
 
-        text = (
-            "<b>❓ Guidance from the Forest Spirits</b>\n\n"
-            "🌿 <b>How to Navigate the Clearing</b>\n"
-            "• Tap any button to walk along the paths\n"
-            "• Use <code>/menu</code> anytime to return here\n"
-            "• Use <code>/clear</code> to refresh your path\n\n"
-            
-            "📜 <b>Available Commands</b>\n"
-            "• <code>/start</code> — Begin your journey anew\n"
-            "• <code>/menu</code> — Return to the Enchanted Clearing\n"
-            "• <code>/myid</code> — Reveal your forest spirit identity\n"
-            "• <code>/clear</code> — Renew the clearing\n"
-            "• <code>/feedback</code> — Send a message to the caretaker\n\n"
-            
-            "🌲 <b>What You Can Find Here</b>\n"
-            "• 🪄 Spirit Treasures — Steam accounts\n"
-            "• 📜 Ancient Scrolls — Learning guides & resources\n"
-            "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
-            "• 🌲 The Whispering Forest — Main resource hub\n\n"
-            
-            "<i>May these gentle paths guide you safely, kind wanderer.</i> 🍃✨"
-        )
+        if page == 1:
+            text = (
+                "<b>❓ Guidance - Part 1/2</b>\n\n"
+                "🌿 <b>How to Navigate</b>\n"
+                "• Tap any button to explore\n"
+                "• Use <code>/menu</code> to return here\n"
+                "• Use <code>/clear</code> to refresh the path\n\n"
+                
+                "📜 <b>Commands</b>\n"
+                "• <code>/start</code> — Begin your journey\n"
+                "• <code>/menu</code> — Return to Clearing\n"
+                "• <code>/myid</code> — Reveal your spirit ID\n"
+                "• <code>/profile</code> — View your level & progress\n"
+                "• <code>/clear</code> — Renew the clearing\n"
+                "• <code>/feedback</code> — Message the caretaker\n\n"
+                "<i>Tap Next to continue...</i>"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Next →", callback_data="help_page_2")]
+            ])
+        else:
+            text = (
+                "<b>❓ Guidance - Part 2/2</b>\n\n"
+                "🌲 <b>Treasures in the Forest</b>\n"
+                "• 🪄 Spirit Treasures — Steam accounts\n"
+                "• 📜 Ancient Scrolls — Learning guides\n"
+                "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
+                "• 🌲 The Whispering Forest — Main resource hub\n\n"
+                
+                "✨ <b>Forest Leveling System</b>\n"
+                "As you explore, you gain <b>Experience (XP)</b>.\n"
+                "Every <b>300 XP</b> = 1 Level Up + New Title\n\n"
+                "• Use <code>/profile</code> to see your progress\n"
+                "• The more you wander, the stronger your bond with the forest grows.\n\n"
+                "<i>May this knowledge light your path.</i> 🍃✨"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("← Previous", callback_data="help_page_1")]
+            ])
 
         final_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=HELP_GIF,
             caption=text,
             parse_mode='HTML',
-            reply_markup=get_back_keyboard()
+            reply_markup=keyboard
         )
 
         try: await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -902,7 +921,7 @@ def webhook():
             # ==================== COMMAND HANDLERS ====================
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
-                
+
             elif text.startswith("/profile"):
                 await handle_profile(chat_id, name)
 
