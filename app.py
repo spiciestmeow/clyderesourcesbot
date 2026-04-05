@@ -172,7 +172,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         "reveal_netflix": 8,
         "profile": 3,
         "clear": 2,
-        "guidance": 5,
+        "guidance": 7,        # ← Increased (better reward for 20s cooldown)
         "general": 5
     }.get(action, 5)
 
@@ -191,10 +191,10 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         current_level = profile.get('level', 1)
         new_level = current_level
 
-        # Improved & correct leveling logic
+        # Improved leveling logic with new formula
         while True:
-            xp_required = sum(300 + (lvl * 100) for lvl in range(1, new_level + 1))
-            if new_xp < xp_required:
+            xp_required_for_next = get_cumulative_xp_for_level(new_level + 1)
+            if new_xp < xp_required_for_next:
                 break
             new_level += 1
 
@@ -212,11 +212,11 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 json=payload
             )
     else:
-        # New user
+        # New user - starts at Level 1 with 0 XP
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": 10,
+            "xp": 0,           # Changed from 10
             "level": 1,
             "last_active": "now()"
         }
@@ -229,6 +229,12 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     return True
 
+def get_cumulative_xp_for_level(target_level: int) -> int:
+    """Returns total XP needed to reach this level (new balanced formula)"""
+    if target_level <= 1:
+        return 0
+    # 200 base + 100 increasing per level (feels good for a Telegram bot)
+    return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 def get_level_title(level):
     titles = {
@@ -338,16 +344,15 @@ async def handle_profile(chat_id, first_name):
     level = profile['level']
     xp = profile['xp']
 
-    # Use the same calculation logic as add_xp()
-    total_xp_for_next_level = sum(300 + (lvl * 100) for lvl in range(1, level + 1))
-    xp_to_next = total_xp_for_next_level - xp
+    xp_required_next = get_cumulative_xp_for_level(level + 1)
+    xp_to_next = max(0, xp_required_next - xp)
 
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
         f"⭐ <b>Level:</b> {level}\n"
-        f"✨ <b>Experience:</b> {xp} XP\n"
+        f"✨ <b>Experience:</b> {xp} / {xp_required_next} XP\n"
         f"📈 <b>To Next Level:</b> {xp_to_next} XP\n\n"
         "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
@@ -987,38 +992,38 @@ async def handle_callback(update: Update):
 
         else:
             # ==================== PAGE 2: LEVELING SYSTEM ====================
-            text = (
-                "<b>❓ Guidance - Page 2/2</b>\n\n"
-                "✨ <b>Forest Leveling System</b>\n"
-                "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
-                "The higher your level, the more XP needed to level up.\n\n"
-                
-                "<b>How to Gain XP:</b>\n"
-                "• View Windows or Office Keys → <b>+5 XP</b>\n"
-                "• View Netflix Keys → <b>+5 XP</b>\n"
-                "• Reveal a Netflix Cookie → <b>+8 XP</b>\n"
-                "• Use <code>/profile</code> → <b>+3 XP</b>\n"
-                "• Use <code>/clear</code> → <b>+2 XP</b>\n"
-                "• Read Guidance or Lore → <b>+5 XP</b>\n\n"
-                
-                "<b>Items Shown Per Level:</b>\n"
-                "• Level 1 → Only <b>1 item</b> per category\n"
-                "• Level 2–4 → Up to <b>3 items</b> per category\n"
-                "• Level 5+ → <b>All items</b> shown\n\n"
-                
-                "<b>Level Requirements (Progressive):</b>\n"
-                "• Level 2 → 400 XP\n"
-                "• Level 3 → 550 XP\n"
-                "• Level 4 → 700 XP\n"
-                "• Level 5 → 850 XP\n"
-                "• Level 6 → 1000 XP\n"
-                "• Level 7 → 1150 XP\n"
-                "• Level 8 → 1300 XP\n"
-                "• Level 9 → 1450 XP\n"
-                "• Level 10 → 1600 XP\n\n"
-                
-                "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
-            )
+text = (
+    "<b>❓ Guidance - Page 2/2</b>\n\n"
+    "✨ <b>Forest Leveling System</b>\n"
+    "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
+    "The higher your level, the more XP needed to level up.\n\n"
+    
+    "<b>How to Gain XP:</b>\n"
+    "• View Windows or Office Keys → <b>+5 XP</b>\n"
+    "• View Netflix Keys → <b>+5 XP</b>\n"
+    "• Reveal a Netflix Cookie → <b>+8 XP</b>\n"
+    "• Use <code>/profile</code> → <b>+3 XP</b>\n"
+    "• Use <code>/clear</code> → <b>+2 XP</b>\n"
+    "• Read Guidance or Lore → <b>+7 XP</b>\n\n"
+    
+    "<b>Items Shown Per Level:</b>\n"
+    "• Level 1 → Only <b>1 item</b> per category\n"
+    "• Level 2–4 → Up to <b>3 items</b> per category\n"
+    "• Level 5+ → <b>All items</b> shown\n\n"
+    
+    "<b>Level Requirements (Cumulative):</b>\n"
+    "• Level 2 → 300 XP total\n"
+    "• Level 3 → 700 XP total\n"
+    "• Level 4 → 1,200 XP total\n"
+    "• Level 5 → 1,800 XP total\n"
+    "• Level 6 → 2,500 XP total\n"
+    "• Level 7 → 3,300 XP total\n"
+    "• Level 8 → 4,200 XP total\n"
+    "• Level 9 → 5,200 XP total\n"
+    "• Level 10 → 6,300 XP total\n\n"
+    
+    "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
+)
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
