@@ -805,7 +805,7 @@ async def handle_callback(update: Update):
             await query.answer("Invalid selection", show_alert=True)
             return
 
-        # === Double Loading Animation for Magical Feel ===
+        # === Double Loading Animation ===
         await query.message.edit_caption(
             caption="🍿 <i>Searching deep within the glowing glade...</i>",
             parse_mode='HTML'
@@ -819,26 +819,39 @@ async def handle_callback(update: Update):
         )
         await asyncio.sleep(1.8)
 
-        # === Now fetch and reveal the cookie ===
+        # === Get user level and rebuild the SAME limited list ===
+        profile = await get_user_profile(update.effective_chat.id)
+        user_level = profile['level'] if profile else 1
+
+        if user_level == 1:
+            limit = 1
+        elif user_level <= 4:
+            limit = 3
+        else:
+            limit = 999   # show all
+
         data = await get_vamt_data()
         if not data:
             await query.answer("Database error", show_alert=True)
             return
 
-        netflix_items = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-        netflix_items.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
+        filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
 
-        if idx < 1 or idx > len(netflix_items):
-            await query.answer(f"❌ Cookie #{idx} not found", show_alert=True)
+        # Use the same order as the display
+        filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
+
+        if idx < 1 or idx > len(filtered[:limit]):
+            await query.answer(f"❌ Cookie not found", show_alert=True)
             return
 
-        item = netflix_items[idx - 1]
+        item = filtered[idx - 1]   # Take from the limited list
+
         cookie = str(item.get('key_id', '')).strip()
         display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
 
         status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
-        # Give XP for revealing Netflix cookie
+        # Give XP
         await add_xp(update.effective_chat.id, update.effective_user.first_name, "reveal_netflix")
 
         report = (
@@ -855,7 +868,6 @@ async def handle_callback(update: Update):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="vamt_filter_netflix")]
         ])
-
 
         await query.message.edit_caption(
             caption=report, 
