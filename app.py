@@ -324,6 +324,30 @@ async def handle_view_feedback(chat_id, user_id):
                 text="⚠️ Something went wrong while reading the feedback scrolls."
             )
 
+# ==================== RESET FIRST-TIME EXPERIENCE (Owner Only) ======================
+async def handle_reset_first_time(chat_id):
+    if chat_id != 7399488750:   # Only you can use this
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text="🌿 Sorry, only the caretaker can reset the forest memory."
+        )
+        return
+
+    # Reset the first-time flag
+    if chat_id in has_seen_main_menu:
+        del has_seen_main_menu[chat_id]
+
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text="✨ <b>First-time experience has been reset.</b>\n\n"
+             "The next time you enter the Enchanted Clearing, the guided menu "
+             "with <b>『 Start Here → Guidance 』</b> will appear again.\n\n"
+             "You can now test as a new wanderer.",
+        parse_mode='HTML'
+    )
+
+    print(f"✅ First-time flag reset for owner {chat_id}")
+
 # --- CLEAR FUNCTION ---
 async def handle_clear(chat_id, user_command_id):
     try: 
@@ -692,6 +716,8 @@ def webhook():
                     chat_id, 
                     update.effective_user.id if update.effective_user else None
                 )
+            elif text.startswith("/resetfirst") or text.startswith("/reset"):
+                await handle_reset_first_time(chat_id)
 
         elif update.callback_query:
             await handle_callback(update)
