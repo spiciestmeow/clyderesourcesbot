@@ -255,21 +255,23 @@ async def handle_callback(update: Update):
             )
             return
 
-        # ====================== NETFLIX ======================
+        # ====================== NETFLIX - MULTIPLE COOKIES ======================
         if category == "netflix":
             report = (
                 "<b>🍿 NETFLIX PREMIUM COOKIES</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"📦 Available: <b>{len(filtered)}</b>\n\n"
-                "<i>Choose a cookie to reveal:</i>\n\n"
+                f"📦 <b>{len(filtered)} Available</b>\n\n"
+                "<i>Select a cookie to reveal:</i>\n\n"
             )
 
             buttons = []
             for idx, item in enumerate(filtered, 1):
                 display_name = str(item.get('display_name') or '').strip() or f"Netflix Cookie {idx}"
-                status_text = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Inactive"
+                status_text = "✅ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Inactive"
 
-                report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n\n"
+                report += f"✨ <b>{display_name}</b>\n"
+                report += f"   Status: {status_text}\n"
+                report += f"   Remaining: {item.get('remaining', 0)}\n\n"
 
                 buttons.append([
                     InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}")
@@ -279,7 +281,11 @@ async def handle_callback(update: Update):
 
             kb = InlineKeyboardMarkup(buttons)
 
-            await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+            await query.message.edit_caption(
+                caption=report, 
+                parse_mode='HTML', 
+                reply_markup=kb
+            )
             return
 
         # ====================== WINDOWS & OFFICE ======================
