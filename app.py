@@ -7,11 +7,29 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from datetime import datetime
 import pytz
+import time
 
 # { chat_id: [msg_id1, msg_id2, ...] }
 forest_memory = {}
 has_seen_main_menu = {}
 app = Flask(__name__)
+
+
+# ==================== ANTI-XP ABUSE ====================
+xp_cooldowns = {}          # {chat_id: {action: last_timestamp}}
+user_action_history = {}   # {chat_id: [timestamp1, timestamp2, ...]}
+
+COOLDOWN_SECONDS = {
+    "view_win_office": 8,
+    "view_netflix": 10,
+    "reveal_netflix": 15,     # Most rewarding action = longest cooldown
+    "profile": 12,
+    "clear": 25,
+    "guidance": 20,
+    "general": 5,
+}
+
+MAX_ACTIONS_PER_MINUTE = 8   # Global safety net
 
 # ==================== CONFIG ====================
 TOKEN = os.getenv("BOT_TOKEN")
@@ -110,24 +128,55 @@ async def get_user_profile(chat_id):
             return None
 
 
-async def add_xp(chat_id, first_name, action="general"):
-    """Add XP with progressive level requirements"""
+async def add_xp(chat_id, first_name, action="general", query=None):
+    """Add XP with cooldown + rate limit protection"""
     
-    # XP per action
-    xp_amount = 5
-    if action == "view_win_office":
-        xp_amount = 5
-    elif action == "view_netflix":
-        xp_amount = 5
-    elif action == "reveal_netflix":
-        xp_amount = 5
-    elif action == "profile":
-        xp_amount = 3
-    elif action == "clear":
-        xp_amount = 1
-    elif action == "guidance":
-        xp_amount = 5
+    current_time = time.time()
 
+    # Initialize for this user
+    if chat_id not in xp_cooldowns:
+        xp_cooldowns[chat_id] = {}
+    if chat_id not in user_action_history:
+        user_action_history[chat_id] = []
+
+    # === 1. Global Rate Limit ===
+    user_action_history[chat_id] = [t for t in user_action_history[chat_id] if current_time - t < 60]
+
+    if len(user_action_history[chat_id]) >= MAX_ACTIONS_PER_MINUTE:
+        if query:
+            try:
+                await query.answer("🌿 The forest is quite busy right now... Please slow down.", show_alert=True)
+            except:
+                pass
+        return False
+
+    # === 2. Action-specific Cooldown ===
+    last_used = xp_cooldowns[chat_id].get(action, 0)
+    
+    if current_time - last_used < COOLDOWN_SECONDS.get(action, 8):
+        if query:
+            try:
+                await query.answer("🌿 The forest spirits need a moment to rest... Try again soon!", show_alert=True)
+            except:
+                pass
+        return False
+
+    # Record this action
+    xp_cooldowns[chat_id][action] = current_time
+    user_action_history[chat_id].append(current_time)
+
+    # ====================== XP AMOUNT ======================
+    xp_amount = {
+        "view_win_office": 5,
+        "view_netflix": 5,
+        "reveal_netflix": 8,
+        "profile": 3,
+        "clear": 2,
+        "guidance": 5,
+        "general": 5
+    }.get(action, 5)
+
+    # ====================== Database Update ======================
     profile = await get_user_profile(chat_id)
     
     headers = {
@@ -140,16 +189,14 @@ async def add_xp(chat_id, first_name, action="general"):
     if profile:
         new_xp = profile.get('xp', 0) + xp_amount
         current_level = profile.get('level', 1)
-        
-        # Progressive XP calculation
-        total_xp_needed = 0
-        for lvl in range(1, current_level + 1):
-            total_xp_needed += 300 + (lvl * 100)   # 400, 500, 600, 700, ...
-
         new_level = current_level
-        while new_xp >= total_xp_needed:
+
+        # Improved & correct leveling logic
+        while True:
+            xp_required = sum(300 + (lvl * 100) for lvl in range(1, new_level + 1))
+            if new_xp < xp_required:
+                break
             new_level += 1
-            total_xp_needed += 300 + (new_level * 100)
 
         payload = {
             "xp": new_xp,
@@ -179,14 +226,9 @@ async def add_xp(chat_id, first_name, action="general"):
                 headers=headers,
                 json=payload
             )
-        # Optional: Send a nice welcome message with starting XP
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text="🌱 <b>Welcome to the Enchanted Clearing!</b>\n\n"
-                 "You have received <b>10 XP</b> as a starting gift from the forest spirits.\n"
-                 "Keep exploring to grow stronger! 🍃",
-            parse_mode='HTML'
-        )
+
+    return True
+
 
 def get_level_title(level):
     titles = {
@@ -291,16 +333,13 @@ async def handle_profile(chat_id, first_name):
     
     profile = await get_user_profile(chat_id)
     if not profile:
-        profile = await get_user_profile(chat_id)
+        return
 
     level = profile['level']
     xp = profile['xp']
 
-    # Calculate total XP needed to reach NEXT level (progressive)
-    total_xp_for_next_level = 0
-    for lvl in range(1, level + 1):
-        total_xp_for_next_level += 300 + (lvl * 100)
-
+    # Use the same calculation logic as add_xp()
+    total_xp_for_next_level = sum(300 + (lvl * 100) for lvl in range(1, level + 1))
     xp_to_next = total_xp_for_next_level - xp
 
     caption = (
@@ -319,7 +358,7 @@ async def handle_profile(chat_id, first_name):
         caption=caption,
         parse_mode='HTML'
     )
-
+    
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
     headers = {
@@ -592,16 +631,16 @@ async def handle_clear(chat_id, user_command_id):
 
     await asyncio.sleep(1.5)
 
-    # 🔥 IMPORTANT: Delete the loading animation BEFORE showing final message
+    # Delete loading message
     try:
         await tg_app.bot.delete_message(chat_id, loading_msg.message_id)
     except:
         pass
 
-    # ====================== FINAL RENEWED MESSAGE ======================
+    # ====================== FINAL MESSAGE ======================
     final_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
-        animation=LOADING_GIF,           # Change to CLEAN_GIF if you prefer
+        animation=LOADING_GIF,
         caption="🌿 <b>The Enchanted Clearing has been renewed.</b>\n\n"
                 "The trees stand tall and fresh once more.\n"
                 "Your path is now pure and open.\n\n"
@@ -610,42 +649,11 @@ async def handle_clear(chat_id, user_command_id):
         reply_markup=get_start_keyboard()
     )
 
-    # Add only the final message to memory
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(final_msg.message_id)
 
-    print(f"🌿 Chat cleared magically for user {chat_id}")
-
-    await asyncio.sleep(1.8)
-    await loading_msg.edit_caption("🍃 <b>The wind spirit awakens...</b>\n"
-                                   "Whispers of old paths are being carried away...", parse_mode="HTML")
-
-    await asyncio.sleep(2.0)
-    await loading_msg.edit_caption("✨ <b>The forest is resetting...</b>\n"
-                                   "All footprints are gently erased by the glowing leaves.", parse_mode="HTML")
-
-    await asyncio.sleep(1.5)
-
-    # Final magical message
-    final_msg = await tg_app.bot.send_animation(
-        chat_id=chat_id,
-        animation=LOADING_GIF,   # or you can use CLEAN_GIF again
-        caption="🌿 <b>The Enchanted Clearing has been renewed.</b>\n\n"
-                "The trees stand tall and fresh once more.\n"
-                "Your path is now pure and open.\n\n"
-                "<i>May new adventures find you, kind wanderer.</i> 🍃✨",
-        parse_mode="HTML",
-        reply_markup=get_start_keyboard()
-    )
-
-    # Add final message to memory
-    if chat_id not in forest_memory:
-        forest_memory[chat_id] = []
-    forest_memory[chat_id].append(final_msg.message_id)
-
-    await add_xp(chat_id, "Wanderer", "clear")   # Give small XP for clearing
-
+    await add_xp(chat_id, "Wanderer", "clear")
     print(f"🌿 Chat cleared magically for user {chat_id}")
     
 # ==================== CALLBACK ====================
@@ -704,21 +712,22 @@ async def handle_callback(update: Update):
 
     # ====================== FILTERED INVENTORY (Level-based Limit) ======================
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
-        is_full_view = query.data.startswith("vamt_all_")
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
 
         # Give XP when viewing inventory
         if category in ["win", "office"]:
-            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_win_office")
+            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_win_office", query=query)
         elif category == "netflix":
-            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_netflix")
+            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_netflix", query=query)
 
         # Get user level
         profile = await get_user_profile(update.effective_chat.id)
         user_level = profile['level'] if profile else 1
 
-        loading_text = "📜 <i>Unrolling the ancient scroll...</i>" if is_full_view else f"✨ <i>Searching the glade for {category.upper()}...</i>"
-        await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
+        await query.message.edit_caption(
+            caption=f"✨ <i>Searching the glade for {category.upper()}...</i>",
+            parse_mode='HTML'
+        )
 
         data = await get_vamt_data()
         if not data:
@@ -756,6 +765,9 @@ async def handle_callback(update: Update):
         else:
             limit = len(filtered)
             limit_note = ""
+
+        # Sort for consistency
+        filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
 
         # ====================== NETFLIX ======================
         if category == "netflix":
@@ -858,7 +870,7 @@ async def handle_callback(update: Update):
         status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
         # Give XP
-        await add_xp(update.effective_chat.id, update.effective_user.first_name, "reveal_netflix")
+        await add_xp(update.effective_chat.id, update.effective_user.first_name, "reveal_netflix", query=query)
 
         report = (
             f"<b>🍿 {display_name} Revealed</b>\n"
@@ -925,6 +937,7 @@ async def handle_callback(update: Update):
 
     # ====================== HELP (Guidance) - 2 Pages ======================
     elif query.data == "help" or query.data.startswith("help_page_"):
+        await add_xp(update.effective_chat.id, update.effective_user.first_name, "guidance", query=query)
         try: await query.message.delete()
         except: pass
 
@@ -983,9 +996,9 @@ async def handle_callback(update: Update):
                 "<b>How to Gain XP:</b>\n"
                 "• View Windows or Office Keys → <b>+5 XP</b>\n"
                 "• View Netflix Keys → <b>+5 XP</b>\n"
-                "• Reveal a Netflix Cookie → <b>+5 XP</b>\n"
+                "• Reveal a Netflix Cookie → <b>+8 XP</b>\n"
                 "• Use <code>/profile</code> → <b>+3 XP</b>\n"
-                "• Use <code>/clear</code> → <b>+1 XP</b>\n"
+                "• Use <code>/clear</code> → <b>+2 XP</b>\n"
                 "• Read Guidance or Lore → <b>+5 XP</b>\n\n"
                 
                 "<b>Items Shown Per Level:</b>\n"
