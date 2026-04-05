@@ -197,11 +197,17 @@ async def handle_callback(update: Update):
         await asyncio.sleep(1.0)
 
         data = await get_vamt_data()
+
         if not data:
             await query.message.edit_caption(caption="🌫️ The forest mist is too thick...")
             return
 
         filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
+
+        # ADD THIS: If no matches are found
+        if not filtered_data:
+            await query.message.edit_caption(caption=f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist in the clearing yet.</i>", parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard())
+            return
         
         # --- NEW: PROGRESSIVE DISCLOSURE (Limit to 5) ---
         limit = 3
