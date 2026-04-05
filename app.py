@@ -251,7 +251,7 @@ async def handle_callback(update: Update):
             )
 
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔓 Reveal Cookie", callback_data="reveal_netflix_0")],
+                [InlineKeyboardButton("🔓 Reveal Cookie", callback_data=f"reveal_netflix|{key}")],
                 [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
             ])
 
@@ -298,24 +298,22 @@ async def handle_callback(update: Update):
             reply_markup=kb
         )
 
-    elif query.data.startswith("reveal_netflix_"):
-        index = int(query.data.split("_")[-1])
+    elif query.data.startswith("reveal_netflix|"):
+        key_id = query.data.split("|", 1)[1]
 
         data = await get_vamt_data()
-
-        # filter netflix again
-        netflix_items = [
-            item for item in data
-            if "netflix" in str(item.get('service_type', '')).lower()
-        ]
-
-        if not netflix_items:
+        if not data:
             await query.answer("No data found", show_alert=True)
             return
 
-        item = netflix_items[index]
-        key = item.get('key_id', 'HIDDEN')
+        # Find the exact item by key_id
+        item = next((i for i in data if str(i.get('key_id')) == key_id), None)
 
+        if not item:
+            await query.answer("Cookie not found", show_alert=True)
+            return
+
+        key = item.get('key_id', 'HIDDEN')
         status_val = str(item.get('status', '')).lower()
         status = "✓ Active" if status_val == "active" else "⚠️ Expired"
 
