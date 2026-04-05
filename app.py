@@ -189,6 +189,9 @@ async def handle_callback(update: Update):
 # 🌟 FILTERED INVENTORY (PREVIEW MODE)
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "").lower()
+
+        # Debug print to see what category we're getting
+        print(f"🔍 Filtering for category: {category}")
         
         # CHANGED: Use edit_caption on the existing message to show loading
         await query.message.edit_caption(caption=f"✨ <i>The spirits are searching for {category.upper()} scrolls...</i>", parse_mode='HTML')
@@ -200,48 +203,104 @@ async def handle_callback(update: Update):
 
         if data is None:
             await query.message.edit_caption(
-                caption="🌫️ <i>The forest mist is too thick to see the scrolls...</i>",
+                caption="🌫️ <i>The forest mist is too thick to see the scrolls...</i>\n\n<i>The spirits cannot reach the ancient library right now.</i>",
+                parse_mode='HTML',
                 reply_markup=get_back_to_inventory_keyboard()                     
             )
             return
+    
+        if not data:
+            await query.message.edit_caption(
+                caption="📭 <i>The ancient library is empty...</i>\n\n<i>No scrolls have been added to the clearing yet.</i>",
+                parse_mode='HTML',
+                reply_markup=get_back_to_inventory_keyboard()
+            )
+            return
 
-        # 2. Robust Filtering logic
         filtered_data = []
         for item in data:
             s_type = str(item.get('service_type', '')).lower()
-            if category in s_type:
-                filtered_data.append(item)
 
-        # ADD THIS: If no matches are found
+            # Debug: Print each service_type we're checking
+            print(f"Checking: {s_type} against category: {category}")
+
+            # FIX: Make sure Netflix matching works
+            if category == "netflix":
+                # Check if 'netflix' appears ANYWHERE in the service_type
+                if "netflix" in s_type:
+                    filtered_data.append(item)
+                    print(f"✅ Added Netflix item: {s_type}")
+            elif category == "win":
+                if "windows" in s_type or "win" in s_type:
+                    filtered_data.append(item)
+            elif category == "office":
+                if "office" in s_type:
+                    filtered_data.append(item)
+            else:
+                if category in s_type:
+                    filtered_data.append(item)
+    
+        print(f"📊 Total {category} items found: {len(filtered_data)}")
+
+        # If no matches are found
         if not filtered_data:
-            await query.message.edit_caption(caption=f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist in the clearing yet.</i>",
-            parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard()
+            # Special message for Netflix to help debug
+            if category == "netflix":
+                # Let's check what's actually in the database
+                all_types = [str(item.get('service_type', '')) for item in data]
+                print(f"All service types in DB: {all_types}")
+                
+                caption_text = "🍿 <i>The Netflix scrolls are currently hidden in deep mist...</i>\n\n"
+                caption_text += "✨ <i>The spirits are gathering more cookies. Please check again later!</i>\n\n"
+                caption_text += "📋 <i>Available scroll types in library:</i>\n"
+                for t in all_types[:5]:  # Show first 5 types
+                    caption_text += f"• {t}\n"
+            else:
+                caption_text = f"🍃 <i>The trees whisper that no {category.upper()} scrolls exist in the clearing yet.</i>\n\n✨ <i>Check back later when the forest spirits have gathered more treasures.</i>"
+            
+            await query.message.edit_caption(
+                caption=caption_text,
+                parse_mode='HTML', 
+                reply_markup=get_back_to_inventory_keyboard()
             )
             return
         
+        # ✅ FIXED: These lines are now INSIDE the elif block with correct indentation
         limit = 3
         preview = filtered_data[:limit]
         has_more = len(filtered_data) > limit
 
-        report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n\n"
+        # Create report header
+        if category == "netflix":
+            report = "<b>🍿 THE NETFLIX COOKIE SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        elif category == "win":
+            report = "<b>🪟 THE WINDOWS SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        elif category == "office":
+            report = "<b>📑 THE OFFICE SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        else:
+            report = f"<b>📜 THE {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        
         for item in preview:
             product = item.get('service_type', 'Product')
-            # count = item.get('remaining', 0)
             key = item.get('key_id', 'HIDDEN')
             info_val = item.get('remaining', 'Stable')
 
-            # 🌟 THE SWITCH: Check if it's Netflix to change the label
+            # Special formatting for Netflix
             if "netflix" in product.lower():
-                icon, label, logo = "🍿", "Status", "🌿"
+                icon = "🍿"
+                label = "Status"
+                logo = "🌿"
+                # For Netflix cookies, show if active or not
+                status = "✓ Active" if info_val and str(info_val) != "0" else "⚠️ Check Status"
+                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{status}</b>\n\n"
             else:
-                icon, label, logo = "✨", "Stock", "📦" 
-
-
-            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
+                icon = "✨"
+                label = "Stock"
+                logo = "📦"
+                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
 
         if has_more:
-            report += f"<i>... and {len(filtered_data) - limit} more hidden in the mist.</i>"
-            # Show "Unroll" button if there are more items
+            report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered_data) - limit} more scrolls hidden in the mist.</i>"
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📜 Unroll Full Scroll", callback_data=f"vamt_all_{category}")],
                 [InlineKeyboardButton("⬅️ Back to Selection", callback_data="check_vamt")]
@@ -249,7 +308,6 @@ async def handle_callback(update: Update):
         else:
             keyboard = get_back_to_inventory_keyboard()
         
-        # CHANGED: Use edit_caption to show the results on the same message
         await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=keyboard)
 
     # 🌟 NEW HANDLER: REVEAL ALL (FULL VIEW)
@@ -257,29 +315,54 @@ async def handle_callback(update: Update):
         category = query.data.replace("vamt_all_", "")
         
         await query.message.edit_caption(caption="✨ <i>Unrolling the ancient parchment...</i>", parse_mode='HTML')
+        await asyncio.sleep(1)
         
         data = await get_vamt_data()
-        filtered_data = [item for item in data if category in str(item.get('service_type', '')).lower()]
         
-        report = f"<b>📜 ALL {category.upper()} SCROLLS REVEALED</b>\n\n"
+        # Filter data for full view
+        filtered_data = []
+        for item in data:
+            s_type = str(item.get('service_type', '')).lower()
+            
+            if category == "netflix":
+                if "netflix" in s_type:
+                    filtered_data.append(item)
+            elif category == "win":
+                if "windows" in s_type or "win" in s_type:
+                    filtered_data.append(item)
+            elif category == "office":
+                if "office" in s_type:
+                    filtered_data.append(item)
+            else:
+                if category in s_type:
+                    filtered_data.append(item)
+        
+        # Create full report
+        if category == "netflix":
+            report = "<b>🍿 ALL NETFLIX COOKIE SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        elif category == "win":
+            report = "<b>🪟 ALL WINDOWS SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        elif category == "office":
+            report = "<b>📑 ALL OFFICE SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        else:
+            report = f"<b>📜 ALL {category.upper()} SCROLLS REVEALED</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        
         for item in filtered_data:
             product = item.get('service_type', 'Product')
-            # count = item.get('remaining', 0)
             key = item.get('key_id', 'HIDDEN')
             info_val = item.get('remaining', 'Stable')
 
-            # 🌟 THE SWITCH: Check if it's Netflix to change the label
             if "netflix" in product.lower():
                 icon = "🍿"
                 label = "Status"
                 logo = "🌿"
+                status = "✓ Active" if info_val and str(info_val) != "0" else "⚠️ Expired"
+                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{status}</b>\n\n"
             else:
                 icon = "✨"
                 label = "Stock"
                 logo = "📦"
-
-                
-            report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
+                report += f"{icon} <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ {logo} {label}: <b>{info_val}</b>\n\n"
             
         report += f"━━━━━━━━━━━━━━━━━━━━\n<i>The full clearing is visible.</i> 🌿"
         
