@@ -195,28 +195,21 @@ async def handle_callback(update: Update):
         is_full_view = query.data.startswith("vamt_all_")
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
 
-        loading_text = (
-            "📜 <i>Unrolling the full scroll...</i>"
-            if is_full_view
-            else f"✨ <i>Searching for {category.upper()}...</i>"
-        )
-
+        loading_text = "📜 <i>Unrolling the full scroll...</i>" if is_full_view else f"✨ <i>Searching for {category.upper()}...</i>"
         await query.message.edit_caption(caption=loading_text, parse_mode='HTML')
 
         data = await get_vamt_data()
-                
-        # 1. Check if data actually exists to prevent hanging
+        
         if not data:
             await query.message.edit_caption(
-                caption="🌫️ <i>The mist is too thick to see the scrolls (Database Error).</i>",
+                caption="🌫️ <i>Database connection failed. Please try again later.</i>",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
 
-        # 2. Robust Filtering (Handles case sensitivity and empty spaces)
+        # === FILTERING ===
         filtered = []
         for item in data:
-            # We use .strip() and .lower() to ensure " Netflix " matches "netflix"
             s_type = str(item.get('service_type', '')).lower().strip()
 
             if category == "netflix":
@@ -232,41 +225,42 @@ async def handle_callback(update: Update):
                 if category in s_type:
                     filtered.append(item)
 
-        # 3. CRITICAL FIX: Check if 'filtered' is empty BEFORE accessing filtered[0]
-        # This is why your bot was getting stuck (IndexError: list index out of range)
         if not filtered:
             await query.message.edit_caption(
-                caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing.</i>",
+                caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing right now.</i>",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
 
-        # 4. Process Netflix (Now safe because we know 'filtered' has data)
+        # ====================== NETFLIX SPECIAL HANDLING ======================
         if category == "netflix":
-            item = filtered[0]
+            item = filtered[0]   # We know there's at least one now
             key = item.get('key_id', 'HIDDEN')
-            # Handle numerical vs string status safely
-            status_val = str(item.get('status', item.get('remaining', ''))).lower()
-            status = "✓ Active" if "active" in status_val or "1" in status_val else "⚠️ Check Status"
+            status_val = str(item.get('status', '')).lower()
+
+            status = "✓ Active" if "active" in status_val else "⚠️ Check Status"
 
             report = (
-                "<b>🍿 NETFLIX COOKIE SCROLL</b>\n"
+                "<b>🍿 NETFLIX PREMIUM COOKIE</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"🌿 Status: <b>{status}</b>\n\n"
-                "<i>Tap below to reveal the hidden cookie.</i> 🍃"
+                f"🌿 Status: <b>{status}</b>\n"
+                f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
+                "<i>Tap the button below to reveal the cookie.</i> 🍃"
             )
 
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔓 Reveal Cookie", callback_data=f"reveal_netflix|{key}")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
             ])
 
-            await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+            await query.message.edit_caption(
+                caption=report, 
+                parse_mode='HTML', 
+                reply_markup=kb
+            )
             return
 
-        # =========================
-        # OTHER CATEGORIES
-        # =========================
+        # ====================== OTHER CATEGORIES (Windows / Office) ======================
         limit = len(filtered) if is_full_view else 3
 
         report = f"<b>📜 {category.upper()} SCROLLS</b>\n━━━━━━━━━━━━━━━━━━\n\n"
@@ -275,7 +269,6 @@ async def handle_callback(update: Update):
             product = item.get('service_type', 'Unknown')
             key = item.get('key_id', 'HIDDEN')
             raw_val = int(item.get('remaining') or 0)
-
             stock_text = f"{raw_val}" if raw_val > 0 else "Out of stock"
 
             report += (
@@ -287,7 +280,7 @@ async def handle_callback(update: Update):
         if not is_full_view and len(filtered) > 3:
             report += f"━━━━━━━━━━━━━━━━━━\n<i>... and {len(filtered) - 3} more scrolls hidden.</i>"
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📜 Unroll Full Scroll", callback_data=f"vamt_all_{category}")],
+                [InlineKeyboardButton("📜 Show All", callback_data=f"vamt_all_{category}")],
                 [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")]
             ])
         else:
@@ -311,7 +304,7 @@ async def handle_callback(update: Update):
 
         key = item.get('key_id', 'HIDDEN')
         status_val = str(item.get('status', '')).lower()
-        status = "✓ Active" if status_val == "active" else "⚠️ Expired"
+        status = "✓ Active" if "active" in status_val else "⚠️ Expired / Inactive"
 
         report = (
             "<b>🍿 NETFLIX COOKIE REVEALED</b>\n"
