@@ -245,13 +245,14 @@ async def handle_callback(update: Update):
 
             buttons = []
             for idx, item in enumerate(filtered, 1):
-                name = f"Netflix Cookie {idx}"
+                # Use display_name if exists, otherwise fallback to "Netflix Cookie X"
+                display_name = item.get('display_name') or f"Netflix Cookie {idx}"
                 status_text = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Inactive"
 
-                report += f"✨ <b>{name}</b>\n   Status: {status_text}\n\n"
+                report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n\n"
 
                 buttons.append([
-                    InlineKeyboardButton(f"🔓 Reveal Cookie {idx}", callback_data=f"reveal_nf|{idx}")
+                    InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}")
                 ])
 
             buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
@@ -322,19 +323,19 @@ async def handle_callback(update: Update):
 
         item = netflix_items[idx - 1]
         cookie = str(item.get('key_id', '')).strip()
+        display_name = item.get('display_name') or f"Netflix Cookie {idx}"
 
         status = "✓ Active" if str(item.get('status', '')).lower() == "active" else "⚠️ Expired / Inactive"
 
-        # Shortened & Safe Version
         report = (
-            f"<b>🍿 NETFLIX COOKIE #{idx} REVEALED</b>\n"
+            f"<b>🍿 {display_name} REVEALED</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🌿 Status: <b>{status}</b>\n"
             f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
             "<b>📋 Cookie:</b>\n"
-            f"<code>{html.escape(cookie[:800])}</code>\n\n"   # Limit to 800 chars
+            f"<code>{html.escape(cookie[:800])}</code>\n\n"
             "<i>Long-press the code above to copy.\n"
-            "If it's truncated, copy what you see and try it first.</i>"
+            "Use it quickly before it expires 🍃</i>"
         )
 
         kb = InlineKeyboardMarkup([
@@ -346,7 +347,7 @@ async def handle_callback(update: Update):
             parse_mode='HTML',
             reply_markup=kb
         )
-
+        
     # 🌟 ABOUT (WITH LOADING)
     elif query.data == "about":
         try: await query.message.delete()
