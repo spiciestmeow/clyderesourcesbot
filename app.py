@@ -138,7 +138,11 @@ async def send_myid(chat_id):
 
 # ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
-    # Beautiful thank you message with Ghibli/forest feeling
+    # Get current time in Philippines timezone
+    user_tz = pytz.timezone('Asia/Manila')
+    timestamp = datetime.now(user_tz).strftime("%B %d, %Y • %I:%M %p")
+
+    # Thank you message for the user - timestamp at the bottom
     thank_you = (
         "🕊️ <b>A Message Carried by the Wind</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -146,7 +150,8 @@ async def handle_feedback(chat_id, first_name, feedback_text):
         "The gentle breeze has carried your words through the ancient trees...\n"
         "They have reached the caretaker of the Enchanted Clearing.\n\n"
         "Thank you for sharing your thoughts with this small, magical corner of the forest.\n\n"
-        "<i>May your voice help the clearing bloom even brighter.</i> 🍃✨"
+        "<i>May your voice help the clearing bloom even brighter.</i> 🍃✨\n\n"
+        f"🕒 <b>Sent:</b> {timestamp}"
     )
 
     await tg_app.bot.send_animation(
@@ -157,19 +162,23 @@ async def handle_feedback(chat_id, first_name, feedback_text):
     )
 
     owner_message = (
-        f"🌿 New Feedback Received from the Forest\n\n"
-        f"From: {first_name}\n"
-        f"User ID: {chat_id}\n\n"
-        f"Message:\n{feedback_text}"
+        f"🌿 <b>New Feedback Received from the Forest</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 From: <b>{first_name}</b>\n"
+        f"🆔 User ID: <code>{chat_id}</code>\n\n"
+        f"💬 <b>Message:</b>\n{feedback_text}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🕒 <b>Received:</b> {timestamp}"
     )
 
     try:
         await tg_app.bot.send_message(
             chat_id=7399488750,
-            text=owner_message
+            text=owner_message,
+            parse_mode='HTML'
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"Failed to send feedback to owner: {e}")
 
 # --- CLEAR FUNCTION ---
 async def handle_clear(chat_id, user_command_id):
