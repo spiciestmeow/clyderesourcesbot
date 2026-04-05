@@ -91,6 +91,86 @@ def get_first_time_menu_keyboard():
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")]
     ])
 
+# ==================== LEVELING SYSTEM HELPERS ====================
+
+async def get_user_profile(chat_id):
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers
+            )
+            data = response.json()
+            if data:
+                return data[0]
+            return None
+        except:
+            return None
+
+
+async def add_xp(chat_id, first_name, amount=10):
+    profile = await get_user_profile(chat_id)
+    
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+
+    if profile:
+        new_xp = profile['xp'] + amount
+        new_level = (new_xp // 300) + 1   # Every 300 XP = 1 level
+
+        payload = {
+            "xp": new_xp,
+            "level": new_level,
+            "first_name": first_name,
+            "last_active": "now()"
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers,
+                json=payload
+            )
+    else:
+        # Create new profile
+        payload = {
+            "chat_id": chat_id,
+            "first_name": first_name,
+            "xp": amount,
+            "level": 1
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/user_profiles",
+                headers=headers,
+                json=payload
+            )
+
+
+def get_level_title(level):
+    titles = {
+        1: "🌱 Young Sprout",
+        2: "🌿 Forest Sprout",
+        3: "🍃 Gentle Wanderer",
+        4: "🌳 Woodland Explorer",
+        5: "🌲 Whispering Wanderer",
+        6: "🪵 Tree Guardian",
+        7: "🌌 Mist Walker",
+        8: "✨ Enchanted Keeper",
+        9: "🌠 Ancient Soul",
+        10: "🌟 Eternal Guardian"
+    }
+    return titles.get(level, f"🌟 Legend {level}")
+
 # ==================== MESSAGES ====================
 async def send_initial_welcome(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
@@ -172,6 +252,44 @@ async def send_myid(chat_id):
     if chat_id not in forest_memory: 
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
+
+# ==================== PROFILE COMMAND ======================
+async def handle_profile(chat_id, first_name):
+    profile = await get_user_profile(chat_id)
+    
+    if not profile:
+        # First time user
+        await add_xp(chat_id, first_name, amount=20)  # Give welcome bonus
+        profile = await get_user_profile(chat_id)
+
+    level = profile['level']
+    xp = profile['xp']
+    xp_to_next = (level * 300) - xp   # Simple progression
+
+    caption = (
+        f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏷️ **Title:** {get_level_title(level)}\n"
+        f"⭐ **Level:** {level}\n"
+        f"✨ **Experience:** {xp} XP\n"
+    )
+
+    if xp_to_next > 0:
+        caption += f"📈 **Next Level:** {xp_to_next} XP more\n\n"
+    else:
+        caption += "🌟 **You have reached the highest known level!**\n\n"
+
+    caption += (
+        "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i>\n\n"
+        "Keep wandering, kind soul. 🍃"
+    )
+
+    await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=MYID_GIF,        # You can change this GIF later
+        caption=caption,
+        parse_mode='HTML'
+    )
 
 # ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
@@ -784,6 +902,9 @@ def webhook():
             # ==================== COMMAND HANDLERS ====================
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
+                
+            elif text.startswith("/profile"):
+                await handle_profile(chat_id, name)
 
             elif text.startswith("/menu"): 
                 await send_full_menu(chat_id, name, is_first_time=False)
