@@ -118,7 +118,7 @@ async def get_user_profile(chat_id):
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}&select=*,has_seen_menu",
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}&select=*,has_seen_menu,created_at",
                 headers=headers
             )
             data = response.json()
@@ -278,7 +278,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "xp": 0,           # Clean 0 XP
             "level": 1,
             "last_active": "now()",
-            "has_seen_menu": False
+            "has_seen_menu": False,
+            "created_at": "now()"
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -486,6 +487,27 @@ async def handle_stats(chat_id, first_name):
 
     progress_bar = create_progress_bar(xp, xp_required_next, length=12)
 
+
+    # Format Joined date nicely
+    joined_date = "Unknown"
+    if profile.get('created_at'):
+        try:
+            # Convert ISO timestamp to readable format
+            dt = datetime.fromisoformat(profile['created_at'].replace('Z', '+00:00'))
+            joined_date = dt.strftime("%B %d, %Y")   # Example: April 06, 2026
+        except:
+            joined_date = str(profile['created_at'])[:10]  # Fallback
+
+
+    # Format Last Active
+    last_active = "Unknown"
+    if profile.get('last_active'):
+        try:
+            dt = datetime.fromisoformat(profile['last_active'].replace('Z', '+00:00'))
+            last_active = dt.strftime("%B %d, %Y")
+        except:
+            last_active = str(profile['last_active'])[:10]
+
     caption = (
         f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -495,8 +517,8 @@ async def handle_stats(chat_id, first_name):
         f"{progress_bar}\n\n"
         f"📈 <b>To Next Level:</b> {xp_to_next:,} XP\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"🌱 <b>Joined:</b> {profile.get('created_at', 'Unknown')[:10]}\n"
-        f"🌲 <b>Last Active:</b> {profile.get('last_active', 'Unknown')[:10]}\n\n"
+        f"🌱 <b>Joined:</b> {joined_date}\n"
+        f"🌲 <b>Last Active:</b> {last_active}\n\n"
         "<i>The ancient trees keep track of every wanderer's journey...</i> 🍃"
     )
 
