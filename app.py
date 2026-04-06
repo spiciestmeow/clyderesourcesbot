@@ -1391,9 +1391,11 @@ def webhook():
             if not profile and not text.startswith("/start"):
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    text="🌿 Welcome, wanderer!\n\n"
-                         "To explore the Enchanted Clearing and access all features, "
-                         "please click the button below to **Enter the Enchanted Clearing** first.",
+                    text="🌿 <b>Hello, curious wanderer!</b>\n\n"
+                         "The Enchanted Clearing is a special place full of hidden wonders.\n\n"
+                         "To step inside and explore everything — the forest inventory, your profile, and more — "
+                         "please press the button below to begin your journey.\n\n"
+                         "<i>The trees are waiting to welcome you...</i> 🍃✨",
                     parse_mode='HTML',
                     reply_markup=get_start_keyboard()
                 )
