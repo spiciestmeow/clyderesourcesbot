@@ -881,20 +881,7 @@ async def handle_clear(chat_id, user_command_id, first_name):
 
     print(f"🌿 Chat cleared magically for user {chat_id}")
 
-async def require_registration(chat_id, first_name):
-    """Check if user is registered. If not, show message and return True (meaning blocked)"""
-    profile = await get_user_profile(chat_id)
-    if not profile:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text="🌿 Welcome, wanderer!\n\n"
-                 "To explore the Enchanted Clearing and access all features, "
-                 "please click the button below to **Enter the Enchanted Clearing** first.",
-            parse_mode='HTML',
-            reply_markup=get_start_keyboard()
-        )
-        return True
-    return False
+
     
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
@@ -904,9 +891,6 @@ async def handle_callback(update: Update):
     chat_id = update.effective_chat.id
     first_name = update.effective_user.first_name
 
-    # Block unregistered users from using any buttons
-    if await require_registration(chat_id, first_name):
-        return
 
     # ====================== MAIN MENU & CLEARING ======================
     if query.data in ["show_main_menu", "main_menu"]:
@@ -932,35 +916,41 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
 
-        chat_id = update.effective_chat.id
-        first_name = update.effective_user.first_name
-
-        # Get user profile from Supabase
+        # === Create user if not exists ===
         profile = await get_user_profile(chat_id)
-
         if not profile:
-            # New user
-            is_first_time = True
-        else:
-            # Existing user
-            has_seen = profile.get('has_seen_menu', False)
-            is_first_time = not has_seen
+            await add_xp(chat_id, first_name, "general")   # Creates the user
 
-        # Show the menu
-        await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
+        # Mark as seen
+        await force_set_has_seen_menu(chat_id)
 
-        # === Only update has_seen_menu if the user already exists ===
-        if profile:
-            await update_has_seen_menu(chat_id)
-        else:
-            # For new users, we set it after they open the menu
-            await force_set_has_seen_menu(chat_id)
+        # Show first-time menu for new users
+        await send_full_menu(chat_id, first_name, is_first_time=True)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
         except:
             pass
-
+        return
+    
+    # ====================== ALL OTHER BUTTONS ======================
+    # Enforce registration for Guidance, Inventory, Lore, etc.
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+                 "You stand at the edge of a mysterious forest.\n"
+                 "The ancient trees seem to be watching you with quiet curiosity.\n\n"
+                 "To step into the Enchanted Clearing and discover its hidden magic, "
+                 "please press the button below.\n\n"
+                 "<i>The forest is ready to welcome you...</i> 🍃✨",
+            parse_mode='HTML',
+            reply_markup=get_start_keyboard()
+        )
+        return  
+    
+    # ====================== OTHER CALLBACKS (only for registered users) ======================
     elif query.data == "check_vamt":
         await query.message.edit_caption(
             caption="📜 <i>The doors of the Ancient Library creak open...</i>\n\n"
@@ -1387,22 +1377,23 @@ def webhook():
                 forest_memory[chat_id] = []
             forest_memory[chat_id].append(user_msg_id)
 
-            # === REGISTRATION CHECK (Force user to enter clearing first) ===
-            profile = await get_user_profile(chat_id)
-            if not profile and not text.startswith("/start"):
-                await tg_app.bot.send_animation(
-                    chat_id=chat_id,
-                    animation=HELLO_GIF,
-                    caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
-                            "You stand at the edge of a mysterious forest.\n"
-                            "The ancient trees seem to be watching you with quiet curiosity.\n\n"
-                            "If you wish to step into the Enchanted Clearing and discover its hidden magic, "
-                            "please press the button below.\n\n"
-                            "<i>The forest is ready to welcome you...</i> 🍃✨",
-                    parse_mode='HTML',
-                    reply_markup=get_start_keyboard()
-                )
-                return   # Stop here - don't process any other command
+            # === STRICT REGISTRATION CHECK ===
+            if not text.startswith("/start"):
+                profile = await get_user_profile(chat_id)
+                if not profile:
+                    await tg_app.bot.send_message(
+                        chat_id=chat_id,
+                        animation=HELLO_GIF,
+                        text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+                             "You stand at the edge of a mysterious forest.\n"
+                             "The ancient trees seem to be watching you with quiet curiosity.\n\n"
+                             "To step into the Enchanted Clearing and discover its hidden magic, "
+                             "please press the button below.\n\n"
+                             "<i>The forest is ready to welcome you...</i> 🍃✨",
+                        parse_mode='HTML',
+                        reply_markup=get_start_keyboard()
+                    )
+                    return
 
             # ==================== COMMAND HANDLERS ====================
             if text.startswith("/start"): 
@@ -1446,20 +1437,21 @@ def webhook():
                 await handle_reset_first_time(chat_id)
 
         elif update.callback_query:
-            # Also protect callback buttons (Guidance, Inventory, Lore, etc.)
             query = update.callback_query
             chat_id = update.effective_chat.id
             first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
+            # Allow "Enter the Enchanted Clearing" button for unregistered users
             if query.data in ["show_main_menu", "main_menu"]:
-                await handle_callback(update)   # Let the original logic create user + show menu
+                await handle_callback(update)   # This is safe now because we fixed handle_callback below
                 return
 
-            # For all other buttons: Check if user is registered
+            # For all other buttons: enforce registration
             profile = await get_user_profile(chat_id)
             if not profile:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
+                    animation=HELLO_GIF,
                     text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                          "You stand at the edge of a mysterious forest.\n"
                          "The ancient trees seem to be watching you with quiet curiosity.\n\n"
@@ -1470,8 +1462,8 @@ def webhook():
                     reply_markup=get_start_keyboard()
                 )
                 return
-            
-            # If user is registered, continue with normal callback handling
+
+            # Registered user → proceed with normal callback logic
             await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
