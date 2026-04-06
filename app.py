@@ -180,7 +180,7 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit + individual inventory tracking"""
+    """Add XP with cooldown + rate limit + true one-time rewards only"""
     
     current_time = time.time()
 
@@ -214,18 +214,18 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     xp_cooldowns[chat_id][action] = current_time
     user_action_history[chat_id].append(current_time)
 
-    # ====================== XP AMOUNT ======================
+    # ====================== XP AMOUNT LOGIC ======================
     profile = await get_user_profile(chat_id)
     
-    xp_amount = 5  # default
+    xp_amount = 0   # Default is now 0 (no accidental XP)
 
     if action == "guidance":
         current_reads = profile.get('guidance_reads', 0) if profile else 0
-        if current_reads == 0:
+        if current_reads == 0:           # First time only
             xp_amount = 8
     elif action == "lore":
         current_reads = profile.get('lore_reads', 0) if profile else 0
-        if current_reads == 0:
+        if current_reads == 0:           # First time only
             xp_amount = 8
     elif action == "view_windows":
         xp_amount = 6
@@ -237,6 +237,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         xp_amount = 10
     elif action in ["profile", "clear"]:
         xp_amount = 5
+    # No else needed — anything unknown gets 0 XP
 
     # ====================== Database Update ======================
     headers = {
