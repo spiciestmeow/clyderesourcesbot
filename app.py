@@ -928,13 +928,13 @@ async def handle_callback(update: Update):
         await update_has_seen_menu(chat_id)   # or force_set_has_seen_menu
 
     # Delete loading
-    try:
-        await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
-    except:
-        pass
+        try:
+            await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
+        except:
+            pass
 
-    await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
-    return
+        await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
+        return
     
     # ====================== ALL OTHER BUTTONS ======================
     # Enforce registration for Guidance, Inventory, Lore, etc.
