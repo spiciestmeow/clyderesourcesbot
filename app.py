@@ -924,8 +924,8 @@ async def handle_callback(update: Update):
 
         is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
 
-        if is_first_time:
-            await update_has_seen_menu(chat_id)
+        # if is_first_time:
+            # await update_has_seen_menu(chat_id)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -951,8 +951,8 @@ async def handle_callback(update: Update):
         return
         
     # Mark as seen
-    if not profile.get('has_seen_menu', False):
-        await update_has_seen_menu(chat_id)
+    # if not profile.get('has_seen_menu', False):
+        # await update_has_seen_menu(chat_id)
     
     # ====================== INVENTORY & OTHER FEATURES ======================
     if query.data == "check_vamt":
@@ -1326,10 +1326,11 @@ async def handle_callback(update: Update):
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(loading_msg.message_id)
 
-        # === Mark has_seen_menu when Guidance is opened ===
-        profile = await get_user_profile(chat_id)
-        if profile and not profile.get('has_seen_menu', False):
-            await update_has_seen_menu(chat_id)
+        # === Mark as seen ONLY when Guidance is actually opened (Softer Version) ===
+        if query.data == "help":   # Only when first opening Guidance
+            profile = await get_user_profile(chat_id)
+            if profile and not profile.get('has_seen_menu', False):
+                await update_has_seen_menu(chat_id)
         
 # ==================== WEBHOOK ====================
 async def start_tg_app():
