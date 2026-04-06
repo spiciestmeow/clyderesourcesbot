@@ -1172,13 +1172,17 @@ async def handle_callback(update: Update):
     # ====================== HELP (Guidance) - 2 Pages ======================
     elif query.data == "help" or query.data.startswith("help_page_"):
         await add_xp(update.effective_chat.id, update.effective_user.first_name, "guidance", query=query)
-        try: await query.message.delete()
-        except: pass
+        
+        try: 
+            await query.message.delete()
+        except: 
+            pass
 
         page = 1
         if query.data.startswith("help_page_"):
             page = int(query.data.split("_")[2])
 
+        # Single loading animation for both pages
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -1186,9 +1190,9 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        await asyncio.sleep(1.0)
-        await loading_msg.edit_caption("🌟 <i>The forest guides are preparing wisdom for you...</i>", parse_mode='HTML')
         await asyncio.sleep(1.2)
+        await loading_msg.edit_caption("🌟 <i>The forest guides are preparing wisdom for you...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.0)
 
         if page == 1:
             # ==================== PAGE 1 ====================
@@ -1228,8 +1232,6 @@ async def handle_callback(update: Update):
 
         else:
             # ==================== PAGE 2: LEVELING SYSTEM ====================
-            
-            # Dynamic Level Requirements
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP total"
                 for lvl in range(2, 11)
@@ -1271,20 +1273,17 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
 
-        final_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id,
-            animation=HELP_GIF,
+        # Edit the loading message into the actual content
+        await loading_msg.edit_caption(
             caption=text,
             parse_mode='HTML',
             reply_markup=keyboard
         )
 
-        try: await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
-        except: pass
-
         chat_id = update.effective_chat.id
-        if chat_id not in forest_memory: forest_memory[chat_id] = []
-        forest_memory[chat_id].append(final_msg.message_id)
+        if chat_id not in forest_memory: 
+            forest_memory[chat_id] = []
+        forest_memory[chat_id].append(loading_msg.message_id)
         
 # ==================== WEBHOOK ====================
 async def start_tg_app():
