@@ -1439,8 +1439,7 @@ def webhook():
             elif update.callback_query and update.callback_query.message:
                 chat_id = update.callback_query.message.chat.id
 
-            #if chat_id and chat_id != OWNER_CHAT_ID:
-            if chat_id:
+            if chat_id and chat_id != OWNER_CHAT_ID:
                 try:
                     if update.message:
                         await tg_app.bot.send_message(chat_id=chat_id, text=MAINTENANCE_MESSAGE, parse_mode='HTML')
