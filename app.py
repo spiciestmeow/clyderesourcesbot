@@ -118,7 +118,8 @@ async def get_user_profile(chat_id):
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}&select=*,has_seen_menu,created_at",
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}"
+                "&select=*,has_seen_menu,created_at,total_xp_earned,inventory_views,netflix_reveals,times_cleared,guidance_reads",
                 headers=headers
             )
             data = response.json()
@@ -177,8 +178,7 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit protection
-       New users start with truly 0 XP on their very first action"""
+    """Add XP with cooldown + rate limit protection"""
     
     current_time = time.time()
 
@@ -236,25 +236,25 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     }
 
     if profile:
-        # === Track detailed stats ===
+        # === Safe stat tracking (handle NULL values) ===
         stats_update = {}
 
-        if action == "view_win_office" or action == "view_netflix":
-            stats_update["inventory_views"] = profile.get('inventory_views', 0) + 1
+        if action in ["view_win_office", "view_netflix"]:
+            stats_update["inventory_views"] = (profile.get('inventory_views') or 0) + 1
         elif action == "reveal_netflix":
-            stats_update["netflix_reveals"] = profile.get('netflix_reveals', 0) + 1
+            stats_update["netflix_reveals"] = (profile.get('netflix_reveals') or 0) + 1
         elif action == "clear":
-            stats_update["times_cleared"] = profile.get('times_cleared', 0) + 1
+            stats_update["times_cleared"] = (profile.get('times_cleared') or 0) + 1
         elif action == "guidance":
-            stats_update["guidance_reads"] = profile.get('guidance_reads', 0) + 1
+            stats_update["guidance_reads"] = (profile.get('guidance_reads') or 0) + 1
 
-        # Always update total_xp_earned
-        current_total = profile.get('total_xp_earned', 0)
+        # Always update total_xp_earned safely
+        current_total = profile.get('total_xp_earned') or 0
         stats_update["total_xp_earned"] = current_total + xp_amount
 
         # Existing user - add normal XP
-        new_xp = profile.get('xp', 0) + xp_amount
-        old_level = profile.get('level', 1)
+        new_xp = (profile.get('xp') or 0) + xp_amount
+        old_level = profile.get('level') or 1
         new_level = old_level
 
         # Calculate new level
@@ -264,7 +264,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 break
             new_level += 1
 
-        # Check if user leveled up
         leveled_up = new_level > old_level
 
         payload = {
@@ -273,7 +272,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "first_name": first_name,
             "last_active": "now()"
         }
-        payload.update(stats_update)   # Add the tracking fields
+        payload.update(stats_update)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.patch(
@@ -282,21 +281,24 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 json=payload
             )
 
-        # === Send Level Up Celebration ===
         if leveled_up:
             await send_level_up_message(chat_id, first_name, old_level, new_level)
 
     else:
-        # === NEW USER: Truly start with 0 XP ===
-        # We create the user with 0 XP and do NOT add any XP for the first action
+        # New user - create with clean 0 values
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": 0,           # Clean 0 XP
+            "xp": 0,
             "level": 1,
             "last_active": "now()",
             "has_seen_menu": False,
-            "created_at": "now()"
+            "created_at": "now()",
+            "total_xp_earned": 0,
+            "inventory_views": 0,
+            "netflix_reveals": 0,
+            "times_cleared": 0,
+            "guidance_reads": 0
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -306,7 +308,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 json=payload
             )
 
-        # Optional: You can print for debugging
         print(f"🌱 New user {chat_id} created with 0 XP")
 
     return True
