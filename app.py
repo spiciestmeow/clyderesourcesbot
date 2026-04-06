@@ -129,8 +129,9 @@ async def get_user_profile(chat_id):
         try:
             response = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}"
-                "&select=*,has_seen_menu,created_at,total_xp_earned,windows_views,office_views,netflix_views,"
-                "netflix_reveals,times_cleared,guidance_reads,lore_reads",
+                "&select=*,has_seen_menu,created_at,total_xp_earned,"
+                "windows_views,office_views,netflix_views,netflix_reveals,"
+                "times_cleared,guidance_reads,lore_reads,profile_views",   # ← Added profile_views
                 headers=headers
             )
             data = response.json()
@@ -235,9 +236,10 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         xp_amount = 6
     elif action == "reveal_netflix":
         xp_amount = 10
-    elif action in ["profile", "clear"]:
+    elif action == "profile":
         xp_amount = 5
-    # No else needed — anything unknown gets 0 XP
+    elif action == "clear":
+        xp_amount = 5
 
     # ====================== Database Update ======================
     headers = {
@@ -264,6 +266,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             stats_update["guidance_reads"] = (profile.get('guidance_reads') or 0) + 1
         elif action == "lore":
             stats_update["lore_reads"] = (profile.get('lore_reads') or 0) + 1
+        elif action == "profile":
+            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1   # New tracking
 
         current_total = profile.get('total_xp_earned') or 0
         stats_update["total_xp_earned"] = current_total + xp_amount
@@ -315,7 +319,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "netflix_reveals": 0,
             "times_cleared": 0,
             "guidance_reads": 0,
-            "lore_reads": 0
+            "lore_reads": 0,
+            "profile_views": 0
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -513,7 +518,7 @@ async def handle_profile(chat_id, first_name):
 
 
 async def handle_stats(chat_id, first_name):
-    """Simple Stats command - shows more detailed progress"""
+    """Updated Stats with individual inventory tracking"""
     
     profile = await get_user_profile(chat_id)
     if not profile:
@@ -526,38 +531,36 @@ async def handle_stats(chat_id, first_name):
     level = profile.get('level', 1)
     xp = profile.get('xp', 0)
     xp_required_next = get_cumulative_xp_for_level(level + 1)
-    xp_to_next = max(0, xp_required_next - xp)
 
     progress_bar = create_progress_bar(xp, xp_required_next, length=13)
 
-    # Joined Date
+    # Date formatting
     joined_date = "Unknown"
     if profile.get('created_at'):
         try:
-            # Supabase returns ISO format with Z (UTC)
             dt = datetime.fromisoformat(profile['created_at'].replace('Z', '+00:00'))
             joined_date = dt.strftime("%B %d, %Y")
         except:
             joined_date = str(profile['created_at'])[:10]
 
-    # Last Active (with Philippines timezone)
     last_active = "Just now"
     if profile.get('last_active'):
         try:
             dt = datetime.fromisoformat(profile['last_active'].replace('Z', '+00:00'))
-            # Convert to Asia/Manila timezone for display
             dt = dt.astimezone(pytz.timezone('Asia/Manila'))
             last_active = dt.strftime("%B %d, %Y • %I:%M %p")
         except:
             last_active = "Just now"
 
-    # Detailed stats
-    total_xp = profile.get('total_xp_earned', xp)
-    inventory_views = profile.get('inventory_views', 0)
+    # New individual stats
+    windows_views = profile.get('windows_views', 0)
+    office_views = profile.get('office_views', 0)
+    netflix_views = profile.get('netflix_views', 0)
     netflix_reveals = profile.get('netflix_reveals', 0)
     times_cleared = profile.get('times_cleared', 0)
     guidance_reads = profile.get('guidance_reads', 0)
     lore_reads = profile.get('lore_reads', 0)
+    profile_views = profile.get('profile_views', 0)
 
     caption = (
         f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
@@ -567,9 +570,12 @@ async def handle_stats(chat_id, first_name):
         f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
         f"{progress_bar}\n\n"
         "📊 <b>Detailed Stats:</b>\n"
-        f"• Total XP Earned: <b>{total_xp:,}</b>\n"
-        f"• Inventory Views: <b>{inventory_views}</b> times\n"
-        f"• Netflix Cookies Revealed: <b>{netflix_reveals}</b>\n"
+        f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
+        f"• Profile Views: <b>{profile_views}</b> times\n"
+        f"• Windows Keys Viewed: <b>{windows_views}</b> times\n"
+        f"• Office Keys Viewed: <b>{office_views}</b> times\n"
+        f"• Netflix Keys Viewed: <b>{netflix_views}</b> times\n"
+        f"• Netflix Cookies Revealed: <b>{netflix_reveals}</b> times\n"
         f"• Times Cleared the Forest: <b>{times_cleared}</b>\n"
         f"• Guidance Read: <b>{guidance_reads}</b> times\n"
         f"• Lore Read: <b>{lore_reads}</b> times\n\n"
