@@ -11,7 +11,6 @@ import time
 
 
 forest_memory = {}
-has_seen_main_menu = {}
 app = Flask(__name__)
 
 
@@ -149,6 +148,27 @@ async def update_has_seen_menu(chat_id):
         except Exception as e:
             print(f"Failed to update has_seen_menu: {e}")
 
+async def force_set_has_seen_menu(chat_id):
+    """Set has_seen_menu = True for new users after they open the menu"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+    
+    payload = {"has_seen_menu": True}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers,
+                json=payload
+            )
+        except Exception as e:
+            print(f"Failed to force set has_seen_menu: {e}")
+
 def get_cumulative_xp_for_level(target_level: int) -> int:
     """Returns total XP needed to reach this level (new balanced formula)"""
     if target_level <= 1:
@@ -248,7 +268,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "first_name": first_name,
             "xp": 0,           # Clean 0 XP
             "level": 1,
-            "last_active": "now()"
+            "last_active": "now()",
+            "has_seen_menu": False
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -608,25 +629,38 @@ async def handle_view_feedback(chat_id, user_id):
 
 # ==================== RESET FIRST-TIME EXPERIENCE (Owner Only) ======================
 async def handle_reset_first_time(chat_id):
-    if chat_id != 7399488750:   # Only you can use this
+    if chat_id != 7399488750:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker can reset the forest memory."
         )
         return
 
-    # Reset the first-time flag
-    if chat_id in has_seen_main_menu:
-        del has_seen_main_menu[chat_id]
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
 
-    await tg_app.bot.send_message(
-        chat_id=chat_id,
-        text="✨ <b>First-time experience has been reset.</b>\n\n"
-             "The next time you enter the Enchanted Clearing, the guided menu "
-             "with <b>『 Start Here → Guidance 』</b> will appear again.\n\n"
-             "You can now test as a new wanderer.",
-        parse_mode='HTML'
-    )
+    payload = {"has_seen_menu": False}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers,
+                json=payload
+            )
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="✨ <b>First-time experience has been reset.</b>\n\n"
+                     "The next time you enter the Enchanted Clearing, the guided menu "
+                     "with <b>『 Start Here → Guidance 』</b> will appear again.",
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            print(f"Reset failed: {e}")
+            await tg_app.bot.send_message(chat_id=chat_id, text="❌ Failed to reset first-time flag.")
 
     print(f"✅ First-time flag reset for owner {chat_id}")
 
@@ -733,19 +767,22 @@ async def handle_callback(update: Update):
         profile = await get_user_profile(chat_id)
 
         if not profile:
-            # New user - show first time menu
+            # New user
             is_first_time = True
-            has_seen = False
         else:
-            # Existing user - check has_seen_menu column
+            # Existing user
             has_seen = profile.get('has_seen_menu', False)
             is_first_time = not has_seen
 
-        # Show the appropriate menu
+        # Show the menu
         await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
 
-        # Update has_seen_menu to TRUE after showing the menu
-        await update_has_seen_menu(chat_id)
+        # === Only update has_seen_menu if the user already exists ===
+        if profile:
+            await update_has_seen_menu(chat_id)
+        else:
+            # For new users, we set it after they open the menu
+            await force_set_has_seen_menu(chat_id)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
