@@ -129,7 +129,8 @@ async def get_user_profile(chat_id):
         try:
             response = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}"
-                "&select=*,has_seen_menu,created_at,total_xp_earned,inventory_views,netflix_reveals,times_cleared,guidance_reads",
+                "&select=*,has_seen_menu,created_at,total_xp_earned,windows_views,office_views,netflix_views,"
+                "netflix_reveals,times_cleared,guidance_reads,lore_reads",
                 headers=headers
             )
             data = response.json()
@@ -1420,6 +1421,7 @@ def webhook():
             elif text.startswith("/menu"): 
                 profile = await get_user_profile(chat_id)
                 is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
+                # Do NOT mark as seen here (soft version)
                 await send_full_menu(chat_id, name, is_first_time=is_first)
 
             elif text.startswith("/myid"):
