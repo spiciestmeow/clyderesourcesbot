@@ -159,15 +159,6 @@ async def update_has_seen_menu(chat_id):
         except Exception as e:
             print(f"Failed to update has_seen_menu: {e}")
 
-async def force_set_has_seen_menu(chat_id):
-    """Set has_seen_menu = True for new users after they open the menu"""
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal"
-    }
-    
     payload = {"has_seen_menu": True}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -889,77 +880,71 @@ async def handle_callback(update: Update):
     await query.answer()
 
     chat_id = update.effective_chat.id
-    first_name = update.effective_user.first_name
+    first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
-
-    # ====================== MAIN MENU & CLEARING ======================
+    # ====================== MAIN MENU ======================
     if query.data in ["show_main_menu", "main_menu"]:
         try:
             await query.message.delete()
         except:
             pass
 
-    await asyncio.sleep(0.8)
+        await asyncio.sleep(0.8)
 
-    # === Loading animation ===
-    loading_msg = await tg_app.bot.send_animation(
-        chat_id=chat_id,
-        animation=LOADING_GIF,
-        caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
-        parse_mode='HTML'
-    )
+        # Loading animation
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=LOADING_GIF,
+            caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
+            parse_mode='HTML'
+        )
 
-    await asyncio.sleep(1.3)
-    await loading_msg.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode='HTML')
-    await asyncio.sleep(1.3)
-    await loading_msg.edit_caption("✨ <i>You stand again in the heart of the Enchanted Clearing...</i>", parse_mode='HTML')
-    await asyncio.sleep(1.0)
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("✨ <i>You stand again in the heart of the Enchanted Clearing...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.0)
 
-    # Get or create profile
-    profile = await get_user_profile(chat_id)
-    if not profile:
-        await add_xp(chat_id, first_name, "general")   # This creates the user with has_seen_menu=False
-        profile = await get_user_profile(chat_id)      # Refresh
+        # Get or create profile
+        profile = await get_user_profile(chat_id)
+        if not profile:
+            await add_xp(chat_id, first_name, "general")
+            profile = await get_user_profile(chat_id)
 
-    is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
+        is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
 
-    # Only mark as seen AFTER showing the first-time menu
-    if is_first_time:
-        await update_has_seen_menu(chat_id)   # or force_set_has_seen_menu
+        if is_first_time:
+            await update_has_seen_menu(chat_id)
 
-    # Delete loading
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
         except:
             pass
 
         await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
-        return
+        return   # ← Stop here for main menu
     
     # ====================== ALL OTHER BUTTONS ======================
-    # Enforce registration for Guidance, Inventory, Lore, etc.
+    # Enforce registration
     profile = await get_user_profile(chat_id)
     if not profile:
         await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=HELLO_GIF,
             caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
-                 "You stand at the edge of a mysterious forest.\n"
-                 "The ancient trees seem to be watching you with quiet curiosity.\n\n"
-                 "To step into the Enchanted Clearing and discover its hidden magic, "
-                 "please press the button below.\n\n"
-                 "<i>The forest is ready to welcome you...</i> 🍃✨",
+                "You stand at the edge of a mysterious forest...\n\n"
+                "To step into the Enchanted Clearing, please press the button below.",
             parse_mode='HTML',
             reply_markup=get_start_keyboard()
         )
         return
-    
-    # Mark as seen (in case it wasn't set)
+        
+    # Mark as seen
     if not profile.get('has_seen_menu', False):
-        await force_set_has_seen_menu(chat_id)
+        await update_has_seen_menu(chat_id)
     
-    # ====================== OTHER CALLBACKS (only for registered users) ======================
-    elif query.data == "check_vamt":
+    # ====================== INVENTORY & OTHER FEATURES ======================
+    if query.data == "check_vamt":
         await query.message.edit_caption(
             caption="📜 <i>The doors of the Ancient Library creak open...</i>\n\n"
                     "Which scrolls call to your heart today, wanderer?\n\n"
@@ -972,14 +957,13 @@ async def handle_callback(update: Update):
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
 
-        # Give XP when viewing inventory
         if category in ["win", "office"]:
-            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_win_office", query=query)
+            await add_xp(chat_id, first_name, "view_win_office", query=query)
         elif category == "netflix":
-            await add_xp(update.effective_chat.id, update.effective_user.first_name, "view_netflix", query=query)
+            await add_xp(chat_id, first_name, "view_netflix", query=query)
 
         # Get user level
-        profile = await get_user_profile(update.effective_chat.id)
+        profile = await get_user_profile(chat_id)
         user_level = profile['level'] if profile else 1
 
         await query.message.edit_caption(
@@ -1106,7 +1090,7 @@ async def handle_callback(update: Update):
         await asyncio.sleep(1.5)
 
         # === Get user level and rebuild the SAME limited list as the display ===
-        profile = await get_user_profile(update.effective_chat.id)
+        profile = await get_user_profile(chat_id)
         user_level = profile['level'] if profile else 1
 
         # === Consistent limit logic with viewing section ===
@@ -1142,7 +1126,7 @@ async def handle_callback(update: Update):
         status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
         # Give XP
-        await add_xp(update.effective_chat.id, update.effective_user.first_name, "reveal_netflix", query=query)
+        await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
         report = (
             f"<b>🍿 {display_name} Revealed</b>\n"
@@ -1169,11 +1153,13 @@ async def handle_callback(update: Update):
     elif query.data == "about":
         await add_xp(chat_id, first_name, "general", query=query)
 
-        try: await query.message.delete()
-        except: pass
+        try: 
+            await query.message.delete()
+        except: 
+            pass
 
         loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,                                   # ← Fixed
             animation=LOADING_GIF,
             caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>",
             parse_mode='HTML'
@@ -1195,18 +1181,20 @@ async def handle_callback(update: Update):
         )
 
         final_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,                                   # ← Fixed
             animation=ABOUT_GIF,
             caption=text,
             parse_mode='HTML',
             reply_markup=get_back_keyboard()
         )
 
-        try: await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
-        except: pass
+        try: 
+            await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
+        except: 
+            pass
 
-        chat_id = update.effective_chat.id
-        if chat_id not in forest_memory: forest_memory[chat_id] = []
+        if chat_id not in forest_memory: 
+            forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
     # ====================== HELP (Guidance) - 2 Pages ======================
