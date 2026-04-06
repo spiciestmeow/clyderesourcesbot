@@ -179,7 +179,7 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit + true one-time rewards for guidance & lore"""
+    """Add XP with cooldown + rate limit + individual inventory tracking"""
     
     current_time = time.time()
 
@@ -213,7 +213,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     xp_cooldowns[chat_id][action] = current_time
     user_action_history[chat_id].append(current_time)
 
-    # ====================== ONE-TIME XP LOGIC ======================
+    # ====================== XP AMOUNT ======================
     profile = await get_user_profile(chat_id)
     
     xp_amount = 5  # default
@@ -226,7 +226,11 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         current_reads = profile.get('lore_reads', 0) if profile else 0
         if current_reads == 0:
             xp_amount = 8
-    elif action in ["view_win_office", "view_netflix"]:
+    elif action == "view_windows":
+        xp_amount = 6
+    elif action == "view_office":
+        xp_amount = 6
+    elif action == "view_netflix":
         xp_amount = 6
     elif action == "reveal_netflix":
         xp_amount = 10
@@ -244,8 +248,12 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     if profile:
         stats_update = {}
 
-        if action in ["view_win_office", "view_netflix"]:
-            stats_update["inventory_views"] = (profile.get('inventory_views') or 0) + 1
+        if action == "view_windows":
+            stats_update["windows_views"] = (profile.get('windows_views') or 0) + 1
+        elif action == "view_office":
+            stats_update["office_views"] = (profile.get('office_views') or 0) + 1
+        elif action == "view_netflix":
+            stats_update["netflix_views"] = (profile.get('netflix_views') or 0) + 1
         elif action == "reveal_netflix":
             stats_update["netflix_reveals"] = (profile.get('netflix_reveals') or 0) + 1
         elif action == "clear":
@@ -299,7 +307,9 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "has_seen_menu": False,
             "created_at": "now()",
             "total_xp_earned": 0,
-            "inventory_views": 0,
+            "windows_views": 0,
+            "office_views": 0,
+            "netflix_views": 0,
             "netflix_reveals": 0,
             "times_cleared": 0,
             "guidance_reads": 0,
@@ -958,12 +968,14 @@ async def handle_callback(update: Update):
             reply_markup=get_inventory_categories()
         )
 
-    # ====================== FILTERED INVENTORY (Level-based Limit) ======================
+    # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
 
-        if category in ["win", "office"]:
-            await add_xp(chat_id, first_name, "view_win_office", query=query)
+        if category == "win":
+            await add_xp(chat_id, first_name, "view_windows", query=query)
+        elif category == "office":
+            await add_xp(chat_id, first_name, "view_office", query=query)
         elif category == "netflix":
             await add_xp(chat_id, first_name, "view_netflix", query=query)
 
