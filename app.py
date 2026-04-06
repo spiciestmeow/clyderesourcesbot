@@ -179,7 +179,7 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit protection"""
+    """Add XP with cooldown + rate limit protection + proper tracking"""
     
     current_time = time.time()
 
@@ -222,7 +222,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         "reveal_netflix": 10,
         "profile": 5,
         "clear": 5,
-        "guidance": 8,
+        "guidance": 8,      # First time only
+        "lore": 8,          # First time only
         "general": 5
     }.get(action, 5)
 
@@ -237,7 +238,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     }
 
     if profile:
-        # === Safe stat tracking (handle NULL values) ===
         stats_update = {}
 
         if action in ["view_win_office", "view_netflix"]:
@@ -248,6 +248,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             stats_update["times_cleared"] = (profile.get('times_cleared') or 0) + 1
         elif action == "guidance":
             stats_update["guidance_reads"] = (profile.get('guidance_reads') or 0) + 1
+        elif action == "lore":
+            stats_update["lore_reads"] = (profile.get('lore_reads') or 0) + 1
 
         # Always update total_xp_earned safely
         current_total = profile.get('total_xp_earned') or 0
@@ -299,7 +301,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "inventory_views": 0,
             "netflix_reveals": 0,
             "times_cleared": 0,
-            "guidance_reads": 0
+            "guidance_reads": 0,
+            "lore_reads": 0
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -517,7 +520,7 @@ async def handle_stats(chat_id, first_name):
 
     progress_bar = create_progress_bar(xp, xp_required_next, length=13)
 
-# Format dates nicely
+    # Format dates nicely
     joined_date = "Unknown"
     if profile.get('created_at'):
         try:
@@ -526,7 +529,6 @@ async def handle_stats(chat_id, first_name):
         except:
             joined_date = str(profile['created_at'])[:10]
 
-    # Format Last Active
     last_active = "Just now"
     if profile.get('last_active'):
         try:
@@ -535,12 +537,13 @@ async def handle_stats(chat_id, first_name):
         except:
             last_active = "Just now"
 
-    # Detailed stats (fallback to 0 if column doesn't exist yet)
+    # Detailed stats
     total_xp = profile.get('total_xp_earned', xp)
     inventory_views = profile.get('inventory_views', 0)
     netflix_reveals = profile.get('netflix_reveals', 0)
     times_cleared = profile.get('times_cleared', 0)
     guidance_reads = profile.get('guidance_reads', 0)
+    lore_reads = profile.get('lore_reads', 0)
 
     caption = (
         f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
@@ -554,7 +557,8 @@ async def handle_stats(chat_id, first_name):
         f"• Inventory Views: <b>{inventory_views}</b> times\n"
         f"• Netflix Cookies Revealed: <b>{netflix_reveals}</b>\n"
         f"• Times Cleared the Forest: <b>{times_cleared}</b>\n"
-        f"• Guidance Read: <b>{guidance_reads}</b> times\n\n"
+        f"• Guidance Read: <b>{guidance_reads}</b> times\n"
+        f"• Lore Read: <b>{lore_reads}</b> times\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🌱 <b>Joined:</b> {joined_date}\n"
         f"🌲 <b>Last Active:</b> {last_active}\n\n"
@@ -567,7 +571,6 @@ async def handle_stats(chat_id, first_name):
         parse_mode='HTML'
     )
     
-    # Add to forest_memory so /clear can delete it
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
@@ -1151,7 +1154,7 @@ async def handle_callback(update: Update):
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
-        await add_xp(chat_id, first_name, "general", query=query)
+        await add_xp(chat_id, first_name, "lore", query=query)
 
         try: 
             await query.message.delete()
@@ -1202,8 +1205,8 @@ async def handle_callback(update: Update):
         chat_id = update.effective_chat.id
         first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
-        # === Give XP and count ONLY when first opening Guidance (not on page switches) ===
-        if query.data == "help":                      # Only on initial open
+        # === Give XP only on the very first time opening Guidance ===
+        if query.data == "help":
             await add_xp(chat_id, first_name, "guidance", query=query)
 
         try: 
@@ -1274,14 +1277,15 @@ async def handle_callback(update: Update):
                 "Gain XP as you explore. Higher levels unlock more items.\n\n"
                 
                 "<b>How to Gain XP:</b>\n"
-                "• View Win/Office → <b>+6 XP</b>\n"
-                "• View Netflix → <b>+6 XP</b>\n"
-                "• Reveal Netflix → <b>+10 XP</b>\n"
+                "• View Win/Office Keys → <b>+6 XP</b>\n"
+                "• View Netflix Keys → <b>+6 XP</b>\n"
+                "• Reveal Netflix Cookie → <b>+10 XP</b>\n"
                 "• /profile → <b>+5 XP</b>\n"
                 "• /clear → <b>+5 XP</b>\n"
-                "• Guidance & Lore → <b>+8 XP only once</b>\n\n"
+                "• Open Guidance → <b>+8 XP</b> (only first time)\n"
+                "• Open Lore (About) → <b>+8 XP</b> (only first time)\n\n"
                 
-                "<b>Items Shown:</b>\n"
+                "<b>Items Shown in Inventory:</b>\n"
                 "• Level 1 → 1 item\n"
                 "• Level 2–3 → 2 items\n"
                 "• Level 4–5 → 4 items\n"
@@ -1294,7 +1298,7 @@ async def handle_callback(update: Update):
                 "<b>Note:</b>\n"
                 "• New users start at Level 1 with 0 XP\n"
                 "• You will see a celebration when you level up\n"
-                "• Level 7 gives full access\n\n"
+                "• Level 7 gives full access to all scrolls\n\n"
                 
                 "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
             )
@@ -1314,8 +1318,7 @@ async def handle_callback(update: Update):
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(loading_msg.message_id)
 
-        # === Mark has_seen_menu = True when Guidance is opened ===
-        # This fixes the first-time menu staying forever
+        # === Mark has_seen_menu when Guidance is opened ===
         profile = await get_user_profile(chat_id)
         if profile and not profile.get('has_seen_menu', False):
             await update_has_seen_menu(chat_id)
