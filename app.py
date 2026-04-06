@@ -1182,7 +1182,7 @@ async def handle_callback(update: Update):
         if query.data.startswith("help_page_"):
             page = int(query.data.split("_")[2])
 
-        # Single loading animation for both pages
+        # Single loading animation
         loading_msg = await tg_app.bot.send_animation(
             chat_id=update.effective_chat.id,
             animation=LOADING_GIF,
@@ -1195,7 +1195,6 @@ async def handle_callback(update: Update):
         await asyncio.sleep(1.0)
 
         if page == 1:
-            # ==================== PAGE 1 ====================
             text = (
                 "<b>❓ Guidance - Page 1/2</b>\n\n"
                 "🌿 <b>How to Navigate the Clearing</b>\n"
@@ -1231,7 +1230,7 @@ async def handle_callback(update: Update):
             ])
 
         else:
-            # ==================== PAGE 2: LEVELING SYSTEM ====================
+            # Page 2
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP total"
                 for lvl in range(2, 11)
@@ -1273,13 +1272,14 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
 
-        # Edit the loading message into the actual content
+        # Edit the loading message into final content
         await loading_msg.edit_caption(
             caption=text,
             parse_mode='HTML',
             reply_markup=keyboard
         )
 
+        # Save message ID for /clear
         chat_id = update.effective_chat.id
         if chat_id not in forest_memory: 
             forest_memory[chat_id] = []
