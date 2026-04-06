@@ -916,16 +916,16 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
 
-        # === Create user if not exists ===
+        # Create user if not exists
         profile = await get_user_profile(chat_id)
         if not profile:
-            await add_xp(chat_id, first_name, "general")   # Creates the user
+            await add_xp(chat_id, first_name, "general")
 
-        # Mark as seen
+        # FORCE has_seen_menu = True so first-time menu never shows again
         await force_set_has_seen_menu(chat_id)
 
-        # Show first-time menu for new users
-        await send_full_menu(chat_id, first_name, is_first_time=True)
+        # SHOW NORMAL MENU (this is the key fix)
+        await send_full_menu(chat_id, first_name, is_first_time=False)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -939,7 +939,7 @@ async def handle_callback(update: Update):
     if not profile:
         await tg_app.bot.send_message(
             chat_id=chat_id,
-            aniamtion=HELLO_GIF,
+            animation=HELLO_GIF,
             text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                  "You stand at the edge of a mysterious forest.\n"
                  "The ancient trees seem to be watching you with quiet curiosity.\n\n"
