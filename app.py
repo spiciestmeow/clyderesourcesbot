@@ -1338,7 +1338,7 @@ def webhook():
     async def process_update():
         update = Update.de_json(update_data, tg_app.bot)
 
-        # ==================== MAINTENANCE MODE (Only you can bypass) ====================
+        # ==================== MAINTENANCE MODE ====================
         MAINTENANCE_MODE = True
         OWNER_CHAT_ID = 7399488750
 
@@ -1352,21 +1352,14 @@ def webhook():
             if chat_id and chat_id != OWNER_CHAT_ID:
                 try:
                     if update.message:
-                        await tg_app.bot.send_message(
-                            chat_id=chat_id,
-                            text=MAINTENANCE_MESSAGE,
-                            parse_mode='HTML'
-                        )
+                        await tg_app.bot.send_message(chat_id=chat_id, text=MAINTENANCE_MESSAGE, parse_mode='HTML')
                     elif update.callback_query:
-                        await update.callback_query.answer(
-                            "🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!",
-                            show_alert=True
-                        )
+                        await update.callback_query.answer("🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!", show_alert=True)
                 except:
                     pass
                 return
 
-        # ==================== NORMAL PROCESSING (Only runs for you or when maintenance is off) ====================
+        # ==================== NORMAL PROCESSING ====================
         if update.message and update.message.text:
             text = update.message.text.lower().strip()
             chat_id = update.effective_chat.id
@@ -1383,7 +1376,6 @@ def webhook():
                 if not profile:
                     await tg_app.bot.send_message(
                         chat_id=chat_id,
-                        animation=HELLO_GIF,
                         text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                              "You stand at the edge of a mysterious forest.\n"
                              "The ancient trees seem to be watching you with quiet curiosity.\n\n"
@@ -1395,7 +1387,7 @@ def webhook():
                     )
                     return
 
-            # ==================== COMMAND HANDLERS ====================
+            # Command handlers
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
 
@@ -1441,17 +1433,16 @@ def webhook():
             chat_id = update.effective_chat.id
             first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
-            # Allow "Enter the Enchanted Clearing" button for unregistered users
+            # === Allow Enter button for unregistered users ===
             if query.data in ["show_main_menu", "main_menu"]:
-                await handle_callback(update)   # This is safe now because we fixed handle_callback below
+                await handle_callback(update)
                 return
 
-            # For all other buttons: enforce registration
+            # === Enforce registration for all other buttons ===
             profile = await get_user_profile(chat_id)
             if not profile:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    animation=HELLO_GIF,
                     text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                          "You stand at the edge of a mysterious forest.\n"
                          "The ancient trees seem to be watching you with quiet curiosity.\n\n"
@@ -1463,9 +1454,8 @@ def webhook():
                 )
                 return
 
-            # Registered user → proceed with normal callback logic
+            # Registered user → normal handling
             await handle_callback(update)
-
     try: loop.run_until_complete(process_update())
     except Exception as e: print(f"🔴 Webhook Error: {e}")
     return "OK", 200
