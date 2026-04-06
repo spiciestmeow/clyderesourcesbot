@@ -989,6 +989,13 @@ async def handle_callback(update: Update):
 
         else:
             # ==================== PAGE 2: LEVELING SYSTEM ====================
+            
+            # Dynamic Level Requirements (Recommended)
+            level_req_text = "\n".join(
+                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP total"
+                for lvl in range(2, 11)
+            )
+
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
@@ -1008,19 +1015,12 @@ async def handle_callback(update: Update):
                 "• Level 2–4 → Up to <b>3 items</b> per category\n"
                 "• Level 5+ → <b>All items</b> shown\n\n"
                 
-                "<b>Level Requirements (Cumulative):</b>\n"
-                "• Level 2 → 300 XP total\n"
-                "• Level 3 → 700 XP total\n"
-                "• Level 4 → 1,200 XP total\n"
-                "• Level 5 → 1,800 XP total\n"
-                "• Level 6 → 2,500 XP total\n"
-                "• Level 7 → 3,300 XP total\n"
-                "• Level 8 → 4,200 XP total\n"
-                "• Level 9 → 5,200 XP total\n"
-                "• Level 10 → 6,300 XP total\n\n"
+                f"<b>Level Requirements (Cumulative):</b>\n"
+                f"{level_req_text}\n\n"
                 
                 "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
             )
+
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
