@@ -1389,13 +1389,15 @@ def webhook():
             # === REGISTRATION CHECK (Force user to enter clearing first) ===
             profile = await get_user_profile(chat_id)
             if not profile and not text.startswith("/start"):
-                await tg_app.bot.send_message(
+                await tg_app.bot.send_animation(
                     chat_id=chat_id,
-                    text="🌿 <b>Hello, curious wanderer!</b>\n\n"
-                         "The Enchanted Clearing is a special place full of hidden wonders.\n\n"
-                         "To step inside and explore everything — the forest inventory, your profile, and more — "
-                         "please press the button below to begin your journey.\n\n"
-                         "<i>The trees are waiting to welcome you...</i> 🍃✨",
+                    animation=LOADING_GIF,
+                    caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+                            "You stand at the edge of a mysterious forest.\n"
+                            "The ancient trees seem to be watching you with quiet curiosity.\n\n"
+                            "If you wish to step into the Enchanted Clearing and discover its hidden magic, "
+                            "please press the button below.\n\n"
+                            "<i>The forest is ready to welcome you...</i> 🍃✨",
                     parse_mode='HTML',
                     reply_markup=get_start_keyboard()
                 )
