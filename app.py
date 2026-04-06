@@ -236,6 +236,22 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     }
 
     if profile:
+        # === Track detailed stats ===
+        stats_update = {}
+
+        if action == "view_win_office" or action == "view_netflix":
+            stats_update["inventory_views"] = profile.get('inventory_views', 0) + 1
+        elif action == "reveal_netflix":
+            stats_update["netflix_reveals"] = profile.get('netflix_reveals', 0) + 1
+        elif action == "clear":
+            stats_update["times_cleared"] = profile.get('times_cleared', 0) + 1
+        elif action == "guidance":
+            stats_update["guidance_reads"] = profile.get('guidance_reads', 0) + 1
+
+        # Always update total_xp_earned
+        current_total = profile.get('total_xp_earned', 0)
+        stats_update["total_xp_earned"] = current_total + xp_amount
+
         # Existing user - add normal XP
         new_xp = profile.get('xp', 0) + xp_amount
         old_level = profile.get('level', 1)
@@ -257,6 +273,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "first_name": first_name,
             "last_active": "now()"
         }
+        payload.update(stats_update)   # Add the tracking fields
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.patch(
@@ -491,33 +508,37 @@ async def handle_stats(chat_id, first_name):
         )
         return
 
-    level = profile['level']
-    xp = profile['xp']
+    level = profile.get('level', 1)
+    xp = profile.get('xp', 0)
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     xp_to_next = max(0, xp_required_next - xp)
 
-    progress_bar = create_progress_bar(xp, xp_required_next, length=12)
+    progress_bar = create_progress_bar(xp, xp_required_next, length=13)
 
-
-    # Format Joined date nicely
+# Format dates nicely
     joined_date = "Unknown"
     if profile.get('created_at'):
         try:
-            # Convert ISO timestamp to readable format
             dt = datetime.fromisoformat(profile['created_at'].replace('Z', '+00:00'))
-            joined_date = dt.strftime("%B %d, %Y")   # Example: April 06, 2026
+            joined_date = dt.strftime("%B %d, %Y")
         except:
-            joined_date = str(profile['created_at'])[:10]  # Fallback
-
+            joined_date = str(profile['created_at'])[:10]
 
     # Format Last Active
-    last_active = "Unknown"
+    last_active = "Just now"
     if profile.get('last_active'):
         try:
             dt = datetime.fromisoformat(profile['last_active'].replace('Z', '+00:00'))
-            last_active = dt.strftime("%B %d, %Y")
+            last_active = dt.strftime("%B %d, %Y • %I:%M %p")
         except:
-            last_active = str(profile['last_active'])[:10]
+            last_active = "Just now"
+
+    # Detailed stats (fallback to 0 if column doesn't exist yet)
+    total_xp = profile.get('total_xp_earned', xp)
+    inventory_views = profile.get('inventory_views', 0)
+    netflix_reveals = profile.get('netflix_reveals', 0)
+    times_cleared = profile.get('times_cleared', 0)
+    guidance_reads = profile.get('guidance_reads', 0)
 
     caption = (
         f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
@@ -526,11 +547,16 @@ async def handle_stats(chat_id, first_name):
         f"⭐ <b>Level:</b> {level}\n\n"
         f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
         f"{progress_bar}\n\n"
-        f"📈 <b>To Next Level:</b> {xp_to_next:,} XP\n\n"
+        "📊 <b>Detailed Stats:</b>\n"
+        f"• Total XP Earned: <b>{total_xp:,}</b>\n"
+        f"• Inventory Views: <b>{inventory_views}</b> times\n"
+        f"• Netflix Cookies Revealed: <b>{netflix_reveals}</b>\n"
+        f"• Times Cleared the Forest: <b>{times_cleared}</b>\n"
+        f"• Guidance Read: <b>{guidance_reads}</b> times\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🌱 <b>Joined:</b> {joined_date}\n"
         f"🌲 <b>Last Active:</b> {last_active}\n\n"
-        "<i>The ancient trees keep track of every wanderer's journey...</i> 🍃"
+        "<i>The trees remember every step you've taken...</i> 🍃"
     )
 
     msg = await tg_app.bot.send_message(
