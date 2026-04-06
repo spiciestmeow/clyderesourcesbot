@@ -238,14 +238,18 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     if profile:
         # Existing user - add normal XP
         new_xp = profile.get('xp', 0) + xp_amount
-        current_level = profile.get('level', 1)
-        new_level = current_level
+        old_level = profile.get('level', 1)
+        new_level = old_level
 
+        # Calculate new level
         while True:
             xp_required_for_next = get_cumulative_xp_for_level(new_level + 1)
             if new_xp < xp_required_for_next:
                 break
             new_level += 1
+
+        # Check if user leveled up
+        leveled_up = new_level > old_level
 
         payload = {
             "xp": new_xp,
@@ -260,6 +264,11 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 headers=headers,
                 json=payload
             )
+
+        # === Send Level Up Celebration ===
+        if leveled_up:
+            await send_level_up_message(chat_id, first_name, old_level, new_level)
+
     else:
         # === NEW USER: Truly start with 0 XP ===
         # We create the user with 0 XP and do NOT add any XP for the first action
@@ -317,6 +326,30 @@ async def send_initial_welcome(chat_id, first_name):
     msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
     if chat_id not in forest_memory: forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
+
+async def send_level_up_message(chat_id, first_name, old_level, new_level):
+    """Send a beautiful level up celebration message"""
+    title = get_level_title(new_level)
+    
+    caption = (
+        f"🌟 <b>Congratulations, {html.escape(first_name)}!</b>\n\n"
+        f"You have grown stronger!\n\n"
+        f"🏷️ New Title: <b>{title}</b>\n"
+        f"⭐ Level: <b>{old_level}</b> → <b>{new_level}</b>\n\n"
+        "The forest spirits celebrate your growth.\n"
+        "More scrolls and wonders are now within your reach.\n\n"
+        "<i>May your bond with the Enchanted Clearing continue to deepen.</i> 🍃✨"
+    )
+
+    try:
+        await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=LOADING_GIF,
+            caption=caption,
+            parse_mode='HTML'
+        )
+    except:
+        pass
 
 async def send_full_menu(chat_id, first_name, is_first_time=False):
     user_tz = pytz.timezone('Asia/Manila')
@@ -1080,6 +1113,11 @@ async def handle_callback(update: Update):
                 "• 📜 Ancient Scrolls — Learning guides\n"
                 "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
                 "• 🌲 The Whispering Forest — Main resource hub\n\n"
+                
+                "<b>Note for New Wanderers:</b>\n"
+                "• You start at <b>Level 1 with 0 XP</b>\n"
+                "• Your first actions will begin your growth and unlock more items.\n\n"
+                
                 "<i>Tap Next → to learn about the Leveling System</i>"
             )
             keyboard = InlineKeyboardMarkup([
@@ -1090,7 +1128,7 @@ async def handle_callback(update: Update):
         else:
             # ==================== PAGE 2: LEVELING SYSTEM ====================
             
-            # Dynamic Level Requirements (Recommended)
+            # Dynamic Level Requirements
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP total"
                 for lvl in range(2, 11)
@@ -1100,7 +1138,7 @@ async def handle_callback(update: Update):
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
                 "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
-                "The higher your level, the more XP needed to level up.\n\n"
+                "The higher your level, the more scrolls you can see.\n\n"
                 
                 "<b>How to Gain XP:</b>\n"
                 "• View Windows or Office Keys → <b>+6 XP</b>\n"
@@ -1119,6 +1157,11 @@ async def handle_callback(update: Update):
                 
                 f"<b>Level Requirements (Cumulative):</b>\n"
                 f"{level_req_text}\n\n"
+                
+                "<b>Note for New Wanderers:</b>\n"
+                "• You start at <b>Level 1 with 0 XP</b>\n"
+                "• The more you interact with the forest, the faster you grow.\n"
+                "• Level 7 unlocks full access to all scrolls.\n\n"
                 
                 "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
             )
