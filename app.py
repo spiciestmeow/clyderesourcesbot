@@ -179,7 +179,7 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit protection + proper tracking"""
+    """Add XP with cooldown + rate limit protection + one-time rewards for guidance & lore"""
     
     current_time = time.time()
 
@@ -211,25 +211,33 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 pass
         return False
 
-    # Record this action
+    # Record this action for cooldown
     xp_cooldowns[chat_id][action] = current_time
     user_action_history[chat_id].append(current_time)
 
-    # ====================== XP AMOUNT ======================
-    xp_amount = {
-        "view_win_office": 6,
-        "view_netflix": 6,
-        "reveal_netflix": 10,
-        "profile": 5,
-        "clear": 5,
-        "guidance": 8,      # First time only
-        "lore": 8,          # First time only
-        "general": 5
-    }.get(action, 5)
-
-    # ====================== Database Update ======================
+    # ====================== XP AMOUNT (with one-time logic) ======================
     profile = await get_user_profile(chat_id)
     
+    xp_amount = 5  # default
+
+    if action == "guidance":
+        guidance_reads = profile.get('guidance_reads', 0) if profile else 0
+        if guidance_reads == 0:           # First time only
+            xp_amount = 8
+    elif action == "lore":
+        lore_reads = profile.get('lore_reads', 0) if profile else 0
+        if lore_reads == 0:               # First time only
+            xp_amount = 8
+    elif action == "view_win_office" or action == "view_netflix":
+        xp_amount = 6
+    elif action == "reveal_netflix":
+        xp_amount = 10
+    elif action == "profile" or action == "clear":
+        xp_amount = 5
+    else:
+        xp_amount = 5
+
+    # ====================== Database Update ======================
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -251,16 +259,13 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         elif action == "lore":
             stats_update["lore_reads"] = (profile.get('lore_reads') or 0) + 1
 
-        # Always update total_xp_earned safely
         current_total = profile.get('total_xp_earned') or 0
         stats_update["total_xp_earned"] = current_total + xp_amount
 
-        # Existing user - add normal XP
         new_xp = (profile.get('xp') or 0) + xp_amount
         old_level = profile.get('level') or 1
         new_level = old_level
 
-        # Calculate new level
         while True:
             xp_required_for_next = get_cumulative_xp_for_level(new_level + 1)
             if new_xp < xp_required_for_next:
@@ -288,7 +293,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             await send_level_up_message(chat_id, first_name, old_level, new_level)
 
     else:
-        # New user - create with clean 0 values
+        # New user
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
