@@ -465,6 +465,51 @@ async def handle_profile(chat_id, first_name):
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
+
+
+# ==================== STATS COMMAND ======================
+async def handle_stats(chat_id, first_name):
+    """Simple Stats command - shows more detailed progress"""
+    
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text="🌿 You haven't started your journey yet. Use /profile to begin!"
+        )
+        return
+
+    level = profile['level']
+    xp = profile['xp']
+    xp_required_next = get_cumulative_xp_for_level(level + 1)
+    xp_to_next = max(0, xp_required_next - xp)
+
+    progress_bar = create_progress_bar(xp, xp_required_next, length=12)
+
+    caption = (
+        f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
+        f"⭐ <b>Level:</b> {level}\n\n"
+        f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
+        f"{progress_bar}\n\n"
+        f"📈 <b>To Next Level:</b> {xp_to_next:,} XP\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🌱 <b>Joined:</b> {profile.get('created_at', 'Unknown')[:10]}\n"
+        f"🌲 <b>Last Active:</b> {profile.get('last_active', 'Unknown')[:10]}\n\n"
+        "<i>The ancient trees keep track of every wanderer's journey...</i> 🍃"
+    )
+
+    msg = await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=caption,
+        parse_mode='HTML'
+    )
+    
+    # Add to forest_memory so /clear can delete it
+    if chat_id not in forest_memory:
+        forest_memory[chat_id] = []
+    forest_memory[chat_id].append(msg.message_id)
     
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
@@ -1237,6 +1282,9 @@ def webhook():
 
             elif text.startswith("/profile"):
                 await handle_profile(chat_id, name)
+
+            elif text.startswith("/stats"):
+                await handle_stats(chat_id, name)
 
             elif text.startswith("/menu"): 
                 await send_full_menu(chat_id, name, is_first_time=False)
