@@ -1447,9 +1447,15 @@ def webhook():
 
         elif update.callback_query:
             # Also protect callback buttons (Guidance, Inventory, Lore, etc.)
+            query = update.callback_query
             chat_id = update.effective_chat.id
-            first_name = update.effective_user.first_name
+            first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
+            if query.data in ["show_main_menu", "main_menu"]:
+                await handle_callback(update)   # Let the original logic create user + show menu
+                return
+
+            # For all other buttons: Check if user is registered
             profile = await get_user_profile(chat_id)
             if not profile:
                 await tg_app.bot.send_message(
@@ -1464,6 +1470,9 @@ def webhook():
                     reply_markup=get_start_keyboard()
                 )
                 return
+            
+            # If user is registered, continue with normal callback handling
+            await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
     except Exception as e: print(f"🔴 Webhook Error: {e}")
