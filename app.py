@@ -134,11 +134,12 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit protection"""
+    """Add XP with cooldown + rate limit protection
+       New users start with truly 0 XP on their very first action"""
     
     current_time = time.time()
 
-    # Initialize for this user
+    # Initialize cooldowns and history
     if chat_id not in xp_cooldowns:
         xp_cooldowns[chat_id] = {}
     if chat_id not in user_action_history:
@@ -192,11 +193,11 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     }
 
     if profile:
+        # Existing user - add normal XP
         new_xp = profile.get('xp', 0) + xp_amount
         current_level = profile.get('level', 1)
         new_level = current_level
 
-        # Improved leveling logic with new formula
         while True:
             xp_required_for_next = get_cumulative_xp_for_level(new_level + 1)
             if new_xp < xp_required_for_next:
@@ -217,20 +218,25 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 json=payload
             )
     else:
-        # New user - starts at Level 1 with 0 XP
+        # === NEW USER: Truly start with 0 XP ===
+        # We create the user with 0 XP and do NOT add any XP for the first action
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": 0,
+            "xp": 0,           # Clean 0 XP
             "level": 1,
             "last_active": "now()"
         }
+        
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(
                 f"{SUPABASE_URL}/rest/v1/user_profiles",
                 headers=headers,
                 json=payload
             )
+
+        # Optional: You can print for debugging
+        print(f"🌱 New user {chat_id} created with 0 XP")
 
     return True
 
@@ -592,8 +598,8 @@ async def handle_reset_first_time(chat_id):
 
     print(f"✅ First-time flag reset for owner {chat_id}")
 
-# --- CLEAR FUNCTION - Magical + Fixed (No Double GIF) ---
-async def handle_clear(chat_id, user_command_id):
+# --- CLEAR FUNCTION - Magical + Fixed ---
+async def handle_clear(chat_id, user_command_id, first_name):
     # Delete the user's /clear command message
     try: 
         await tg_app.bot.delete_message(chat_id=chat_id, message_id=user_command_id)
@@ -655,7 +661,8 @@ async def handle_clear(chat_id, user_command_id):
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(final_msg.message_id)
 
-    await add_xp(chat_id, "Wanderer", "clear")
+    # Now we can safely pass first_name
+    await add_xp(chat_id, first_name, "clear")
     print(f"🌿 Chat cleared magically for user {chat_id}")
     
 # ==================== CALLBACK ====================
@@ -853,14 +860,22 @@ async def handle_callback(update: Update):
         profile = await get_user_profile(update.effective_chat.id)
         user_level = profile['level'] if profile else 1
 
-        limit = 1 if user_level == 1 else 3 if user_level <= 4 else 999
+        # === Consistent limit logic with viewing section ===
+        if user_level == 1:
+            limit = 1
+        elif user_level <= 3:
+            limit = 2
+        elif user_level <= 6:
+            limit = 4 if user_level <= 5 else 5
+        else:
+            limit = 999
 
         data = await get_vamt_data()
         if not data:
             await query.answer("Database error", show_alert=True)
             return
 
-        # Build the exact same filtered list that was shown to the user
+        # Build the exact same filtered Netflix list
         filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
         filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
 
@@ -1092,7 +1107,7 @@ def webhook():
                 await send_myid(chat_id)
 
             elif text.startswith("/clear"):
-                await handle_clear(chat_id, user_msg_id)
+                await handle_clear(chat_id, user_msg_id, name)
 
             elif text.startswith("/feedback"):
                 feedback_text = text.replace("/feedback", "").strip()
