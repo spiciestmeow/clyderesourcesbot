@@ -46,6 +46,15 @@ MYID_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyaj
 CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
 
 
+# ==================== MAINTENANCE MODE ====================
+MAINTENANCE_MODE = True   # ← Change to False when your bot is ready
+MAINTENANCE_MESSAGE = (
+    "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
+    "The ancient trees are resting and being prepared for new wonders...\n\n"
+    "We will be back very soon with a smoother experience!\n\n"
+    "<i>Thank you for your patience, kind wanderer.</i> 🍃✨"
+)
+
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -1179,8 +1188,13 @@ async def handle_callback(update: Update):
 
     # ====================== HELP (Guidance) - 2 Pages ======================
     elif query.data == "help" or query.data.startswith("help_page_"):
-        await add_xp(update.effective_chat.id, update.effective_user.first_name, "guidance", query=query)
-        
+        chat_id = update.effective_chat.id
+        first_name = update.effective_user.first_name
+
+        # === Give XP and count ONLY when first opening Guidance (not on page switches) ===
+        if query.data == "help":                      # Only on initial open
+            await add_xp(chat_id, first_name, "guidance", query=query)
+
         try: 
             await query.message.delete()
         except: 
@@ -1190,9 +1204,9 @@ async def handle_callback(update: Update):
         if query.data.startswith("help_page_"):
             page = int(query.data.split("_")[2])
 
-        # Single loading animation
+        # Loading animation
         loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             animation=LOADING_GIF,
             caption="🪶 <i>The wind carries soft voices from the depths of the forest...</i>",
             parse_mode='HTML'
@@ -1238,8 +1252,6 @@ async def handle_callback(update: Update):
             ])
 
         else:
-            # ==================== PAGE 2: LEVELING SYSTEM ====================
-            
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
                 for lvl in range(2, 11)
@@ -1280,18 +1292,22 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
 
-        # Edit the loading message into final content
         await loading_msg.edit_caption(
             caption=text,
             parse_mode='HTML',
             reply_markup=keyboard
         )
 
-        # Save message ID for /clear
-        chat_id = update.effective_chat.id
+        # Save for /clear
         if chat_id not in forest_memory: 
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(loading_msg.message_id)
+
+        # === Mark has_seen_menu = True when Guidance is opened ===
+        # This fixes the first-time menu staying forever
+        profile = await get_user_profile(chat_id)
+        if profile and not profile.get('has_seen_menu', False):
+            await update_has_seen_menu(chat_id)
         
 # ==================== WEBHOOK ====================
 async def start_tg_app():
@@ -1309,6 +1325,32 @@ def webhook():
     async def process_update():
         update = Update.de_json(update_data, tg_app.bot)
 
+        # ==================== MAINTENANCE MODE ====================
+        if MAINTENANCE_MODE:
+            chat_id = None
+            if update.effective_chat:
+                chat_id = update.effective_chat.id
+            elif update.callback_query and update.callback_query.message:
+                chat_id = update.callback_query.message.chat.id
+
+            if chat_id:
+                try:
+                    if update.message:
+                        await tg_app.bot.send_message(
+                            chat_id=chat_id, 
+                            text=MAINTENANCE_MESSAGE, 
+                            parse_mode='HTML'
+                        )
+                    elif update.callback_query:
+                        await update.callback_query.answer(
+                            "🌿 The Enchanted Clearing is under maintenance. Please come back later!", 
+                            show_alert=True
+                        )
+                except:
+                    pass
+            return  # Stop all other processing
+        
+        # ==================== NORMAL BOT LOGIC STARTS HERE ====================
         if update.message and update.message.text:
             text = update.message.text.lower().strip()
             chat_id = update.effective_chat.id
