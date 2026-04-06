@@ -308,6 +308,19 @@ def get_level_title(level):
     }
     return titles.get(level, f"🌟 Legend {level}")
 
+def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> str:
+    """Create a green forest-themed progress bar"""
+    if required_xp <= 0:
+        return "🟩" * length
+    
+    percentage = min(current_xp / required_xp, 1.0)
+    filled = int(percentage * length)
+    
+    bar = "🟩" * filled + "⬜" * (length - filled)
+    percent_text = f"{int(percentage * 100)}%"
+    
+    return f"[{bar}] {percent_text}"
+
 # ==================== MESSAGES ====================
 async def send_initial_welcome(chat_id, first_name):
     user_tz = pytz.timezone('Asia/Manila')
@@ -424,17 +437,20 @@ async def handle_profile(chat_id, first_name):
 
     level = profile['level']
     xp = profile['xp']
-
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     xp_to_next = max(0, xp_required_next - xp)
+
+    # Create green progress bar
+    progress_bar = create_progress_bar(xp, xp_required_next, length=12)
 
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
-        f"⭐ <b>Level:</b> {level}\n"
-        f"✨ <b>Experience:</b> {xp} / {xp_required_next} XP\n"
-        f"📈 <b>To Next Level:</b> {xp_to_next} XP\n\n"
+        f"⭐ <b>Level:</b> {level}\n\n"
+        f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
+        f"{progress_bar}\n\n"
+        f"📈 <b>To Next Level:</b> {xp_to_next:,} XP\n\n"
         "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
 
@@ -445,7 +461,7 @@ async def handle_profile(chat_id, first_name):
         parse_mode='HTML'
     )
     
-    # IMPORTANT: Add this message to forest_memory so /clear can delete it
+    # Add to forest_memory so /clear can delete it
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
