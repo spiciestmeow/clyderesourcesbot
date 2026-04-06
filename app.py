@@ -501,7 +501,6 @@ async def handle_profile(chat_id, first_name):
     forest_memory[chat_id].append(msg.message_id)
 
 
-# ==================== STATS COMMAND ======================
 async def handle_stats(chat_id, first_name):
     """Simple Stats command - shows more detailed progress"""
     
@@ -520,19 +519,23 @@ async def handle_stats(chat_id, first_name):
 
     progress_bar = create_progress_bar(xp, xp_required_next, length=13)
 
-    # Format dates nicely
+    # Joined Date
     joined_date = "Unknown"
     if profile.get('created_at'):
         try:
+            # Supabase returns ISO format with Z (UTC)
             dt = datetime.fromisoformat(profile['created_at'].replace('Z', '+00:00'))
             joined_date = dt.strftime("%B %d, %Y")
         except:
             joined_date = str(profile['created_at'])[:10]
 
+    # Last Active (with Philippines timezone)
     last_active = "Just now"
     if profile.get('last_active'):
         try:
             dt = datetime.fromisoformat(profile['last_active'].replace('Z', '+00:00'))
+            # Convert to Asia/Manila timezone for display
+            dt = dt.astimezone(pytz.timezone('Asia/Manila'))
             last_active = dt.strftime("%B %d, %Y • %I:%M %p")
         except:
             last_active = "Just now"
