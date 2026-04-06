@@ -791,24 +791,24 @@ async def handle_reset_first_time(chat_id):
 
     print(f"✅ First-time flag reset for owner {chat_id}")
 
-# --- CLEAR FUNCTION - Magical + Fixed (No Double Menu) ---
+# --- CLEAN CLEAR FUNCTION (No leftover "renewed" message) ---
 async def handle_clear(chat_id, user_command_id, first_name):
-    # Delete the user's /clear command message
-    try: 
+    # Delete the user's /clear command
+    try:
         await tg_app.bot.delete_message(chat_id=chat_id, message_id=user_command_id)
-    except: 
+    except:
         pass
 
-    # Clear all previous messages
+    # Clear ALL previous bot messages
     if chat_id in forest_memory:
-        for msg_id in forest_memory[chat_id]:
-            try: 
+        for msg_id in forest_memory.get(chat_id, []):
+            try:
                 await tg_app.bot.delete_message(chat_id, msg_id)
-            except: 
-                pass
+            except:
+                pass  # Message already deleted or doesn't exist
         forest_memory[chat_id] = []
 
-    # ====================== MAGICAL CLEARING SEQUENCE ======================
+    # ====================== MAGICAL CLEARING ANIMATION ======================
     loading_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=CLEAN_GIF,
@@ -818,49 +818,30 @@ async def handle_clear(chat_id, user_command_id, first_name):
 
     await asyncio.sleep(1.8)
     await loading_msg.edit_caption(
-        "🍃 <b>The wind spirit awakens...</b>\n"
-        "Whispers of old paths are being carried away...", 
+        "🍃 <b>The wind spirit awakens...</b>\nWhispers of old paths are being carried away...", 
         parse_mode="HTML"
     )
 
     await asyncio.sleep(2.0)
     await loading_msg.edit_caption(
-        "✨ <b>The forest is resetting...</b>\n"
-        "All footprints are gently erased by the glowing leaves.", 
+        "✨ <b>The forest is resetting...</b>\nAll footprints are gently erased by the glowing leaves.", 
         parse_mode="HTML"
     )
 
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(1.2)
 
-    # Delete loading message
+    # Delete the loading animation
     try:
         await tg_app.bot.delete_message(chat_id, loading_msg.message_id)
     except:
         pass
 
-    # Directly show the main menu (this prevents double menu)
+    # Directly show the main menu (no extra button or old message)
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
-    print(f"🌿 Chat cleared magically for user {chat_id}")
-
-    # ====================== FINAL MESSAGE ======================
-    final_msg = await tg_app.bot.send_animation(
-        chat_id=chat_id,
-        animation=LOADING_GIF,
-        caption="🌿 <b>The Enchanted Clearing has been renewed.</b>\n\n"
-                "The trees stand tall and fresh once more.\n"
-                "Your path is now pure and open.\n\n"
-                "<i>May new adventures find you, kind wanderer.</i> 🍃✨",
-        parse_mode="HTML",
-        reply_markup=get_start_keyboard()
-    )
-
-    if chat_id not in forest_memory:
-        forest_memory[chat_id] = []
-    forest_memory[chat_id].append(final_msg.message_id)
-
-    # Now we can safely pass first_name
+    # Give XP for using /clear
     await add_xp(chat_id, first_name, "clear")
+
     print(f"🌿 Chat cleared magically for user {chat_id}")
     
 # ==================== CALLBACK ====================
