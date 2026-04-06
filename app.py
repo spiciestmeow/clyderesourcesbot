@@ -179,17 +179,16 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit protection + one-time rewards for guidance & lore"""
+    """Add XP with cooldown + rate limit + true one-time rewards for guidance & lore"""
     
     current_time = time.time()
 
-    # Initialize cooldowns and history
     if chat_id not in xp_cooldowns:
         xp_cooldowns[chat_id] = {}
     if chat_id not in user_action_history:
         user_action_history[chat_id] = []
 
-    # === 1. Global Rate Limit ===
+    # Global Rate Limit
     user_action_history[chat_id] = [t for t in user_action_history[chat_id] if current_time - t < 60]
 
     if len(user_action_history[chat_id]) >= MAX_ACTIONS_PER_MINUTE:
@@ -200,9 +199,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 pass
         return False
 
-    # === 2. Action-specific Cooldown ===
+    # Action-specific Cooldown
     last_used = xp_cooldowns[chat_id].get(action, 0)
-    
     if current_time - last_used < COOLDOWN_SECONDS.get(action, 8):
         if query:
             try:
@@ -211,30 +209,28 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 pass
         return False
 
-    # Record this action for cooldown
+    # Record cooldown
     xp_cooldowns[chat_id][action] = current_time
     user_action_history[chat_id].append(current_time)
 
-    # ====================== XP AMOUNT (with one-time logic) ======================
-    profile = await get_user_profile(chat_id)   # Fetch profile once
+    # ====================== ONE-TIME XP LOGIC ======================
+    profile = await get_user_profile(chat_id)
     
     xp_amount = 5  # default
 
     if action == "guidance":
         current_reads = profile.get('guidance_reads', 0) if profile else 0
-        if current_reads == 0:           # First time only
+        if current_reads == 0:
             xp_amount = 8
     elif action == "lore":
         current_reads = profile.get('lore_reads', 0) if profile else 0
-        if current_reads == 0:           # First time only
+        if current_reads == 0:
             xp_amount = 8
     elif action in ["view_win_office", "view_netflix"]:
         xp_amount = 6
     elif action == "reveal_netflix":
         xp_amount = 10
     elif action in ["profile", "clear"]:
-        xp_amount = 5
-    else:
         xp_amount = 5
 
     # ====================== Database Update ======================
@@ -316,8 +312,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 headers=headers,
                 json=payload
             )
-
-        print(f"🌱 New user {chat_id} created with 0 XP")
 
     return True
 
