@@ -1414,8 +1414,6 @@ def webhook():
             elif text.startswith("/menu"): 
                 profile = await get_user_profile(chat_id)
                 is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
-                if is_first:
-                    await update_has_seen_menu(chat_id)
                 await send_full_menu(chat_id, name, is_first_time=is_first)
 
             elif text.startswith("/myid"):
