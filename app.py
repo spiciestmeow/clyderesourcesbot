@@ -735,7 +735,8 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 # ==================== VIEW FEEDBACK COMMAND (Owner Only) ======================
 async def handle_view_feedback(chat_id, user_id):
     # Security: Only you (the owner) can use this command
-    if chat_id != 7399488750:   # Your owner chat_id
+    #if chat_id != 7399488750:   # Your owner chat_id
+    if chat_id != 1234567890:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker of the forest can view the feedback scrolls."
