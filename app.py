@@ -791,7 +791,7 @@ async def handle_reset_first_time(chat_id):
 
     print(f"✅ First-time flag reset for owner {chat_id}")
 
-# --- CLEAR FUNCTION - Magical + Fixed ---
+# --- CLEAR FUNCTION - Magical + Fixed (No Double Menu) ---
 async def handle_clear(chat_id, user_command_id, first_name):
     # Delete the user's /clear command message
     try: 
@@ -830,13 +830,18 @@ async def handle_clear(chat_id, user_command_id, first_name):
         parse_mode="HTML"
     )
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(1.0)
 
     # Delete loading message
     try:
         await tg_app.bot.delete_message(chat_id, loading_msg.message_id)
     except:
         pass
+
+    # Directly show the main menu (this prevents double menu)
+    await send_full_menu(chat_id, first_name, is_first_time=False)
+
+    print(f"🌿 Chat cleared magically for user {chat_id}")
 
     # ====================== FINAL MESSAGE ======================
     final_msg = await tg_app.bot.send_animation(
@@ -1197,10 +1202,12 @@ async def handle_callback(update: Update):
                 "📜 <b>Available Commands</b>\n"
                 "• <code>/start</code> — Begin your journey anew\n"
                 "• <code>/menu</code> — Return to the Enchanted Clearing\n"
-                "• <code>/myid</code> — Reveal your forest spirit identity\n"
-                "• <code>/profile</code> — View your Forest Profile & Level\n"
+                "• <code>/profile</code> — View your Forest Profile\n"
+                "• <code>/stats</code> — View detailed Forest Statistics\n"
+                "• <code>/leaderboard</code> — See Top Wanderers\n"
+                "• <code>/myid</code> — Reveal your Eternal Forest ID\n"
                 "• <code>/clear</code> — Cleanse and renew the clearing\n"
-                "• <code>/feedback</code> — Send your thoughts to the caretaker\n\n"
+                "• <code>/feedback</code> — Send message to the caretaker\n\n"
                 
                 "🌲 <b>Treasures You Can Discover</b>\n"
                 "• 🪄 Spirit Treasures — Steam accounts\n"
@@ -1210,7 +1217,7 @@ async def handle_callback(update: Update):
                 
                 "<b>Note for New Wanderers:</b>\n"
                 "• You start at <b>Level 1 with 0 XP</b>\n"
-                "• Your first actions will begin your growth and unlock more items.\n\n"
+                "• Your first actions will help you grow and unlock more items.\n\n"
                 
                 "<i>Tap Next → to learn about the Leveling System</i>"
             )
