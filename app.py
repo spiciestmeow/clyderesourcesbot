@@ -370,21 +370,32 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
+    
+    # Get user profile to show current level and title
+    profile = await get_user_profile(chat_id)
+
+    if profile:
+        level = profile.get('level', 1)
+        title = get_level_title(level)
+        level_info = f"🏷️ {title}  •  ⭐ Level {level}"
+    else:
+        level_info = "🌱 New Wanderer  •  ⭐ Level 1"
 
     if is_first_time:
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
+            f"{level_info}\n\n"
             "Beneath the whispering ancient trees, many paths lie before you...\n\n"
             "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
             "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
         )
         keyboard = get_first_time_menu_keyboard()
     else:
-        # Short & subtle returning message (your choice)
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
+            f"{level_info}\n\n"
             "The clearing welcomes you back, wanderer.\n\n"
             "<i>May the forest welcome you once more.</i> 🍃✨"
         )
