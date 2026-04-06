@@ -879,11 +879,33 @@ async def handle_clear(chat_id, user_command_id, first_name):
     await add_xp(chat_id, first_name, "clear")
 
     print(f"🌿 Chat cleared magically for user {chat_id}")
+
+async def require_registration(chat_id, first_name):
+    """Check if user is registered. If not, show message and return True (meaning blocked)"""
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text="🌿 Welcome, wanderer!\n\n"
+                 "To explore the Enchanted Clearing and access all features, "
+                 "please click the button below to **Enter the Enchanted Clearing** first.",
+            parse_mode='HTML',
+            reply_markup=get_start_keyboard()
+        )
+        return True
+    return False
     
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
     query = update.callback_query
     await query.answer()
+
+    chat_id = update.effective_chat.id
+    first_name = update.effective_user.first_name
+
+    # Block unregistered users from using any buttons
+    if await require_registration(chat_id, first_name):
+        return
 
     # ====================== MAIN MENU & CLEARING ======================
     if query.data in ["show_main_menu", "main_menu"]:
@@ -1325,7 +1347,8 @@ def webhook():
     async def process_update():
         update = Update.de_json(update_data, tg_app.bot)
 
-        # ==================== MAINTENANCE MODE (Only you can use the bot) ====================
+        # ==================== MAINTENANCE MODE (Only you can bypass) ====================
+        MAINTENANCE_MODE = True
         OWNER_CHAT_ID = 7399488750
 
         if MAINTENANCE_MODE:
@@ -1352,7 +1375,7 @@ def webhook():
                     pass
                 return
 
-        # ==================== NORMAL BOT LOGIC (You can test normally) ====================
+        # ==================== NORMAL PROCESSING (Only runs for you or when maintenance is off) ====================
         if update.message and update.message.text:
             text = update.message.text.lower().strip()
             chat_id = update.effective_chat.id
@@ -1363,6 +1386,20 @@ def webhook():
                 forest_memory[chat_id] = []
             forest_memory[chat_id].append(user_msg_id)
 
+            # === REGISTRATION CHECK (Force user to enter clearing first) ===
+            profile = await get_user_profile(chat_id)
+            if not profile and not text.startswith("/start"):
+                await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="🌿 Welcome, wanderer!\n\n"
+                         "To explore the Enchanted Clearing and access all features, "
+                         "please click the button below to **Enter the Enchanted Clearing** first.",
+                    parse_mode='HTML',
+                    reply_markup=get_start_keyboard()
+                )
+                return   # Stop here - don't process any other command
+
+            # ==================== COMMAND HANDLERS ====================
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
 
@@ -1404,6 +1441,18 @@ def webhook():
                 await handle_reset_first_time(chat_id)
 
         elif update.callback_query:
+            # Also protect callback buttons (Guidance, Inventory, Lore, etc.)
+            chat_id = update.effective_chat.id
+            first_name = update.effective_user.first_name
+
+            profile = await get_user_profile(chat_id)
+            if not profile:
+                await update.callback_query.answer(
+                    "🌿 Please click **Enter the Enchanted Clearing** first to begin your journey.",
+                    show_alert=True
+                )
+                return
+
             await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
