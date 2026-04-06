@@ -47,7 +47,7 @@ CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXd
 
 
 # ==================== MAINTENANCE MODE ====================
-MAINTENANCE_MODE = True   # ← Change to False when your bot is ready
+MAINTENANCE_MODE = True
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
     "The ancient trees are resting and being prepared for new wonders...\n\n"
@@ -1325,7 +1325,7 @@ def webhook():
     async def process_update():
         update = Update.de_json(update_data, tg_app.bot)
 
-        # ==================== MAINTENANCE MODE ====================
+        # ==================== MAINTENANCE MODE (Only you can use the bot) ====================
         OWNER_CHAT_ID = 7399488750
 
         if MAINTENANCE_MODE:
@@ -1339,32 +1339,30 @@ def webhook():
                 try:
                     if update.message:
                         await tg_app.bot.send_message(
-                            chat_id=chat_id, 
-                            text=MAINTENANCE_MESSAGE, 
+                            chat_id=chat_id,
+                            text=MAINTENANCE_MESSAGE,
                             parse_mode='HTML'
                         )
                     elif update.callback_query:
                         await update.callback_query.answer(
-                            "🌿 The Enchanted Clearing is under maintenance. Please come back later!", 
+                            "🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!",
                             show_alert=True
                         )
                 except:
                     pass
-            return  # Stop processing for non-owner users
-        
-        # ==================== NORMAL BOT LOGIC STARTS HERE ====================
+                return
+
+        # ==================== NORMAL BOT LOGIC (You can test normally) ====================
         if update.message and update.message.text:
             text = update.message.text.lower().strip()
             chat_id = update.effective_chat.id
             user_msg_id = update.message.message_id
             name = update.effective_user.first_name if update.effective_user else "Traveler"
 
-            # Initialize memory
             if chat_id not in forest_memory:
                 forest_memory[chat_id] = []
             forest_memory[chat_id].append(user_msg_id)
 
-            # ==================== COMMAND HANDLERS ====================
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
 
