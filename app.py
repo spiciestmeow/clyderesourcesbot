@@ -939,6 +939,7 @@ async def handle_callback(update: Update):
     if not profile:
         await tg_app.bot.send_message(
             chat_id=chat_id,
+            aniamtion=HELLO_GIF,
             text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                  "You stand at the edge of a mysterious forest.\n"
                  "The ancient trees seem to be watching you with quiet curiosity.\n\n"
@@ -948,7 +949,11 @@ async def handle_callback(update: Update):
             parse_mode='HTML',
             reply_markup=get_start_keyboard()
         )
-        return  
+        return
+    
+    # Mark as seen (in case it wasn't set)
+    if not profile.get('has_seen_menu', False):
+        await force_set_has_seen_menu(chat_id)
     
     # ====================== OTHER CALLBACKS (only for registered users) ======================
     elif query.data == "check_vamt":
@@ -1159,6 +1164,8 @@ async def handle_callback(update: Update):
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
+        await add_xp(chat_id, first_name, "general", query=query)
+
         try: await query.message.delete()
         except: pass
 
@@ -1202,7 +1209,7 @@ async def handle_callback(update: Update):
     # ====================== HELP (Guidance) - 2 Pages ======================
     elif query.data == "help" or query.data.startswith("help_page_"):
         chat_id = update.effective_chat.id
-        first_name = update.effective_user.first_name
+        first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
         # === Give XP and count ONLY when first opening Guidance (not on page switches) ===
         if query.data == "help":                      # Only on initial open
@@ -1238,14 +1245,14 @@ async def handle_callback(update: Update):
                 "• Use <code>/clear</code> to renew your path\n\n"
                 
                 "📜 <b>Available Commands</b>\n"
-                "• <code>/start</code> — Begin your journey anew\n"
-                "• <code>/menu</code> — Return to the Enchanted Clearing\n"
-                "• <code>/profile</code> — View your Forest Profile\n"
-                "• <code>/stats</code> — View detailed Forest Statistics\n"
-                "• <code>/leaderboard</code> — See Top Wanderers\n"
-                "• <code>/myid</code> — Reveal your Eternal Forest ID\n"
-                "• <code>/clear</code> — Cleanse and renew the clearing\n"
-                "• <code>/feedback</code> — Send message to the caretaker\n\n"
+                "• /start — Begin your journey anew\n"
+                "• /menu — Return to the Enchanted Clearing\n"
+                "• /profile — View your Forest Profile\n"
+                "• /stats — View detailed Forest Statistics\n"
+                "• /leaderboard — See Top Wanderers\n"
+                "• /myid — Reveal your Eternal Forest ID\n"
+                "• /clear — Cleanse and renew the clearing\n"
+                "• /feedback — Send message to the caretaker\n\n"
                 
                 "🌲 <b>Treasures You Can Discover</b>\n"
                 "• 🪄 Spirit Treasures — Steam accounts\n"
@@ -1281,7 +1288,7 @@ async def handle_callback(update: Update):
                 "• Reveal Netflix → <b>+10 XP</b>\n"
                 "• /profile → <b>+5 XP</b>\n"
                 "• /clear → <b>+5 XP</b>\n"
-                "• Guidance/Lore → <b>+8 XP</b>\n\n"
+                "• Guidance & Lore → <b>+8 XP only once</b>\n\n"
                 
                 "<b>Items Shown:</b>\n"
                 "• Level 1 → 1 item\n"
@@ -1376,6 +1383,7 @@ def webhook():
                 if not profile:
                     await tg_app.bot.send_message(
                         chat_id=chat_id,
+                        animation=HELLO_GIF,
                         text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                              "You stand at the edge of a mysterious forest.\n"
                              "The ancient trees seem to be watching you with quiet curiosity.\n\n"
@@ -1443,6 +1451,7 @@ def webhook():
             if not profile:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
+                    animation=HELLO_GIF,
                     text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                          "You stand at the edge of a mysterious forest.\n"
                          "The ancient trees seem to be watching you with quiet curiosity.\n\n"
