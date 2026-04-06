@@ -9,27 +9,27 @@ from datetime import datetime
 import pytz
 import time
 
-# { chat_id: [msg_id1, msg_id2, ...] }
+
 forest_memory = {}
 has_seen_main_menu = {}
 app = Flask(__name__)
 
 
 # ==================== ANTI-XP ABUSE ====================
-xp_cooldowns = {}          # {chat_id: {action: last_timestamp}}
-user_action_history = {}   # {chat_id: [timestamp1, timestamp2, ...]}
+xp_cooldowns = {}         
+user_action_history = {}
 
 COOLDOWN_SECONDS = {
     "view_win_office": 8,
     "view_netflix": 10,
-    "reveal_netflix": 15,     # Most rewarding action = longest cooldown
+    "reveal_netflix": 15,
     "profile": 12,
     "clear": 25,
     "guidance": 20,
     "general": 5,
 }
 
-MAX_ACTIONS_PER_MINUTE = 8   # Global safety net
+MAX_ACTIONS_PER_MINUTE = 8
 
 # ==================== CONFIG ====================
 TOKEN = os.getenv("BOT_TOKEN")
@@ -177,7 +177,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         "reveal_netflix": 8,
         "profile": 3,
         "clear": 2,
-        "guidance": 7,        # ← Increased (better reward for 20s cooldown)
+        "guidance": 7,
         "general": 5
     }.get(action, 5)
 
@@ -221,7 +221,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": 0,           # Changed from 10
+            "xp": 0,
             "level": 1,
             "last_active": "now()"
         }
@@ -431,7 +431,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
     }
 
     payload = {
-        "chat_id": int(chat_id),      # ensure it's integer
+        "chat_id": int(chat_id),
         "first_name": str(first_name),
         "feedback_text": feedback_text.strip()
     }
@@ -474,9 +474,6 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 
     # === Notification to owner (timestamp at bottom) ===
     status = "✅ Saved to database" if saved else "⚠️ Failed to save to database"
-
-    # Inside the owner_message part, replace the status line with this:
-    status = "✅ Saved to database" if saved else "⚠️ Not saved to database"
 
     owner_message = (
         f"🌿 <b>New Feedback Received from the Forest</b>\n"
@@ -695,7 +692,7 @@ async def handle_callback(update: Update):
 
         if chat_id not in has_seen_main_menu:
             is_first_time = True
-            has_seen_main_menu[chat_id] = True      # Mark as seen from now on
+            has_seen_main_menu[chat_id] = True
         else:
             is_first_time = False
 
@@ -992,38 +989,38 @@ async def handle_callback(update: Update):
 
         else:
             # ==================== PAGE 2: LEVELING SYSTEM ====================
-text = (
-    "<b>❓ Guidance - Page 2/2</b>\n\n"
-    "✨ <b>Forest Leveling System</b>\n"
-    "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
-    "The higher your level, the more XP needed to level up.\n\n"
-    
-    "<b>How to Gain XP:</b>\n"
-    "• View Windows or Office Keys → <b>+5 XP</b>\n"
-    "• View Netflix Keys → <b>+5 XP</b>\n"
-    "• Reveal a Netflix Cookie → <b>+8 XP</b>\n"
-    "• Use <code>/profile</code> → <b>+3 XP</b>\n"
-    "• Use <code>/clear</code> → <b>+2 XP</b>\n"
-    "• Read Guidance or Lore → <b>+7 XP</b>\n\n"
-    
-    "<b>Items Shown Per Level:</b>\n"
-    "• Level 1 → Only <b>1 item</b> per category\n"
-    "• Level 2–4 → Up to <b>3 items</b> per category\n"
-    "• Level 5+ → <b>All items</b> shown\n\n"
-    
-    "<b>Level Requirements (Cumulative):</b>\n"
-    "• Level 2 → 300 XP total\n"
-    "• Level 3 → 700 XP total\n"
-    "• Level 4 → 1,200 XP total\n"
-    "• Level 5 → 1,800 XP total\n"
-    "• Level 6 → 2,500 XP total\n"
-    "• Level 7 → 3,300 XP total\n"
-    "• Level 8 → 4,200 XP total\n"
-    "• Level 9 → 5,200 XP total\n"
-    "• Level 10 → 6,300 XP total\n\n"
-    
-    "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
-)
+            text = (
+                "<b>❓ Guidance - Page 2/2</b>\n\n"
+                "✨ <b>Forest Leveling System</b>\n"
+                "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
+                "The higher your level, the more XP needed to level up.\n\n"
+                
+                "<b>How to Gain XP:</b>\n"
+                "• View Windows or Office Keys → <b>+5 XP</b>\n"
+                "• View Netflix Keys → <b>+5 XP</b>\n"
+                "• Reveal a Netflix Cookie → <b>+8 XP</b>\n"
+                "• Use <code>/profile</code> → <b>+3 XP</b>\n"
+                "• Use <code>/clear</code> → <b>+2 XP</b>\n"
+                "• Read Guidance or Lore → <b>+7 XP</b>\n\n"
+                
+                "<b>Items Shown Per Level:</b>\n"
+                "• Level 1 → Only <b>1 item</b> per category\n"
+                "• Level 2–4 → Up to <b>3 items</b> per category\n"
+                "• Level 5+ → <b>All items</b> shown\n\n"
+                
+                "<b>Level Requirements (Cumulative):</b>\n"
+                "• Level 2 → 300 XP total\n"
+                "• Level 3 → 700 XP total\n"
+                "• Level 4 → 1,200 XP total\n"
+                "• Level 5 → 1,800 XP total\n"
+                "• Level 6 → 2,500 XP total\n"
+                "• Level 7 → 3,300 XP total\n"
+                "• Level 8 → 4,200 XP total\n"
+                "• Level 9 → 5,200 XP total\n"
+                "• Level 10 → 6,300 XP total\n\n"
+                
+                "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
+            )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
