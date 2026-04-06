@@ -937,10 +937,10 @@ async def handle_callback(update: Update):
     # Enforce registration for Guidance, Inventory, Lore, etc.
     profile = await get_user_profile(chat_id)
     if not profile:
-        await tg_app.bot.send_message(
+        await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=HELLO_GIF,
-            text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+            caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                  "You stand at the edge of a mysterious forest.\n"
                  "The ancient trees seem to be watching you with quiet curiosity.\n\n"
                  "To step into the Enchanted Clearing and discover its hidden magic, "
@@ -1381,10 +1381,10 @@ def webhook():
             if not text.startswith("/start"):
                 profile = await get_user_profile(chat_id)
                 if not profile:
-                    await tg_app.bot.send_message(
+                    await tg_app.bot.send_animation(
                         chat_id=chat_id,
                         animation=HELLO_GIF,
-                        text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+                        caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                              "You stand at the edge of a mysterious forest.\n"
                              "The ancient trees seem to be watching you with quiet curiosity.\n\n"
                              "To step into the Enchanted Clearing and discover its hidden magic, "
@@ -1449,10 +1449,10 @@ def webhook():
             # === Enforce registration for all other buttons ===
             profile = await get_user_profile(chat_id)
             if not profile:
-                await tg_app.bot.send_message(
+                await tg_app.bot.send_animation(
                     chat_id=chat_id,
                     animation=HELLO_GIF,
-                    text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+                    caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                          "You stand at the edge of a mysterious forest.\n"
                          "The ancient trees seem to be watching you with quiet curiosity.\n\n"
                          "To step into the Enchanted Clearing and discover its hidden magic, "
