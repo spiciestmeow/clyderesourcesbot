@@ -172,12 +172,12 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     # ====================== XP AMOUNT ======================
     xp_amount = {
-        "view_win_office": 5,
-        "view_netflix": 5,
-        "reveal_netflix": 8,
-        "profile": 3,
-        "clear": 2,
-        "guidance": 7,
+        "view_win_office": 6,
+        "view_netflix": 6,
+        "reveal_netflix": 10,
+        "profile": 5,
+        "clear": 5,
+        "guidance": 8,
         "general": 5
     }.get(action, 5)
 
@@ -757,16 +757,22 @@ async def handle_callback(update: Update):
             )
             return
 
-        # === Level-based limit (Same rule for all categories) ===
+        # === Improved Level-based limit ===
         if user_level == 1:
             limit = 1
             limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
-        elif user_level <= 4:
-            limit = 3
-            limit_note = f"🌿 At Level {user_level}, you can see up to 3 items."
+        
+        elif user_level <= 3:
+            limit = 2
+            limit_note = f"🌿 At Level {user_level}, you can see up to 2 items."
+        
+        elif user_level <= 6:
+            limit = 4 if user_level <= 5 else 5
+            limit_note = f"🌿 At Level {user_level}, you can see up to {limit} items."
+        
         else:
             limit = len(filtered)
-            limit_note = ""
+            limit_note = "✨ You have full access to all scrolls in the forest."
 
         # Sort for consistency
         filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
@@ -1003,17 +1009,19 @@ async def handle_callback(update: Update):
                 "The higher your level, the more XP needed to level up.\n\n"
                 
                 "<b>How to Gain XP:</b>\n"
-                "• View Windows or Office Keys → <b>+5 XP</b>\n"
-                "• View Netflix Keys → <b>+5 XP</b>\n"
-                "• Reveal a Netflix Cookie → <b>+8 XP</b>\n"
-                "• Use <code>/profile</code> → <b>+3 XP</b>\n"
-                "• Use <code>/clear</code> → <b>+2 XP</b>\n"
-                "• Read Guidance or Lore → <b>+7 XP</b>\n\n"
+                "• View Windows or Office Keys → <b>+6 XP</b>\n"
+                "• View Netflix Keys → <b>+6 XP</b>\n"
+                "• Reveal a Netflix Cookie → <b>+10 XP</b>\n"
+                "• Use <code>/profile</code> → <b>+5 XP</b>\n"
+                "• Use <code>/clear</code> → <b>+5 XP</b>\n"
+                "• Read Guidance or Lore → <b>+8 XP</b>\n\n"
                 
                 "<b>Items Shown Per Level:</b>\n"
                 "• Level 1 → Only <b>1 item</b> per category\n"
-                "• Level 2–4 → Up to <b>3 items</b> per category\n"
-                "• Level 5+ → <b>All items</b> shown\n\n"
+                "• Level 2–3 → Up to <b>2 items</b> per category\n"
+                "• Level 4–5 → Up to <b>4 items</b> per category\n"
+                "• Level 6 → Up to <b>5 items</b> per category\n"
+                "• Level 7+ → <b>All items</b> shown\n\n"
                 
                 f"<b>Level Requirements (Cumulative):</b>\n"
                 f"{level_req_text}\n\n"
