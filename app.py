@@ -1326,6 +1326,8 @@ def webhook():
         update = Update.de_json(update_data, tg_app.bot)
 
         # ==================== MAINTENANCE MODE ====================
+        OWNER_CHAT_ID = 7399488750
+
         if MAINTENANCE_MODE:
             chat_id = None
             if update.effective_chat:
@@ -1333,7 +1335,7 @@ def webhook():
             elif update.callback_query and update.callback_query.message:
                 chat_id = update.callback_query.message.chat.id
 
-            if chat_id:
+            if chat_id and chat_id != OWNER_CHAT_ID:
                 try:
                     if update.message:
                         await tg_app.bot.send_message(
@@ -1348,7 +1350,7 @@ def webhook():
                         )
                 except:
                     pass
-            return  # Stop all other processing
+            return  # Stop processing for non-owner users
         
         # ==================== NORMAL BOT LOGIC STARTS HERE ====================
         if update.message and update.message.text:
