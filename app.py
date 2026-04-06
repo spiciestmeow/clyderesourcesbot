@@ -1452,13 +1452,18 @@ def webhook():
 
             profile = await get_user_profile(chat_id)
             if not profile:
-                await update.callback_query.answer(
-                    "🌿 Please click **Enter the Enchanted Clearing** first to begin your journey.",
-                    show_alert=True
+                await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+                         "You stand at the edge of a mysterious forest.\n"
+                         "The ancient trees seem to be watching you with quiet curiosity.\n\n"
+                         "To step into the Enchanted Clearing and discover its hidden magic, "
+                         "please press the button below.\n\n"
+                         "<i>The forest is ready to welcome you...</i> 🍃✨",
+                    parse_mode='HTML',
+                    reply_markup=get_start_keyboard()
                 )
                 return
-
-            await handle_callback(update)
 
     try: loop.run_until_complete(process_update())
     except Exception as e: print(f"🔴 Webhook Error: {e}")
