@@ -216,23 +216,23 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     user_action_history[chat_id].append(current_time)
 
     # ====================== XP AMOUNT (with one-time logic) ======================
-    profile = await get_user_profile(chat_id)
+    profile = await get_user_profile(chat_id)   # Fetch profile once
     
     xp_amount = 5  # default
 
     if action == "guidance":
-        guidance_reads = profile.get('guidance_reads', 0) if profile else 0
-        if guidance_reads == 0:           # First time only
+        current_reads = profile.get('guidance_reads', 0) if profile else 0
+        if current_reads == 0:           # First time only
             xp_amount = 8
     elif action == "lore":
-        lore_reads = profile.get('lore_reads', 0) if profile else 0
-        if lore_reads == 0:               # First time only
+        current_reads = profile.get('lore_reads', 0) if profile else 0
+        if current_reads == 0:           # First time only
             xp_amount = 8
-    elif action == "view_win_office" or action == "view_netflix":
+    elif action in ["view_win_office", "view_netflix"]:
         xp_amount = 6
     elif action == "reveal_netflix":
         xp_amount = 10
-    elif action == "profile" or action == "clear":
+    elif action in ["profile", "clear"]:
         xp_amount = 5
     else:
         xp_amount = 5
