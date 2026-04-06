@@ -1230,42 +1230,42 @@ async def handle_callback(update: Update):
             ])
 
         else:
-            # Page 2
+            # ==================== PAGE 2: LEVELING SYSTEM ====================
+            
             level_req_text = "\n".join(
-                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP total"
+                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
                 for lvl in range(2, 11)
             )
 
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
-                "As you explore the Enchanted Clearing, you gain <b>Experience Points (XP)</b>.\n"
-                "The higher your level, the more scrolls you can see.\n\n"
+                "Gain XP as you explore. Higher levels unlock more items.\n\n"
                 
                 "<b>How to Gain XP:</b>\n"
-                "• View Windows or Office Keys → <b>+6 XP</b>\n"
-                "• View Netflix Keys → <b>+6 XP</b>\n"
-                "• Reveal a Netflix Cookie → <b>+10 XP</b>\n"
-                "• Use <code>/profile</code> → <b>+5 XP</b>\n"
-                "• Use <code>/clear</code> → <b>+5 XP</b>\n"
-                "• Read Guidance or Lore → <b>+8 XP</b>\n\n"
+                "• View Win/Office → <b>+6 XP</b>\n"
+                "• View Netflix → <b>+6 XP</b>\n"
+                "• Reveal Netflix → <b>+10 XP</b>\n"
+                "• /profile → <b>+5 XP</b>\n"
+                "• /clear → <b>+5 XP</b>\n"
+                "• Guidance/Lore → <b>+8 XP</b>\n\n"
                 
-                "<b>Items Shown Per Level:</b>\n"
-                "• Level 1 → Only <b>1 item</b> per category\n"
-                "• Level 2–3 → Up to <b>2 items</b> per category\n"
-                "• Level 4–5 → Up to <b>4 items</b> per category\n"
-                "• Level 6 → Up to <b>5 items</b> per category\n"
-                "• Level 7+ → <b>All items</b> shown\n\n"
+                "<b>Items Shown:</b>\n"
+                "• Level 1 → 1 item\n"
+                "• Level 2–3 → 2 items\n"
+                "• Level 4–5 → 4 items\n"
+                "• Level 6 → 5 items\n"
+                "• Level 7+ → All items\n\n"
                 
-                f"<b>Level Requirements (Cumulative):</b>\n"
+                f"<b>Level Requirements:</b>\n"
                 f"{level_req_text}\n\n"
                 
-                "<b>Note for New Wanderers:</b>\n"
-                "• You start at <b>Level 1 with 0 XP</b>\n"
-                "• The more you interact with the forest, the faster you grow.\n"
-                "• Level 7 unlocks full access to all scrolls.\n\n"
+                "<b>Note:</b>\n"
+                "• New users start at Level 1 with 0 XP\n"
+                "• You will see a celebration when you level up\n"
+                "• Level 7 gives full access\n\n"
                 
-                "<i>The more you wander and interact with the forest, the stronger your spirit grows.</i> 🍃✨"
+                "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
             )
 
             keyboard = InlineKeyboardMarkup([
