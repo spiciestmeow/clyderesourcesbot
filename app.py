@@ -240,8 +240,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     return True
 
-
-
 def get_level_title(level):
     titles = {
         1: "🌱 Young Sprout",
@@ -363,12 +361,17 @@ async def handle_profile(chat_id, first_name):
         "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
 
-    await tg_app.bot.send_animation(
+    msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
         caption=caption,
         parse_mode='HTML'
     )
+    
+    # IMPORTANT: Add this message to forest_memory so /clear can delete it
+    if chat_id not in forest_memory:
+        forest_memory[chat_id] = []
+    forest_memory[chat_id].append(msg.message_id)
     
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
@@ -409,11 +412,17 @@ async def handle_leaderboard(chat_id):
 
             text += "<i>May the best wanderer continue to shine brightly.</i> 🍃✨"
 
-            await tg_app.bot.send_message(
+            # Send the message and store its ID
+            msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text,
                 parse_mode='HTML'
             )
+
+            # IMPORTANT: Add to forest_memory so /clear can delete it
+            if chat_id not in forest_memory:
+                forest_memory[chat_id] = []
+            forest_memory[chat_id].append(msg.message_id)
 
         except Exception as e:
             print(f"🔴 Leaderboard error: {e}")
