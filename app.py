@@ -119,13 +119,36 @@ async def get_user_profile(chat_id):
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}&select=*,has_seen_menu",
                 headers=headers
             )
             data = response.json()
             return data[0] if data else None
-        except:
+        except Exception as e:
+            print(f"Error fetching profile: {e}")
             return None
+        
+async def update_has_seen_menu(chat_id):
+    """Mark that the user has seen the main menu"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+    
+    payload = {"has_seen_menu": True}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers,
+                json=payload
+            )
+        except Exception as e:
+            print(f"Failed to update has_seen_menu: {e}")
+
 def get_cumulative_xp_for_level(target_level: int) -> int:
     """Returns total XP needed to reach this level (new balanced formula)"""
     if target_level <= 1:
@@ -703,16 +726,26 @@ async def handle_callback(update: Update):
 
         await asyncio.sleep(1.0)
 
-        # === Smart First-Time Detection ===
         chat_id = update.effective_chat.id
+        first_name = update.effective_user.first_name
 
-        if chat_id not in has_seen_main_menu:
+        # Get user profile from Supabase
+        profile = await get_user_profile(chat_id)
+
+        if not profile:
+            # New user - show first time menu
             is_first_time = True
-            has_seen_main_menu[chat_id] = True
+            has_seen = False
         else:
-            is_first_time = False
+            # Existing user - check has_seen_menu column
+            has_seen = profile.get('has_seen_menu', False)
+            is_first_time = not has_seen
 
-        await send_full_menu(chat_id, update.effective_user.first_name, is_first_time=is_first_time)
+        # Show the appropriate menu
+        await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
+
+        # Update has_seen_menu to TRUE after showing the menu
+        await update_has_seen_menu(chat_id)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
