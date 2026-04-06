@@ -899,39 +899,42 @@ async def handle_callback(update: Update):
         except:
             pass
 
-        await asyncio.sleep(0.8)
+    await asyncio.sleep(0.8)
 
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=update.effective_chat.id,
-            animation=LOADING_GIF,
-            caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
-            parse_mode='HTML'
-        )
+    # === Loading animation ===
+    loading_msg = await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=LOADING_GIF,
+        caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
+        parse_mode='HTML'
+    )
 
-        await asyncio.sleep(1.3)
-        await loading_msg.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode='HTML')
+    await asyncio.sleep(1.3)
+    await loading_msg.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode='HTML')
+    await asyncio.sleep(1.3)
+    await loading_msg.edit_caption("✨ <i>You stand again in the heart of the Enchanted Clearing...</i>", parse_mode='HTML')
+    await asyncio.sleep(1.0)
 
-        await asyncio.sleep(1.3)
-        await loading_msg.edit_caption("✨ <i>You stand again in the heart of the Enchanted Clearing...</i>", parse_mode='HTML')
+    # Get or create profile
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        await add_xp(chat_id, first_name, "general")   # This creates the user with has_seen_menu=False
+        profile = await get_user_profile(chat_id)      # Refresh
 
-        await asyncio.sleep(1.0)
+    is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
 
-        # Create user if not exists
-        profile = await get_user_profile(chat_id)
-        if not profile:
-            await add_xp(chat_id, first_name, "general")
+    # Only mark as seen AFTER showing the first-time menu
+    if is_first_time:
+        await update_has_seen_menu(chat_id)   # or force_set_has_seen_menu
 
-        # FORCE has_seen_menu = True so first-time menu never shows again
-        await force_set_has_seen_menu(chat_id)
+    # Delete loading
+    try:
+        await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
+    except:
+        pass
 
-        # SHOW NORMAL MENU (this is the key fix)
-        await send_full_menu(chat_id, first_name, is_first_time=False)
-
-        try:
-            await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
-        except:
-            pass
-        return
+    await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
+    return
     
     # ====================== ALL OTHER BUTTONS ======================
     # Enforce registration for Guidance, Inventory, Lore, etc.
@@ -1409,7 +1412,11 @@ def webhook():
                 await handle_stats(chat_id, name)
 
             elif text.startswith("/menu"): 
-                await send_full_menu(chat_id, name, is_first_time=False)
+                profile = await get_user_profile(chat_id)
+                is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
+                if is_first:
+                    await update_has_seen_menu(chat_id)
+                await send_full_menu(chat_id, name, is_first_time=is_first)
 
             elif text.startswith("/myid"):
                 await send_myid(chat_id)
