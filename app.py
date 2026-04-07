@@ -1517,7 +1517,7 @@ async def handle_callback(update: Update):
             await query.answer("Invalid selection", show_alert=True)
             return
 
-        # Double loading animation
+        # Loading animation
         await query.message.edit_caption(
             caption="🍿 <i>Searching deep within the glowing glade...</i>",
             parse_mode='HTML'
@@ -1532,7 +1532,7 @@ async def handle_callback(update: Update):
 
         # Get data
         profile = await get_user_profile(chat_id)
-        user_level = profile['level'] if profile else 1
+        user_level = profile.get('level', 1)
 
         if user_level == 1:
             limit = 1
@@ -1552,7 +1552,7 @@ async def handle_callback(update: Update):
         filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
 
         if idx < 1 or idx > len(filtered[:limit]):
-            await query.answer(f"❌ Cookie not found", show_alert=True)
+            await query.answer("❌ Cookie not found", show_alert=True)
             return
 
         item = filtered[idx - 1]
@@ -1563,7 +1563,7 @@ async def handle_callback(update: Update):
 
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
-        # Safe MarkdownV2 Caption (all special characters escaped)
+        # Safe caption for MarkdownV2
         caption = (
             f"📄 **Netflix\\_Cookie\\_{idx}\\.txt**\n\n"
             f"🍿 **{display_name} Revealed**\n"
@@ -1574,7 +1574,7 @@ async def handle_callback(update: Update):
             "_Tap the file below to receive its magic\\._ 🍃"
         )
 
-        # Immersive text file content
+        # Immersive file content
         from io import BytesIO
         file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret Netflix Cookie 🌿🍃
 
@@ -1608,12 +1608,9 @@ Use it wisely and with gratitude.
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
         ])
 
-        # Preparing message
+        # Delete the old loading message
         try:
-            await query.message.edit_caption(
-                caption="🌟 The whispering trees are carefully wrapping your cookie in leaves...",
-                parse_mode='MarkdownV2'
-            )
+            await query.message.delete()
         except:
             pass
 
@@ -1630,21 +1627,21 @@ Use it wisely and with gratitude.
 
     # ====================== BACK TO NETFLIX LIST (No extra XP) ======================
     elif query.data == "back_to_netflix_list":
-        # Redisplay Netflix list WITHOUT giving XP again
-        category = "netflix"
+        # Delete the previous message that contains the .txt file
+        try:
+            await query.message.delete()
+        except:
+            pass
 
+        # Redisplay fresh Netflix list
         profile = await get_user_profile(chat_id)
-        user_level = profile['level'] if profile else 1
-
-        await query.message.edit_caption(
-            caption="✨ <i>Loading Netflix cookies again...</i>",
-            parse_mode='HTML'
-        )
+        user_level = profile.get('level', 1)
 
         data = await get_vamt_data()
         if not data:
-            await query.message.edit_caption(
-                caption="🌫️ <i>The mist is too thick... Database connection failed.</i>",
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="🌫️ The mist is too thick... Database connection failed.",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
@@ -1676,23 +1673,25 @@ Use it wisely and with gratitude.
         buttons = []
         for display_idx, item in enumerate(filtered[:limit], 1):
             display_name = f"Netflix Cookie {display_idx}"
-
             status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-
             report += f"✨ <b>{display_name}</b>\n"
             report += f"   Status: {status_text}\n"
             report += f"   Remaining: {item.get('remaining', 0)}\n\n"
-
             buttons.append([
                 InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")
             ])
 
         buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-
         kb = InlineKeyboardMarkup(buttons)
 
-        await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
-        return
+        # Send a fresh new message for clean list
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=report,
+            parse_mode='HTML',
+            reply_markup=kb
+        )
+
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
