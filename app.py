@@ -1214,50 +1214,50 @@ async def handle_info(chat_id):
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
 
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            # === Total Wanderers ===
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            print("🌿 /forest debug started")
+
+            # Simplest possible query - select only one column
             total_res = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
+                f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
                 headers=headers
             )
-            total_users = len(total_res.json()) if total_res.status_code == 200 and total_res.json() else 0
+            print(f"Total status: {total_res.status_code}")
+            if total_res.status_code != 200:
+                print(f"Total error body: {total_res.text}")
 
-            # === Active Today ===
+            total_users = len(total_res.json()) if total_res.status_code == 200 else 0
+
+            # Active Today
             manila_tz = pytz.timezone('Asia/Manila')
             today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
             today_utc = today_start.astimezone(pytz.utc).isoformat()
 
             active_res = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
+                f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
                 headers=headers,
                 params={"last_active": f"gte.{today_utc}"}
             )
-            active_today = len(active_res.json()) if active_res.status_code == 200 and active_res.json() else 0
+            print(f"Active status: {active_res.status_code}")
+            if active_res.status_code != 200:
+                print(f"Active error body: {active_res.text}")
 
-        # Build the message
-        version = "1.3.1"
-        last_updated = "April 7, 2026"
-        uptime = "2 days, 14 hours"
+            active_today = len(active_res.json()) if active_res.status_code == 200 else 0
 
+        # Message
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "🌳 The forest is thriving peacefully.\n\n"
-            f"🕒 Uptime: <b>{uptime}</b>\n"
+            f"🕒 Uptime: <b>2 days, 14 hours</b>\n"
             f"🌱 Total Wanderers: <b>{total_users:,}</b>\n"
             f"✨ Active Today: <b>{active_today:,}</b>\n\n"
-            f"📜 Current Version: <b>{version}</b>\n"
-            f"🌲 Last Updated: <b>{last_updated}</b>\n\n"
-            "⚠️ <i>For personal and educational use only.</i>\n"
-            "The developer is not responsible for any misuse.\n\n"
+            "📜 Current Version: <b>1.3.1</b>\n"
+            "🌲 Last Updated: <b>April 7, 2026</b>\n\n"
             "Made with care by the Forest Caretaker 🍃"
         )
 
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode='HTML'
-        )
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
 
     except Exception as e:
         print(f"Info command error: {str(e)}")
