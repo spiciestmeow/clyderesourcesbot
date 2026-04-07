@@ -840,19 +840,12 @@ async def handle_leaderboard(chat_id):
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
 
+    OWNER_CHAT_ID = 7399488750
+    MIN_LEVEL_TO_UNLOCK = 3   # Change this if you want a different requirement
+
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            # Get Top 10 (only users with XP > 0)
-            top_resp = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles"
-                f"?select=first_name,xp,level"
-                f"&xp=gt.0"
-                f"&order=xp.desc&limit=10",
-                headers=headers
-            )
-            top_data = top_resp.json() or []
-
-            # Get current user
+            # Get current user to check level
             user_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?chat_id=eq.{chat_id}&select=first_name,xp,level",
@@ -860,16 +853,44 @@ async def handle_leaderboard(chat_id):
             )
             user = user_resp.json()[0] if user_resp.json() else None
 
-            if not top_data:
+            # === Level Lock Check ===
+            if not user or user.get('level', 1) < MIN_LEVEL_TO_UNLOCK:
+                current_level = user.get('level', 1) if user else 1
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    text="🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
-                         "The ancient trees still sleep in silence...\n"
-                         "Be the first to awaken the forest with your steps. 🌱",
+                    text=f"🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
+                         f"🌲 You need to reach **Level {MIN_LEVEL_TO_UNLOCK}** to unlock the leaderboard.\n\n"
+                         f"You are currently **Level {current_level}**.\n\n"
+                         "Keep exploring the clearing, gaining XP, and growing stronger!\n"
+                         "The trees will reveal the guardians when you're ready. 🌱✨",
                     parse_mode='HTML'
                 )
                 return
 
+            # === Get Top 10 (exclude owner) ===
+            top_resp = await client.get(
+                f"{SUPABASE_URL}/rest/v1/user_profiles"
+                f"?select=first_name,xp,level"
+                f"&xp=gt.0"
+                f"&chat_id=neq.{OWNER_CHAT_ID}"
+                f"&order=xp.desc&limit=10",
+                headers=headers
+            )
+            top_data = top_resp.json() or []
+
+            # Empty state
+            if not top_data:
+                await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
+                         "🌲 The ancient trees are still waiting in peaceful silence...\n\n"
+                         "No one has earned any XP yet.\n"
+                         "Be the first to explore the clearing and leave your mark! 🌱✨",
+                    parse_mode='HTML'
+                )
+                return
+
+            # Build leaderboard text
             text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
             # Top 10 List
@@ -885,40 +906,32 @@ async def handle_leaderboard(chat_id):
                 text += f"   {title} • Level {level}\n"
                 text += f"   ✨ {xp:,} XP\n\n"
 
-            # === Smart "Your Rank" Section ===
-            if user:
-                user_xp = user.get('xp', 0)
-                user_level = user.get('level', 1)
-                user_title = get_level_title(user_level)
-                user_name = html.escape(user.get('first_name', 'You'))
+            # Show "Your place" section only if not in top 10
+            if user and chat_id != OWNER_CHAT_ID:
+                is_in_top_10 = any(
+                    u.get('xp') == user.get('xp') and 
+                    u.get('first_name') == user.get('first_name')
+                    for u in top_data
+                )
 
-                # Only show "Your Rank" if user has XP but is NOT in top 10
-                if user_xp > 0:
-                    is_in_top_10 = any(
-                        u.get('xp') == user_xp and u.get('first_name') == user.get('first_name')
-                        for u in top_data
-                    )
-
-                    if not is_in_top_10:
-                        text += "━━━━━━━━━━━━━━━━━━\n"
-                        text += "🌲 <i>The forest whispers of those beyond the canopy...</i>\n\n"
-
-                        user_rank = len(top_data) + 1
-                        text += f"📍 <b>Your place among the wanderers:</b> #{user_rank}\n"
-                        text += f"   {user_name}\n"
-                        text += f"   {user_title} • Level {user_level}\n"
-                        text += f"   ✨ {user_xp:,} XP\n"
-                else:
-                    # User has 0 XP
+                if not is_in_top_10:
                     text += "━━━━━━━━━━━━━━━━━━\n"
-                    text += "🌲 <i>The trees have not yet marked your steps...</i>\n\n"
-                    text += f"📍 <b>Your place among the wanderers:</b> Not ranked yet (0 XP)\n"
-                    text += f"   {user_name}\n"
-                    text += f"   {user_title} • Level {user_level}\n"
-                    text += f"   ✨ 0 XP\n"
+                    text += "🌲 <i>The forest whispers of those beyond the canopy...</i>\n\n"
+
+                    user_rank = len(top_data) + 1
+                    user_name = html.escape(user.get('first_name', 'You'))
+                    user_xp = user.get('xp', 0)
+                    user_level = user.get('level', 1)
+                    user_title = get_level_title(user_level)
+
+                    text += f"📍 <b>Your place among the wanderers:</b> #{user_rank}\n"
+                    text += f"   **{user_name}**\n"                    # Bolded for emphasis
+                    text += f"   **{user_title} • Level {user_level}**\n"
+                    text += f"   **✨ {user_xp:,} XP**\n"
 
             text += "\n<i>May your roots grow deep and your light shine through the canopy.</i> 🍃✨"
 
+            # Send message
             msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text,
