@@ -19,14 +19,12 @@ xp_cooldowns = {}
 user_action_history = {}
 
 COOLDOWN_SECONDS = {
-    "view_windows": 8,
-    "view_office": 8,
+    "view_win_office": 8,
     "view_netflix": 10,
     "reveal_netflix": 15,
     "profile": 12,
     "clear": 25,
     "guidance": 20,
-    "lore": 20,
     "general": 5,
 }
 
@@ -46,6 +44,7 @@ HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0e
 LOADING_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
 MYID_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
 CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
+# HELLO_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 HELLO_GIF = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
 
 # ==================== MAINTENANCE MODE ====================
@@ -162,6 +161,18 @@ async def update_has_seen_menu(chat_id):
         except Exception as e:
             print(f"Failed to update has_seen_menu: {e}")
 
+    payload = {"has_seen_menu": True}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers,
+                json=payload
+            )
+        except Exception as e:
+            print(f"Failed to force set has_seen_menu: {e}")
+
 def get_cumulative_xp_for_level(target_level: int) -> int:
     """Returns total XP needed to reach this level (new balanced formula)"""
     if target_level <= 1:
@@ -170,7 +181,7 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 async def add_xp(chat_id, first_name, action="general", query=None):
-    """Add XP with cooldown + rate limit + detailed logging to xp_history table"""
+    """Add XP with cooldown + rate limit + true one-time rewards only"""
     
     current_time = time.time()
 
@@ -179,8 +190,9 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     if chat_id not in user_action_history:
         user_action_history[chat_id] = []
 
-    # Anti-Abuse Checks
+    # Global Rate Limit
     user_action_history[chat_id] = [t for t in user_action_history[chat_id] if current_time - t < 60]
+
     if len(user_action_history[chat_id]) >= MAX_ACTIONS_PER_MINUTE:
         if query:
             try:
@@ -189,6 +201,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 pass
         return False
 
+    # Action-specific Cooldown
     last_used = xp_cooldowns[chat_id].get(action, 0)
     if current_time - last_used < COOLDOWN_SECONDS.get(action, 8):
         if query:
@@ -198,23 +211,28 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 pass
         return False
 
+    # Record cooldown
     xp_cooldowns[chat_id][action] = current_time
     user_action_history[chat_id].append(current_time)
 
-    # ====================== DETERMINE XP AMOUNT ======================
+    # ====================== XP AMOUNT LOGIC ======================
     profile = await get_user_profile(chat_id)
     
-    xp_amount = 0
+    xp_amount = 0   # Default is now 0 (no accidental XP)
 
     if action == "guidance":
         current_reads = profile.get('guidance_reads', 0) if profile else 0
-        if current_reads == 0:
+        if current_reads == 0:           # First time only
             xp_amount = 8
     elif action == "lore":
         current_reads = profile.get('lore_reads', 0) if profile else 0
-        if current_reads == 0:
+        if current_reads == 0:           # First time only
             xp_amount = 8
-    elif action in ["view_windows", "view_office", "view_netflix"]:
+    elif action == "view_windows":
+        xp_amount = 6
+    elif action == "view_office":
+        xp_amount = 6
+    elif action == "view_netflix":
         xp_amount = 6
     elif action == "reveal_netflix":
         xp_amount = 10
@@ -223,10 +241,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     elif action == "clear":
         xp_amount = 5
 
-    if xp_amount <= 0:
-        return True
-
-    # ====================== DATABASE OPERATIONS ======================
+    # ====================== Database Update ======================
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -234,30 +249,9 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         "Prefer": "return=representation"
     }
 
-    leveled_up = False
-    old_level = 1
-    new_level = 1
-    previous_xp = 0
-    new_xp = 0
-
     if profile:
-        old_level = profile.get('level') or 1
-        previous_xp = profile.get('xp') or 0
-        current_total = profile.get('total_xp_earned') or 0
-
-        new_xp = previous_xp + xp_amount
-        new_total = current_total + xp_amount
-        new_level = old_level
-
-        while True:
-            xp_required_for_next = get_cumulative_xp_for_level(new_level + 1)
-            if new_xp < xp_required_for_next:
-                break
-            new_level += 1
-
-        leveled_up = new_level > old_level
-
         stats_update = {}
+
         if action == "view_windows":
             stats_update["windows_views"] = (profile.get('windows_views') or 0) + 1
         elif action == "view_office":
@@ -273,16 +267,30 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         elif action == "lore":
             stats_update["lore_reads"] = (profile.get('lore_reads') or 0) + 1
         elif action == "profile":
-            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1
+            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1   # New tracking
+
+        current_total = profile.get('total_xp_earned') or 0
+        stats_update["total_xp_earned"] = current_total + xp_amount
+
+        new_xp = (profile.get('xp') or 0) + xp_amount
+        old_level = profile.get('level') or 1
+        new_level = old_level
+
+        while True:
+            xp_required_for_next = get_cumulative_xp_for_level(new_level + 1)
+            if new_xp < xp_required_for_next:
+                break
+            new_level += 1
+
+        leveled_up = new_level > old_level
 
         payload = {
             "xp": new_xp,
             "level": new_level,
             "first_name": first_name,
-            "last_active": "now()",
-            "total_xp_earned": new_total,
-            **stats_update
+            "last_active": "now()"
         }
+        payload.update(stats_update)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.patch(
@@ -290,25 +298,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 headers=headers,
                 json=payload
             )
-
-        # Log XP
-        log_payload = {
-            "chat_id": chat_id,
-            "first_name": first_name,
-            "action": action,
-            "xp_earned": xp_amount,
-            "previous_xp": previous_xp,
-            "new_xp": new_xp,
-            "previous_level": old_level,
-            "new_level": new_level,
-            "leveled_up": leveled_up
-        }
-
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            try:
-                await client.post(f"{SUPABASE_URL}/rest/v1/xp_history", headers=headers, json=log_payload)
-            except Exception as e:
-                print(f"⚠️ Failed to log XP history for user {chat_id}: {e}")
 
         if leveled_up:
             await send_level_up_message(chat_id, first_name, old_level, new_level)
@@ -318,37 +307,28 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
-            "xp": xp_amount,
+            "xp": 0,
             "level": 1,
             "last_active": "now()",
             "has_seen_menu": False,
             "created_at": "now()",
-            "total_xp_earned": xp_amount,
-            "windows_views": 0, "office_views": 0, "netflix_views": 0,
-            "netflix_reveals": 0, "times_cleared": 0, "guidance_reads": 0,
-            "lore_reads": 0, "profile_views": 0
+            "total_xp_earned": 0,
+            "windows_views": 0,
+            "office_views": 0,
+            "netflix_views": 0,
+            "netflix_reveals": 0,
+            "times_cleared": 0,
+            "guidance_reads": 0,
+            "lore_reads": 0,
+            "profile_views": 0
         }
-
+        
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(f"{SUPABASE_URL}/rest/v1/user_profiles", headers=headers, json=payload)
-
-        log_payload = {
-            "chat_id": chat_id,
-            "first_name": first_name,
-            "action": action,
-            "xp_earned": xp_amount,
-            "previous_xp": 0,
-            "new_xp": xp_amount,
-            "previous_level": 1,
-            "new_level": 1,
-            "leveled_up": False
-        }
-
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            try:
-                await client.post(f"{SUPABASE_URL}/rest/v1/xp_history", headers=headers, json=log_payload)
-            except Exception as e:
-                print(f"⚠️ Failed to log XP history for new user {chat_id}: {e}")
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/user_profiles",
+                headers=headers,
+                json=payload
+            )
 
     return True
 
@@ -614,45 +594,6 @@ async def handle_stats(chat_id, first_name):
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
-
-# ==================== XP HISTORY COMMAND ======================
-async def handle_xp_history(chat_id, first_name):
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}"
-    }
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}&order=created_at.desc&limit=20",
-            headers=headers
-        )
-        data = response.json()
-
-    if not data:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text="🌿 No XP history yet. Start exploring the forest!"
-        )
-        return
-
-    text = f"🌟 <b>{html.escape(first_name)}'s XP Journey</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-
-    for entry in data:
-        ts = entry.get('created_at', '')[:16].replace('T', ' ')
-        action = entry.get('action', 'unknown').replace('_', ' ').title()
-        xp = entry.get('xp_earned', 0)
-        level_info = ""
-        if entry.get('leveled_up'):
-            level_info = f" → Level {entry.get('new_level')} 🎉"
-
-        text += f"🕒 {ts}\n"
-        text += f"   {action} → <b>+{xp} XP</b>{level_info}\n"
-        text += f"   {entry.get('previous_xp')} → {entry.get('new_xp')} XP\n\n"
-
-    text += "<i>The trees remember every step of your growth...</i> 🍃"
-
-    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
     
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
@@ -964,7 +905,7 @@ async def handle_callback(update: Update):
     chat_id = update.effective_chat.id
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
-    # ====================== MAIN MENU ENTRY ======================
+    # ====================== MAIN MENU ======================
     if query.data in ["show_main_menu", "main_menu"]:
         try:
             await query.message.delete()
@@ -989,13 +930,14 @@ async def handle_callback(update: Update):
 
         # Get or create profile
         profile = await get_user_profile(chat_id)
-
         if not profile:
-            await add_xp(chat_id, first_name, "general")   # This creates the user
-            await asyncio.sleep(0.8)                       # ← IMPORTANT: Give Supabase time to save
-            profile = await get_user_profile(chat_id)      # Refresh profile
+            await add_xp(chat_id, first_name, "general")
+            profile = await get_user_profile(chat_id)
 
         is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
+
+        # if is_first_time:
+            # await update_has_seen_menu(chat_id)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -1003,37 +945,36 @@ async def handle_callback(update: Update):
             pass
 
         await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
-        return
-
+        return   # ← Stop here for main menu
+    
     # ====================== ALL OTHER BUTTONS ======================
     # Enforce registration
     profile = await get_user_profile(chat_id)
-
     if not profile:
-        # This should rarely happen now, but keep as safety
         await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=HELLO_GIF,
             caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
-                    "You stand at the edge of a mysterious forest...\n\n"
-                    "To step into the Enchanted Clearing and discover its hidden magic, "
-                    "please press the button below.\n\n"
-                    "<i>The forest is ready to welcome you...</i> 🍃✨",
+                "You stand at the edge of a mysterious forest...\n\n"
+                "To step into the Enchanted Clearing, please press the button below.",
             parse_mode='HTML',
             reply_markup=get_start_keyboard()
         )
         return
-
+        
+    # Mark as seen
+    # if not profile.get('has_seen_menu', False):
+        # await update_has_seen_menu(chat_id)
+    
     # ====================== INVENTORY & OTHER FEATURES ======================
     if query.data == "check_vamt":
         await query.message.edit_caption(
             caption="📜 <i>The doors of the Ancient Library creak open...</i>\n\n"
                     "Which scrolls call to your heart today, wanderer?\n\n"
-                    "<i>The forest spirits await your choice.</i>",
-            parse_mode='HTML',
+                    "<i>The forest spirits await your choice.</i>", 
+            parse_mode='HTML', 
             reply_markup=get_inventory_categories()
         )
-
 
     # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
@@ -1540,9 +1481,6 @@ def webhook():
             # Command handlers
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
-
-            elif text.startswith("/history"):
-                await handle_xp_history(chat_id, name)
 
             elif text.startswith("/leaderboard") or text.startswith("/top"):
                 await handle_leaderboard(chat_id)
