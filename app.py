@@ -420,10 +420,10 @@ async def send_initial_welcome(chat_id, first_name):
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
 
     caption = (
-        f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-        "🌿 <b>Welcome, dear wanderer, to Clyde's Enchanted Clearing</b>\n\n"
-        "The ancient wind carries soft whispers through the leaves...\n"
-        "Hidden wonders and gentle magic await those with kind hearts.\n\n"
+        f"{time_icon} {greeting}, {html.escape(str(first_name))}!\n\n"
+        "🌿 Welcome, dear wanderer, to Clyde's Enchanted Clearing.\n\n"
+        "Beneath the whispering ancient trees, a world of gentle magic awaits.\n"
+        "Hidden wonders and peaceful moments are ready to be discovered.\n\n"
         "<i>Tap the button below to step into the heart of the forest.</i> 🍃✨"
     )
 
@@ -1816,12 +1816,12 @@ def webhook():
                     await tg_app.bot.send_animation(
                         chat_id=chat_id,
                         animation=HELLO_GIF,
-                        caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
-                             "You stand at the edge of a mysterious forest.\n"
-                             "The ancient trees seem to be watching you with quiet curiosity.\n\n"
-                             "To step into the Enchanted Clearing and discover its hidden magic, "
-                             "please press the button below.\n\n"
-                             "<i>The forest is ready to welcome you...</i> 🍃✨",
+                        caption =
+                            "<b>🌲 You stand at the edge of a mysterious forest./b>\n\n"
+                            "The ancient trees watch you with quiet curiosity.\n\n"
+                            "To step into the Enchanted Clearing and discover its magic,\n"
+                            "please press the button below.\n\n"
+                            "<i>The forest is ready to welcome you.</i> 🍃✨",
                         parse_mode='HTML',
                         reply_markup=get_start_keyboard()
                     )
@@ -1893,12 +1893,12 @@ def webhook():
                 await tg_app.bot.send_animation(
                     chat_id=chat_id,
                     animation=HELLO_GIF,
-                    caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
-                         "You stand at the edge of a mysterious forest.\n"
-                         "The ancient trees seem to be watching you with quiet curiosity.\n\n"
-                         "To step into the Enchanted Clearing and discover its hidden magic, "
-                         "please press the button below.\n\n"
-                         "<i>The forest is ready to welcome you...</i> 🍃✨",
+                    caption =
+                        "<b>🌲 You stand at the edge of a mysterious forest./b>\n\n"
+                        "The ancient trees watch you with quiet curiosity.\n\n"
+                        "To step into the Enchanted Clearing and discover its magic,\n"
+                        "please press the button below.\n\n"
+                        "<i>The forest is ready to welcome you.</i> 🍃✨",
                     parse_mode='HTML',
                     reply_markup=get_start_keyboard()
                 )
