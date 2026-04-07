@@ -850,8 +850,8 @@ async def handle_leaderboard(chat_id):
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
 
-    # OWNER_CHAT_ID = 7399488750
-    OWNER_CHAT_ID = 1234567890
+    OWNER_CHAT_ID = 7399488750
+    # OWNER_CHAT_ID = 1234567890
     MIN_LEVEL_TO_UNLOCK = 3
 
     async with httpx.AsyncClient(timeout=12.0) as client:
@@ -1207,71 +1207,70 @@ async def handle_clear(chat_id, user_command_id, first_name):
     print(f"🌿 Chat cleared magically for user {chat_id}")
 
 # ==================== BOT INFO / STATUS COMMAND ======================
-# Simple cache storage (will remember numbers for 60 seconds)
 info_cache = {
     "total_users": 0,
     "active_today": 0,
     "last_updated": 0
 }
-CACHE_DURATION = 60  # seconds (1 minute)
+CACHE_DURATION = 60  # 1 minute
 
 async def handle_info(chat_id):
     try:
         current_time = time.time()
 
-        # Check if cache is still fresh (less than 60 seconds old)
         if current_time - info_cache["last_updated"] < CACHE_DURATION:
             total_users = info_cache["total_users"]
             active_today = info_cache["active_today"]
         else:
-            # Cache is old → fetch fresh data from Supabase
             headers = {
                 "apikey": SUPABASE_KEY,
                 "Authorization": f"Bearer {SUPABASE_KEY}"
             }
 
             async with httpx.AsyncClient(timeout=15.0) as client:
+                # Total Wanderers
+                total_res = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
+                    headers=headers,
+                    params={"count": "exact", "head": "true"}
+                )
+                total_users = 0
+                if total_res.headers.get("content-range"):
+                    try:
+                        total_users = int(total_res.headers["content-range"].split("/")[-1])
+                    except:
+                        total_users = 0
+
+                # Active Today
                 manila_tz = pytz.timezone('Asia/Manila')
                 today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
                 today_utc = today_start.astimezone(pytz.utc).isoformat()
 
-                # === Total Wanderers ===
-                total_res = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles",
-                    headers=headers,
-                    params={"select": "id", "count": "exact", "head": "true"}
-                )
-                total_users = total_res.json().get("count", 0) if total_res.status_code == 200 else 0
-
-                # Fallback if needed
-                if total_users == 0 and total_res.headers.get("content-range"):
-                    try:
-                        total_users = int(total_res.headers["content-range"].split("/")[-1])
-                    except:
-                        pass
-
-                # === Active Today ===
                 active_res = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles",
+                    f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
                     headers=headers,
                     params={
-                        "select": "id",
                         "last_active": f"gte.{today_utc}",
                         "count": "exact",
                         "head": "true"
                     }
                 )
-                active_today = active_res.json().get("count", 0) if active_res.status_code == 200 else 0
+                active_today = 0
+                if active_res.headers.get("content-range"):
+                    try:
+                        active_today = int(active_res.headers["content-range"].split("/")[-1])
+                    except:
+                        active_today = 0
 
-            # Save the new numbers to cache
+            # Update cache
             info_cache["total_users"] = total_users
             info_cache["active_today"] = active_today
             info_cache["last_updated"] = current_time
 
-        # === Build the message ===
+        # Build message
         version = "1.3.1"
         last_updated = "April 7, 2026"
-        uptime = "2 days, 14 hours"   # You can make this dynamic later
+        uptime = "2 days, 14 hours"
 
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
@@ -1287,11 +1286,7 @@ async def handle_info(chat_id):
             "Made with care by the Forest Caretaker 🍃"
         )
 
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode='HTML'
-        )
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
 
     except Exception as e:
         print(f"Info command error: {e}")
