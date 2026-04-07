@@ -1021,7 +1021,8 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 
     try:
         await tg_app.bot.send_message(
-            chat_id=7399488750,
+            chat_id=1234567890,
+            # chat_id=7399488750,
             text=owner_message,
             parse_mode='HTML'
         )
@@ -1031,7 +1032,9 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 # ==================== VIEW FEEDBACK COMMAND (Owner Only) ======================
 async def handle_view_feedback(chat_id, user_id):
     # Security: Only you (the owner) can use this command
-    if chat_id != 7399488750:   # Your owner chat_id
+    if chat_id != 1234567890:   # Your owner chat_id
+    # if chat_id != 7399488750:   # Your owner chat_id
+
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker of the forest can view the feedback scrolls."
@@ -1103,7 +1106,8 @@ async def handle_view_feedback(chat_id, user_id):
 
 # ==================== RESET FIRST-TIME EXPERIENCE (Owner Only) ======================
 async def handle_reset_first_time(chat_id):
-    if chat_id != 7399488750:
+    if chat_id != 123456789:
+    # if chat_id != 7399488750:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker can reset the forest memory."
@@ -1774,7 +1778,7 @@ def webhook():
 
         # ==================== MAINTENANCE MODE ====================
         MAINTENANCE_MODE = True
-        OWNER_CHAT_ID = 7399488750
+        OWNER_CHAT_ID = 1234567890
 
         if MAINTENANCE_MODE:
             chat_id = None
@@ -1826,19 +1830,19 @@ def webhook():
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
 
-            elif text.startswith("/info") or text.startswith("/status"):
+            elif text.startswith("/forest"):
                 await handle_info(chat_id)
 
             elif text.startswith("/history"):
                 await handle_history(chat_id, name)
 
-            elif text.startswith("/leaderboard") or text.startswith("/top"):
+            elif text.startswith("/leaderboard"):
                 await handle_leaderboard(chat_id)
 
             elif text.startswith("/profile"):
                 await handle_profile(chat_id, name)
 
-            elif text.startswith("/stats"):
+            elif text.startswith("/mystats"):
                 await handle_stats(chat_id, name)
 
             elif text.startswith("/menu"): 
