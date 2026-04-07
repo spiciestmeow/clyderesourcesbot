@@ -1571,23 +1571,19 @@ async def handle_callback(update: Update):
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
         report = (
-            f"<b>🍿 {display_name} Revealed</b>\n"
+            f"🍿 **{display_name} Revealed**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🌿 Status: <b>{status}</b>\n"
-            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
-            "<b>📋 The Hidden Cookie:</b>\n"
-            f"<code>{html.escape(cookie[:800])}</code>\n\n"
-            "<i>Long-press the code above to copy.\n"
+            f"🌿 Status: **{status}**\n"
+            f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
+            "**📋 The Hidden Cookie:**\n"
+            f"```\n{html.escape(cookie[:800])}\n```\n\n"   # ← Triple backticks + \n
+            "<i>Long-press the code block above to copy.\n"
             "Use it quickly before the magic fades.</i> 🍃"
         )
 
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
-        ])
-
         await query.message.edit_caption(
-            caption=report, 
-            parse_mode='HTML', 
+            caption=report,
+            parse_mode='MarkdownV2',   # ← Change to MarkdownV2
             reply_markup=kb
         )
 
