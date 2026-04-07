@@ -1191,7 +1191,44 @@ async def handle_clear(chat_id, user_command_id, first_name):
 
     print(f"🌿 Chat cleared magically for user {chat_id}")
 
+# ==================== BOT INFO / STATUS COMMAND ======================
+async def handle_info(chat_id):
+    try:
+        # You can make these dynamic later if you want
+        version = "1.3.0"                    # Update this when you release new version
+        last_updated = "April 7, 2026"       # You can make this dynamic if needed
+        total_users = "87"                   # You can make this dynamic from database later
+        active_today = "24"                  # Same, can be dynamic
 
+        # Calculate uptime (simple version - you can improve this later)
+        uptime = "2 days, 14 hours"          # For now static, can be made real later
+
+        text = (
+            "🌿 <b>Enchanted Clearing Status</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌳 The forest is thriving peacefully.\n\n"
+            f"🕒 Uptime: <b>{uptime}</b>\n"
+            f"🌱 Total Wanderers: <b>{total_users}</b>\n"
+            f"✨ Active today: <b>{active_today}</b>\n\n"
+            f"📜 Current Version: <b>{version}</b>\n"
+            f"🌲 Last updated: <b>{last_updated}</b>\n\n"
+            "⚠️ <i>For personal and educational use only.</i>\n"
+            "The developer is not responsible for any misuse.\n\n"
+            "Made with care by the Forest Caretaker 🍃"
+        )
+
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML'
+        )
+
+    except Exception as e:
+        print(f"Info command error: {e}")
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text="🌫️ The ancient trees are having trouble sharing the forest status right now..."
+        )
     
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
@@ -1788,6 +1825,9 @@ def webhook():
             # Command handlers
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
+
+            elif text.startswith("/info") or text.startswith("/status"):
+                await handle_info(chat_id)
 
             elif text.startswith("/history"):
                 await handle_history(chat_id, name)
