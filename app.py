@@ -1576,9 +1576,9 @@ async def handle_callback(update: Update):
             f"🌿 Status: **{status}**\n"
             f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
             "**📋 The Hidden Cookie:**\n"
-            f"```\n{html.escape(cookie[:1200])}\n```\n\n"
-            "_Long-press the code block above to copy._\n"
-            "Use it quickly before the magic fades. 🍃"
+            f"```\n{html.escape(cookie[:1500])}\n```\n\n"   # Increased to 1500 for safety
+            "_Long\\-press the code block above to copy\\._\n"
+            "Use it quickly before the magic fades\\. 🍃"
         )
 
         kb = InlineKeyboardMarkup([
@@ -1587,7 +1587,7 @@ async def handle_callback(update: Update):
 
         await query.message.edit_caption(
             caption=report, 
-            parse_mode='MarkdownV2',   # ← Changed from 'HTML'
+            parse_mode='MarkdownV2', 
             reply_markup=kb
         )
 
