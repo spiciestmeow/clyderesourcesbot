@@ -1354,9 +1354,9 @@ async def handle_callback(update: Update):
         await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=INVENTORY_GIF,   # Your original inventory GIF
-            caption="📜 <i>The doors of the Ancient Library creak open...</i>\n\n"
-                    "Which scrolls call to your heart today, wanderer?\n\n"
-                    "<i>The forest spirits await your choice.</i>",
+            caption="📜 <b>Ancient Library — Resource Scrolls</b>\n\n"
+                    "Choose the type of resource you need today:\n\n"
+                    "<i>Viewing items will earn you XP and help you level up.</i>"
             parse_mode='HTML',
             reply_markup=get_inventory_categories()
         )
@@ -1654,13 +1654,16 @@ Use it wisely and with gratitude.
         await asyncio.sleep(1.0)
 
         text = (
-            "<b>🌿 The Tale of Clyde's Enchanted Clearing</b>\n\n"
-            "Long ago, in a hidden corner of the digital world, a gentle forest spirit named Clyde created this peaceful sanctuary.\n\n"
-            "Inspired by the wonder of Studio Ghibli, this clearing was born as a place where wanderers can find rest, magic, and useful treasures — "
-            "be it Steam accounts, learning guides, or activation keys.\n\n"
-            "Here, kindness is the only key, and every visitor is welcomed with open arms by the whispering trees.\n\n"
-            "<i>May this small enchanted corner bring you joy, wonder, and a little bit of magic in your journey.</i> 🍃✨"
-        )
+            "<b>🌿 About Clyde's Resource Hub</b>\n\n"
+            "This peaceful sanctuary was created to make useful digital resources easy and stress-free to access — all wrapped in a calm, Studio Ghibli-inspired forest theme.\n\n"
+            "You can find:\n"
+            "• Windows & Office activation keys\n"
+            "• Netflix premium cookies\n"
+            "• PrimeVideo premium cookies\n"
+            "• Steam accounts\n"
+            "• Learning guides\n\n"
+            "The gentle leveling system rewards exploration and gives a relaxing experience while you grow.\n\n"
+            "<i>May this small enchanted clearing bring you both practical resources and a moment of peace.</i> 🍃✨"
 
         final_msg = await tg_app.bot.send_animation(
             chat_id=chat_id,                                   # ← Fixed
