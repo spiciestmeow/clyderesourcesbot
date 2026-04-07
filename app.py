@@ -883,7 +883,7 @@ async def handle_leaderboard(chat_id):
             )
             user = user_resp.json()[0] if user_resp.json() else None
 
-            # Level lock for normal users only (Improved message)
+            # Level lock for normal users only
             if chat_id != OWNER_CHAT_ID:
                 if not user or user.get('level', 1) < MIN_LEVEL_TO_UNLOCK:
                     current_level = user.get('level', 1) if user else 1
@@ -899,10 +899,10 @@ async def handle_leaderboard(chat_id):
                     )
                     return
 
-            # Get Top 10
+            # Get Top 10 — IMPORTANT: Now we also select chat_id
             top_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
-                f"?select=first_name,xp,level"
+                f"?select=first_name,xp,level,chat_id"   # ← Added chat_id here
                 f"&xp=gt.0"
                 f"&order=xp.desc&limit=10",
                 headers=headers
@@ -930,7 +930,7 @@ async def handle_leaderboard(chat_id):
                 title = get_level_title(level)
                 medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
 
-                # Show your special nickname
+                # Show nickname for owner
                 if str(u.get('chat_id')) == str(OWNER_CHAT_ID):
                     name = "The Forest Warden"
 
@@ -970,7 +970,6 @@ async def handle_leaderboard(chat_id):
                 chat_id=chat_id,
                 text="🌫️ The ancient trees are having trouble reading the winds right now..."
             )
-
 
 # ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
