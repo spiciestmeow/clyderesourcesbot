@@ -545,7 +545,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # Today start time in UTC (Supabase stores created_at in UTC by default)
+    # Use UTC for today_start (Supabase stores created_at in UTC)
     today_start = datetime.now(pytz.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     ).isoformat()
@@ -559,7 +559,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             total_entries = len(count_resp.json()) if count_resp.json() else 0
 
-            # Paginated logs for display
+            # Paginated logs for display only
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&order=created_at.desc&limit={limit}&offset={offset}",
@@ -567,7 +567,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             logs = resp.json()
 
-            # ALL logs for Most Used
+            # ALL logs for "Most Used"
             all_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&select=action",
@@ -575,7 +575,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             all_logs = all_resp.json()
 
-            # Today's XP (using UTC)
+            # Today's XP — using UTC
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned",
@@ -584,7 +584,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             today_logs = today_resp.json()
             xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
 
-            # Top Action
+            # Top Action from ALL history
             from collections import Counter
             action_count = Counter(log.get('action') for log in all_logs if log.get('action'))
             top_action = action_count.most_common(1)[0] if action_count else ("general", 0)
