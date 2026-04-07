@@ -1777,7 +1777,7 @@ def webhook():
         update = Update.de_json(update_data, tg_app.bot)
 
         # ==================== MAINTENANCE MODE ====================
-        MAINTENANCE_MODE = True
+        MAINTENANCE_MODE = False
         OWNER_CHAT_ID = 1234567890
 
         if MAINTENANCE_MODE:
