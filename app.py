@@ -529,35 +529,49 @@ async def send_myid(chat_id):
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
-async def handle_history(chat_id: int, first_name: str):
+async def handle_history(chat_id: int, first_name: str, page: int = 0):
+    """Advanced XP History with Pagination"""
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
 
-    # Get user profile for header info
+    limit = 10                    # Entries per page
+    offset = page * limit
+
+    # Get user profile for header
     profile = await get_user_profile(chat_id)
     current_level = profile.get('level', 1) if profile else 1
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
+    # Fetch total count for pagination
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}"
-                "&order=created_at.desc"
-                "&limit=15",
+            # Get total count
+            count_resp = await client.get(
+                f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}&select=id",
                 headers=headers
             )
-            logs = response.json()
+            total_entries = len(count_resp.json()) if count_resp.json() else 0
+
+            # Get paginated logs
+            resp = await client.get(
+                f"{SUPABASE_URL}/rest/v1/xp_history"
+                f"?chat_id=eq.{chat_id}"
+                f"&order=created_at.desc"
+                f"&limit={limit}&offset={offset}",
+                headers=headers
+            )
+            logs = resp.json()
+
         except Exception as e:
             print(f"History fetch error: {e}")
             await tg_app.bot.send_message(chat_id=chat_id, 
                 text="🌿 The trees are resting... Please try again soon.")
             return
 
-    if not logs:
+    if not logs and page == 0:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌱 No steps recorded yet.\nStart exploring the clearing to grow!"
@@ -569,6 +583,7 @@ async def handle_history(chat_id: int, first_name: str):
         "━━━━━━━━━━━━━━━━━━",
         f"🏷️ <b>Current Title:</b> {title} • Level {current_level}",
         f"✨ <b>Total XP Earned:</b> {total_xp:,}",
+        f"📊 <b>Total Records:</b> {total_entries}",
         "━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -584,7 +599,7 @@ async def handle_history(chat_id: int, first_name: str):
 
         main_line = f"   {action_name} → +{log['xp_earned']} XP"
         if log.get('leveled_up'):
-            main_line += f" → Level {log['new_level']} 🎉"
+            main_line += f" → <b>Level {log['new_level']} 🎉</b>"
 
         lines.append(f"🕒 {time_str}")
         lines.append(main_line)
@@ -592,14 +607,24 @@ async def handle_history(chat_id: int, first_name: str):
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
-    lines.append(f"🌱 Showing last {len(logs)} steps • The trees remember every step of your growth... 🍃")
+    lines.append(f"🌱 Page {page + 1} of {(total_entries + limit - 1) // limit} • The trees remember every step... 🍃")
 
     text = "\n".join(lines)
+
+    # Create pagination buttons
+    buttons = []
+    if page > 0:
+        buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"history_page_{page-1}"))
+    if (page + 1) * limit < total_entries:
+        buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"history_page_{page+1}"))
+
+    keyboard = InlineKeyboardMarkup([buttons]) if buttons else None
 
     await tg_app.bot.send_message(
         chat_id=chat_id,
         text=text,
-        parse_mode='HTML'
+        parse_mode='HTML',
+        reply_markup=keyboard
     )
 
 # ==================== PROFILE COMMAND ======================
@@ -1216,6 +1241,17 @@ async def handle_callback(update: Update):
         kb = get_back_to_inventory_keyboard()
 
         await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+
+    # ====================== HISTORY PAGINATION ======================
+    elif query.data.startswith("history_page_"):
+        try:
+            page = int(query.data.split("_")[2])
+            await query.message.delete()   # Delete old message
+        except:
+            page = 0
+        
+        await handle_history(chat_id, first_name, page=page)
+        return
 
     # ====================== REVEAL NETFLIX ======================
     elif query.data.startswith("reveal_nf|"):
