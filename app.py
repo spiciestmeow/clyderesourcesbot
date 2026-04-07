@@ -840,7 +840,8 @@ async def handle_leaderboard(chat_id):
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
 
-    OWNER_CHAT_ID = 7399488750
+    # OWNER_CHAT_ID = 7399488750
+    OWNER_CHAT_ID = 1234567890
     MIN_LEVEL_TO_UNLOCK = 3
 
     async with httpx.AsyncClient(timeout=12.0) as client:
@@ -1021,8 +1022,8 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 
     try:
         await tg_app.bot.send_message(
-            chat_id=1234567890,
-            # chat_id=7399488750,
+            # chat_id=1234567890,
+            chat_id=7399488750,
             text=owner_message,
             parse_mode='HTML'
         )
@@ -1032,8 +1033,8 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 # ==================== VIEW FEEDBACK COMMAND (Owner Only) ======================
 async def handle_view_feedback(chat_id, user_id):
     # Security: Only you (the owner) can use this command
-    if chat_id != 1234567890:   # Your owner chat_id
-    # if chat_id != 7399488750:   # Your owner chat_id
+    # if chat_id != 1234567890:   # Your owner chat_id
+    if chat_id != 7399488750:   # Your owner chat_id
 
         await tg_app.bot.send_message(
             chat_id=chat_id,
@@ -1777,7 +1778,7 @@ def webhook():
         update = Update.de_json(update_data, tg_app.bot)
 
         # ==================== MAINTENANCE MODE ====================
-        MAINTENANCE_MODE = False
+        MAINTENANCE_MODE = True
         OWNER_CHAT_ID = 1234567890
 
         if MAINTENANCE_MODE:
