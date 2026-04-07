@@ -1817,7 +1817,7 @@ def webhook():
                         chat_id=chat_id,
                         animation=HELLO_GIF,
                         caption =
-                            "<b>🌲 You stand at the edge of a mysterious forest./b>\n\n"
+                            "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
                             "The ancient trees watch you with quiet curiosity.\n\n"
                             "To step into the Enchanted Clearing and discover its magic,\n"
                             "please press the button below.\n\n"
@@ -1894,7 +1894,7 @@ def webhook():
                     chat_id=chat_id,
                     animation=HELLO_GIF,
                     caption =
-                        "<b>🌲 You stand at the edge of a mysterious forest./b>\n\n"
+                        "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
                         "The ancient trees watch you with quiet curiosity.\n\n"
                         "To step into the Enchanted Clearing and discover its magic,\n"
                         "please press the button below.\n\n"
