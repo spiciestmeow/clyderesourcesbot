@@ -550,6 +550,14 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     today_manila = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_utc = today_manila.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Default values
+    xp_today = 0
+    streak = 0
+    top_action_name = "None yet"
+    top_action_count = 0
+    logs = []
+    total_entries = 0
+
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             # Total entries for pagination
@@ -559,7 +567,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             total_entries = len(count_resp.json()) if count_resp.json() else 0
 
-            # Paginated logs for display
+            # Paginated logs
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&order=created_at.desc&limit={limit}&offset={offset}",
@@ -567,7 +575,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             logs = resp.json() or []
 
-            # ALL logs for "Most Used"
+            # Most Used
             all_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&select=action&limit=1000",
@@ -575,7 +583,6 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             all_logs = all_resp.json() or []
 
-            # Most Used
             from collections import Counter
             action_count = Counter(
                 log.get('action')
@@ -586,36 +593,23 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
                 top_action = action_count.most_common(1)[0]
                 top_action_name = top_action[0].replace('_', ' ').title()
                 top_action_count = top_action[1]
-            else:
-                top_action_name = "None yet"
-                top_action_count = 0
 
-            # ====================== SAFE TODAY'S XP ======================
+            # SAFE TODAY'S XP
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&created_at=gte.{today_start_utc}&select=xp_earned",
                 headers=headers
             )
-            
             if today_resp.status_code == 200:
                 today_logs = today_resp.json() or []
-            else:
-                print(f"Today XP query failed: {today_resp.status_code} - {today_resp.text}")
-                today_logs = []
-                
-            xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
+                xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
 
-            # ====================== REAL STREAK CALCULATION ======================
+            # ====================== REAL STREAK (Realtime) ======================
             streak = await calculate_streak(chat_id, client, headers)
 
         except Exception as e:
             print(f"History fetch error: {e}")
-            xp_today = 0
-            top_action_name = "Unknown"
-            top_action_count = 0
-            streak = 0
-            logs = []
-            total_entries = 0
+            # All defaults already set above
 
     # No logs yet
     if not logs and page == 0:
@@ -625,7 +619,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         )
         return
 
-    # Build message
+    # Streak message
     streak_text = f"You're on a {streak}-day XP streak! 🔥" if streak >= 2 else "Welcome to your journey! 🌱"
 
     lines = [
@@ -650,7 +644,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             time_str = str(log.get('created_at', ''))[:16]
 
         main_line = f" {action_name} → +{log.get('xp_earned', 0)} XP"
-        if log.get('leveled_up'):
+        if log.get('leveled_up') and log.get('new_level', 1) > 1:
             main_line += f" → <b>Level {log.get('new_level')} 🎉</b>"
 
         lines.append(f"🕒 {time_str}")
@@ -664,7 +658,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
 
     text = "\n".join(lines)
 
-    # Pagination buttons
+    # Pagination
     buttons = []
     if page > 0:
         buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"history_page_{page-1}"))
@@ -679,7 +673,6 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         parse_mode='HTML',
         reply_markup=keyboard
     )
-
 
 async def calculate_streak(chat_id: int, client, headers):
     """Calculate current consecutive days with XP"""
