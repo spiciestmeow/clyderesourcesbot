@@ -1576,14 +1576,18 @@ async def handle_callback(update: Update):
             f"🌿 Status: **{status}**\n"
             f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
             "**📋 The Hidden Cookie:**\n"
-            f"```\n{html.escape(cookie[:800])}\n```\n\n"   # ← Triple backticks + \n
-            "<i>Long-press the code block above to copy.\n"
-            "Use it quickly before the magic fades.</i> 🍃"
+            f"```\n{html.escape(cookie[:1200])}\n```\n\n"
+            "_Long-press the code block above to copy._\n"
+            "Use it quickly before the magic fades. 🍃"
         )
 
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
+        ])
+
         await query.message.edit_caption(
-            caption=report,
-            parse_mode='MarkdownV2',   # ← Change to MarkdownV2
+            caption=report, 
+            parse_mode='MarkdownV2',   # ← Changed from 'HTML'
             reply_markup=kb
         )
 
