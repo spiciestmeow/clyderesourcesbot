@@ -93,9 +93,10 @@ def get_full_menu_keyboard():
 def get_inventory_categories():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🪟 Windows Keys", callback_data="vamt_filter_win"),
-         InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office")
-        ],
-        [InlineKeyboardButton("🍿 Netflix Keys", callback_data="vamt_filter_netflix")],
+         InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office")],
+        [InlineKeyboardButton("🍿 Netflix Keys", callback_data="vamt_filter_netflix"),
+         InlineKeyboardButton("🎥 Prime Video", callback_data="vamt_filter_prime")],
+        [InlineKeyboardButton("🎮 Steam Accounts", callback_data="vamt_filter_steam")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
     ])
 
@@ -1351,10 +1352,6 @@ async def handle_callback(update: Update):
         return
     
     await update_last_active(chat_id)
-        
-    # Mark as seen
-    # if not profile.get('has_seen_menu', False):
-        # await update_has_seen_menu(chat_id)
     
     # ====================== INVENTORY & OTHER FEATURES ======================
     if query.data == "check_vamt":
@@ -1370,21 +1367,50 @@ async def handle_callback(update: Update):
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
         category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
 
-        if category == "win":
+        # Give XP only for working categories
+        if category in ["win", "windows"]:
             await add_xp(chat_id, first_name, "view_windows", query=query)
         elif category == "office":
             await add_xp(chat_id, first_name, "view_office", query=query)
         elif category == "netflix":
             await add_xp(chat_id, first_name, "view_netflix", query=query)
-
-        # Get user level
-        profile = await get_user_profile(chat_id)
-        user_level = profile['level'] if profile else 1
+        # No XP for Prime and Steam yet (they are coming soon)
 
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>",
             parse_mode='HTML'
         )
+
+        # ====================== COMING SOON - PRIME & STEAM ======================
+        if category in ["prime", "steam"]:
+            if category == "prime":
+                msg = (
+                    "🎥 <b>Prime Video Cookies</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "This treasure is still being prepared by the forest spirits.\n\n"
+                    "<b>Coming Soon</b>\n\n"
+                    "Prime Video cookies will appear here once ready.\n"
+                    "They will be scarce and protected by level requirements."
+                )
+            else:  # steam
+                msg = (
+                    "🎮 <b>Steam Accounts (Daily 8PM Drop)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "The daily Steam account drop is still being prepared.\n\n"
+                    "<b>Coming Soon</b>\n\n"
+                    "Reach higher levels to get <b>early access</b> before the 8:00 PM public drop."
+                )
+
+            await query.message.edit_caption(
+                caption=msg,
+                parse_mode='HTML',
+                reply_markup=get_back_to_inventory_keyboard()
+            )
+            return
+        
+        # Get user level
+        profile = await get_user_profile(chat_id)
+        user_level = profile['level'] if profile else 1
 
         data = await get_vamt_data()
         if not data:
@@ -1397,13 +1423,13 @@ async def handle_callback(update: Update):
         filtered = []
         for item in data:
             s_type = str(item.get('service_type', '')).lower().strip()
-
-            if category == "netflix" and "netflix" in s_type:
-                filtered.append(item)
-            elif category == "win" and any(x in s_type for x in ["windows", "win"]):
+            if category in ["win", "windows"] and any(x in s_type for x in ["windows", "win"]):
                 filtered.append(item)
             elif category == "office" and "office" in s_type:
                 filtered.append(item)
+            elif category == "netflix" and "netflix" in s_type:
+                filtered.append(item)
+
 
         if not filtered:
             await query.message.edit_caption(
@@ -1412,7 +1438,7 @@ async def handle_callback(update: Update):
             )
             return
 
-        # === Improved Level-based limit ===
+        # Old limit logic (kept unchanged for safety)
         if user_level == 1:
             limit = 1
             limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
@@ -1481,6 +1507,7 @@ async def handle_callback(update: Update):
         kb = get_back_to_inventory_keyboard()
 
         await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+
 
     # ====================== HISTORY PAGINATION ======================
     elif query.data.startswith("history_page_"):
