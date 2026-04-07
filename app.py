@@ -1572,8 +1572,8 @@ async def handle_callback(update: Update):
                 "<b>❓ Guidance - Page 1/2</b>\n\n"
                 "🌿 <b>How to Navigate the Clearing</b>\n"
                 "• Tap any button to explore the paths\n"
-                "• Use <code>/menu</code> to return here anytime\n"
-                "• Use <code>/clear</code> to renew your path\n\n"
+                "• Use /menu to return here anytime\n"
+                "• Use /clear to renew your path\n\n"
                 
                 "📜 <b>Available Commands</b>\n"
                 "• /start — Begin your journey anew\n"
