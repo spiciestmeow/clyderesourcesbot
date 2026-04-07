@@ -1517,13 +1517,12 @@ async def handle_callback(update: Update):
             await query.answer("Invalid selection", show_alert=True)
             return
 
-        # === Double Loading Animation ===
+        # Double loading animation
         await query.message.edit_caption(
             caption="🍿 <i>Searching deep within the glowing glade...</i>",
             parse_mode='HTML'
         )
         await asyncio.sleep(1.3)
-
         await query.message.edit_caption(
             caption="🌟 <i>The hidden cookie spirit is slowly awakening...</i>\n\n"
                     "Please wait as the forest carefully reveals its secret...",
@@ -1531,11 +1530,10 @@ async def handle_callback(update: Update):
         )
         await asyncio.sleep(1.5)
 
-        # === Get user level and rebuild the SAME limited list as the display ===
+        # Get data
         profile = await get_user_profile(chat_id)
         user_level = profile['level'] if profile else 1
 
-        # === Consistent limit logic with viewing section ===
         if user_level == 1:
             limit = 1
         elif user_level <= 3:
@@ -1550,33 +1548,30 @@ async def handle_callback(update: Update):
             await query.answer("Database error", show_alert=True)
             return
 
-        # Build the exact same filtered Netflix list
         filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
         filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
 
-        # Safety check
         if idx < 1 or idx > len(filtered[:limit]):
             await query.answer(f"❌ Cookie not found", show_alert=True)
             return
 
-        # Take the item from the LIMITED list (this fixes the inconsistency)
         item = filtered[idx - 1]
 
-        # ==================== IMMERSIVE NETFLIX REVEAL ====================
         cookie = str(item.get('key_id', '')).strip()
         display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
         status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
+        # Safe MarkdownV2 Caption (all special characters escaped)
         caption = (
-            f"📄 **Netflix_Cookie_{idx}.txt**\n\n"
+            f"📄 **Netflix\\_Cookie\\_{idx}\\.txt**\n\n"
             f"🍿 **{display_name} Revealed**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🌿 Status: **{status}**\n"
             f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
-            "📥 The forest has wrapped your cookie in an ancient scroll.\n"
-            "_Tap the file below to receive its magic._ 🍃"
+            "📥 The forest has wrapped your cookie in an ancient scroll\\.\n"
+            "_Tap the file below to receive its magic\\._ 🍃"
         )
 
         # Immersive text file content
@@ -1631,6 +1626,7 @@ Use it wisely and with gratitude.
             reply_markup=kb,
             filename=file_bytes.name
         )
+
 
     # ====================== BACK TO NETFLIX LIST (No extra XP) ======================
     elif query.data == "back_to_netflix_list":
