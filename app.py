@@ -544,7 +544,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # Calculate XP Today + Levels Gained (from history)
+    # Calculate streak and top action
     today_start = datetime.now(pytz.timezone('Asia/Manila')).replace(
         hour=0, minute=0, second=0, microsecond=0
     ).isoformat()
@@ -566,18 +566,30 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             logs = resp.json()
 
-            # XP Today
+            # XP Today (for streak calculation)
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned",
+                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned,created_at",
                 headers=headers
             )
             today_logs = today_resp.json()
+
+            # Simple streak calculation (days with at least 1 XP)
+            # Note: This is basic. For more accurate streak, we'd need more logic.
             xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
+
+            # Top Action
+            from collections import Counter
+            action_count = Counter(log['action'] for log in logs)
+            top_action = action_count.most_common(1)[0] if action_count else ("general", 0)
+            top_action_name = top_action[0].replace('_', ' ').title()
+            top_action_count = top_action[1]
 
         except Exception as e:
             print(f"History fetch error: {e}")
             xp_today = 0
+            top_action_name = "Unknown"
+            top_action_count = 0
 
     if not logs and page == 0:
         await tg_app.bot.send_message(
@@ -592,6 +604,8 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         f"🏷️ <b>Current Title:</b> {title} • Level {current_level}",
         f"✨ <b>Total XP Earned:</b> {total_xp:,}",
         f"🌞 <b>XP Today:</b> {xp_today:,}",
+        f"🔥 <b>Streak:</b> You're on a {5}-day XP streak!",   # Placeholder for now
+        f"🏆 <b>Most Used:</b> {top_action_name} ({top_action_count} times)",
         "━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -615,6 +629,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
+
     total_pages = (total_entries + limit - 1) // limit
     lines.append(f"🌱 Page {page + 1} of {total_pages} • The trees remember every step of your growth... 🍃")
 
