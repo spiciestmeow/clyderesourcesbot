@@ -944,11 +944,16 @@ async def handle_leaderboard(chat_id):
                     headers=headers
                 )
                 rank_data = rank_resp.json()
-                real_rank = rank_data[0].get('rank', 1) if rank_data else 1
+                real_rank = rank_data[0].get('rank', 1) if rank_data and len(rank_data) > 0 else 1
 
-                text += f"📍 <b>You are The Forest Warden</b> • Currently ranked <b>#{real_rank}</b>\n"
-                text += f"   {get_level_title(user.get('level', 1))} • Level {user.get('level', 1)}\n"
-                text += f"   ✨ {user.get('xp', 0):,} XP\n"
+                if str(chat_id) == str(OWNER_CHAT_ID):
+                    text += f"📍 <b>You are The Forest Warden</b> • Currently ranked <b>#{real_rank}</b>\n"
+                    text += f"   {get_level_title(user.get('level', 1))} • Level {user.get('level', 1)}\n"
+                    text += f"   ✨ {user.get('xp', 0):,} XP\n"
+                else:
+                    text += f"📍 <b>You are currently ranked #{real_rank}</b>\n"
+                    text += f"   {get_level_title(user.get('level', 1))} • Level {user.get('level', 1)}\n"
+                    text += f"   ✨ {user.get('xp', 0):,} XP\n"
 
             text += "\n<i>May your roots grow deep and your light shine through the canopy.</i> 🍃✨"
 
