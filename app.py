@@ -876,7 +876,6 @@ async def handle_leaderboard(chat_id):
 
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            # Get current user
             user_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?chat_id=eq.{chat_id}&select=first_name,xp,level",
@@ -884,7 +883,6 @@ async def handle_leaderboard(chat_id):
             )
             user = user_resp.json()[0] if user_resp.json() else None
 
-            # Level lock for normal users only
             if chat_id != OWNER_CHAT_ID:
                 if not user or user.get('level', 1) < MIN_LEVEL_TO_UNLOCK:
                     current_level = user.get('level', 1) if user else 1
@@ -900,7 +898,6 @@ async def handle_leaderboard(chat_id):
                     )
                     return
 
-            # Get Top 10
             top_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?select=first_name,xp,level,chat_id"
@@ -923,7 +920,6 @@ async def handle_leaderboard(chat_id):
 
             text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
-            # Show Top 10
             for rank, u in enumerate(top_data, 1):
                 name = html.escape(u.get('first_name', 'Unknown Wanderer'))
                 xp = u.get('xp', 0)
@@ -938,11 +934,10 @@ async def handle_leaderboard(chat_id):
                 text += f"   {title} • Level {level}\n"
                 text += f"   ✨ {xp:,} XP\n\n"
 
-            # Show your rank clearly (Improved calculation)
+            # Clean rank display for owner
             if user and user.get('xp', 0) > 0:
                 text += "━━━━━━━━━━━━━━━━━━\n"
                 
-                # Better rank calculation: count users with strictly higher XP
                 count_resp = await client.get(
                     f"{SUPABASE_URL}/rest/v1/user_profiles"
                     f"?select=id"
@@ -950,11 +945,9 @@ async def handle_leaderboard(chat_id):
                     headers=headers
                 )
                 higher_count = len(count_resp.json()) if count_resp.json() else 0
-                
-                # Add 1 for your own position
                 real_rank = higher_count + 1
 
-                text += f"📍 <b>You are The Forest Warden</b> • Currently ranked **#{real_rank}**\n"
+                text += f"📍 <b>You are The Forest Warden</b> • Currently ranked <b>#{real_rank}</b>\n"
                 text += f"   {get_level_title(user.get('level', 1))} • Level {user.get('level', 1)}\n"
                 text += f"   ✨ {user.get('xp', 0):,} XP\n"
 
@@ -972,7 +965,6 @@ async def handle_leaderboard(chat_id):
                 chat_id=chat_id,
                 text="🌫️ The ancient trees are having trouble reading the winds right now..."
             )
-
 
 # ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
