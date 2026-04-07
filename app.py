@@ -545,13 +545,10 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # Calculate start of today in Manila time → convert to UTC without timezone suffix
+    # ====================== Manila "Today" for XP Today ======================
     manila_tz = pytz.timezone('Asia/Manila')
     today_manila = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_utc = today_manila.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    # Optional: keep debug for now
-    # print(f"DEBUG: Today start (UTC): {today_start_utc}")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
@@ -578,14 +575,13 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             all_logs = all_resp.json() or []
 
-            # Calculate Most Used
+            # Most Used
             from collections import Counter
             action_count = Counter(
-                log.get('action') 
-                for log in all_logs 
+                log.get('action')
+                for log in all_logs
                 if log.get('action') and str(log.get('action')).strip()
             )
-
             if action_count:
                 top_action = action_count.most_common(1)[0]
                 top_action_name = top_action[0].replace('_', ' ').title()
@@ -594,31 +590,34 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
                 top_action_name = "None yet"
                 top_action_count = 0
 
-            # ====================== TODAY'S XP (Fixed + Safe) ======================
+            # ====================== SAFE TODAY'S XP ======================
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}"
-                f"&created_at=gte.{today_start_utc}&select=xp_earned",
+                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start_utc}&select=xp_earned",
                 headers=headers
             )
             
             if today_resp.status_code == 200:
                 today_logs = today_resp.json() or []
             else:
-                print(f"Today XP query failed with status {today_resp.status_code}: {today_resp.text}")
+                print(f"Today XP query failed: {today_resp.status_code} - {today_resp.text}")
                 today_logs = []
                 
             xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
+
+            # ====================== REAL STREAK CALCULATION ======================
+            streak = await calculate_streak(chat_id, client, headers)
 
         except Exception as e:
             print(f"History fetch error: {e}")
             xp_today = 0
             top_action_name = "Unknown"
             top_action_count = 0
+            streak = 0
             logs = []
             total_entries = 0
 
-    # No XP logs yet
+    # No logs yet
     if not logs and page == 0:
         await tg_app.bot.send_message(
             chat_id=chat_id,
@@ -627,13 +626,15 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         return
 
     # Build message
+    streak_text = f"You're on a {streak}-day XP streak! 🔥" if streak >= 2 else "Welcome to your journey! 🌱"
+
     lines = [
         f"🌟 <b>{html.escape(first_name)}'s XP Journey</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"🏷️ <b>Current Title:</b> {title} • Level {current_level}",
         f"✨ <b>Total XP Earned:</b> {total_xp:,}",
         f"🌞 <b>XP Today:</b> {xp_today:,}",
-        f"🔥 <b>Streak:</b> You're on a 5-day XP streak!",
+        f"🔥 <b>Streak:</b> {streak_text}",
         f"🏆 <b>Most Used:</b> {top_action_name} ({top_action_count} times)",
         "━━━━━━━━━━━━━━━━━━"
     ]
@@ -648,13 +649,13 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         except:
             time_str = str(log.get('created_at', ''))[:16]
 
-        main_line = f"   {action_name} → +{log.get('xp_earned', 0)} XP"
+        main_line = f" {action_name} → +{log.get('xp_earned', 0)} XP"
         if log.get('leveled_up'):
             main_line += f" → <b>Level {log.get('new_level')} 🎉</b>"
 
         lines.append(f"🕒 {time_str}")
         lines.append(main_line)
-        lines.append(f"   {log.get('previous_xp', 0)} → {log.get('new_xp', 0)} XP")
+        lines.append(f" {log.get('previous_xp', 0)} → {log.get('new_xp', 0)} XP")
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
@@ -680,6 +681,47 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     )
 
 
+async def calculate_streak(chat_id: int, client, headers):
+    """Calculate current consecutive days with XP"""
+    try:
+        # Get last 30 days of history to be safe
+        resp = await client.get(
+            f"{SUPABASE_URL}/rest/v1/xp_history"
+            f"?chat_id=eq.{chat_id}&select=created_at&order=created_at.desc&limit=100",
+            headers=headers
+        )
+        logs = resp.json() or []
+        
+        if not logs:
+            return 0
+
+        manila_tz = pytz.timezone('Asia/Manila')
+        today = datetime.now(manila_tz).date()
+        
+        streak = 0
+        seen_dates = set()
+
+        for log in logs:
+            try:
+                dt = datetime.fromisoformat(log['created_at'].replace('Z', '+00:00'))
+                dt_manila = dt.astimezone(manila_tz)
+                log_date = dt_manila.date()
+                
+                if log_date not in seen_dates:
+                    seen_dates.add(log_date)
+                    # Check if it's consecutive from today
+                    if (today - log_date).days == streak:
+                        streak += 1
+                    else:
+                        break  # streak broken
+            except:
+                continue
+
+        return streak
+    except Exception as e:
+        print(f"Streak calculation error: {e}")
+        return 0
+
 # ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
     await add_xp(chat_id, first_name, "profile")
@@ -694,7 +736,7 @@ async def handle_profile(chat_id, first_name):
     xp_to_next = max(0, xp_required_next - xp)
 
     # Create green progress bar
-    progress_bar = create_progress_bar(xp, xp_required_next, length=12)
+    progress_bar = create_progress_bar(xp, xp_required_next, length=10)
 
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
