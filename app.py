@@ -290,7 +290,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "xp": new_xp,
             "level": new_level,
             "first_name": first_name,
-            "last_active": "now()"
+            "last_active": datetime.now(pytz.utc).isoformat()
         }
         payload.update(stats_update)
 
@@ -325,7 +325,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "first_name": first_name,
             "xp": 0,
             "level": 1,
-            "last_active": "now()",
+            "last_active": datetime.now(pytz.utc).isoformat(),
             "has_seen_menu": False,
             "created_at": "now()",
             "total_xp_earned": 0,
@@ -781,12 +781,22 @@ async def handle_stats(chat_id, first_name):
         except:
             joined_date = str(profile['created_at'])[:10]
 
+    # Improved Last Active display (minimal change)
     last_active = "Just now"
     if profile.get('last_active'):
         try:
             dt = datetime.fromisoformat(profile['last_active'].replace('Z', '+00:00'))
             dt = dt.astimezone(pytz.timezone('Asia/Manila'))
-            last_active = dt.strftime("%B %d, %Y • %I:%M %p")
+            now_manila = datetime.now(pytz.timezone('Asia/Manila'))
+            
+            diff_minutes = int((now_manila - dt).total_seconds() / 60)
+            
+            if diff_minutes < 2:
+                last_active = "Just now"
+            elif diff_minutes < 60:
+                last_active = f"{diff_minutes} minutes ago"
+            else:
+                last_active = dt.strftime("%B %d, %Y • %I:%M %p")
         except:
             last_active = "Just now"
 
