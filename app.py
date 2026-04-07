@@ -19,12 +19,14 @@ xp_cooldowns = {}
 user_action_history = {}
 
 COOLDOWN_SECONDS = {
-    "view_win_office": 8,
+    "view_windows": 8,
+    "view_office": 8,
     "view_netflix": 10,
     "reveal_netflix": 15,
     "profile": 12,
     "clear": 25,
     "guidance": 20,
+    "lore": 20,
     "general": 5,
 }
 
@@ -299,6 +301,20 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 json=payload
             )
 
+        # ====================== XP HISTORY LOGGING (NEW FEATURE) ======================
+        # Only log when the user actually earned XP (this keeps history clean)
+        if xp_amount > 0:
+            await log_xp_history(
+                chat_id=chat_id,
+                first_name=first_name,
+                action=action,
+                xp_earned=xp_amount,
+                previous_xp=profile.get('xp') or 0,
+                new_xp=new_xp,
+                previous_level=old_level,
+                new_level=new_level
+            )
+
         if leveled_up:
             await send_level_up_message(chat_id, first_name, old_level, new_level)
 
@@ -331,6 +347,42 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             )
 
     return True
+
+# ==================== XP HISTORY LOGGING ====================
+async def log_xp_history(chat_id: int, first_name: str, action: str,
+                         xp_earned: int, previous_xp: int, new_xp: int,
+                         previous_level: int, new_level: int):
+    """Log every XP earning to xp_history table - completely separate from main flow"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+
+    leveled_up = new_level > previous_level
+
+    payload = {
+        "chat_id": chat_id,
+        "first_name": first_name,
+        "action": action,
+        "xp_earned": xp_earned,
+        "previous_xp": previous_xp,
+        "new_xp": new_xp,
+        "previous_level": previous_level,
+        "new_level": new_level,
+        "leveled_up": leveled_up
+    }
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        try:
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/xp_history",
+                headers=headers,
+                json=payload
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to log XP history: {e}")
 
 def get_level_title(level):
     titles = {
@@ -476,6 +528,70 @@ async def send_myid(chat_id):
     if chat_id not in forest_memory: 
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
+
+async def handle_history(chat_id: int, first_name: str):
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/xp_history"
+                f"?chat_id=eq.{chat_id}"
+                "&order=created_at.desc"
+                "&limit=20",
+                headers=headers
+            )
+            logs = response.json()
+        except Exception as e:
+            print(f"History fetch error: {e}")
+            await tg_app.bot.send_message(
+                chat_id=chat_id, 
+                text="🌿 The trees are resting... Please try again soon."
+            )
+            return
+
+    if not logs:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text="🌱 No steps recorded yet.\nStart exploring the clearing to grow!"
+        )
+        return
+
+    lines = [f"🌟 <b>{html.escape(first_name)}'s XP Journey</b>", "━━━━━━━━━━━━━━━━━━"]
+
+    for log in logs:
+        action_name = log['action'].replace('_', ' ').title()
+        
+        try:
+            dt = datetime.fromisoformat(log['created_at'].replace('Z', '+00:00'))
+            dt = dt.astimezone(pytz.timezone('Asia/Manila'))
+            time_str = dt.strftime("%Y-%m-%d %H:%M")
+        except:
+            time_str = str(log['created_at'])[:16]
+
+        # Main line - Level up highlighted
+        main_line = f"   {action_name} → +{log['xp_earned']} XP"
+        if log.get('leveled_up'):
+            main_line += f" → Level {log['new_level']} 🎉"
+
+        lines.append(f"🕒 {time_str}")
+        lines.append(main_line)
+        lines.append(f"   {log['previous_xp']} → {log['new_xp']} XP")
+        lines.append("")   # spacing between entries
+
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    lines.append("The trees remember every step of your growth... 🍃")
+
+    text = "\n".join(lines)
+
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode='HTML'
+    )
 
 # ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
@@ -1481,6 +1597,9 @@ def webhook():
             # Command handlers
             if text.startswith("/start"): 
                 await send_initial_welcome(chat_id, name)
+
+            elif text.startswith("/history"):
+                await handle_history(chat_id, name)
 
             elif text.startswith("/leaderboard") or text.startswith("/top"):
                 await handle_leaderboard(chat_id)
