@@ -840,43 +840,85 @@ async def handle_leaderboard(chat_id):
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            response = await client.get(
+            # Get Top 10 users (only those with XP > 0)
+            top_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?select=first_name,xp,level"
                 f"&xp=gt.0"
                 f"&order=xp.desc&limit=10",
                 headers=headers
             )
-           
-            data = response.json() or []
+            top_data = top_resp.json() or []
 
-            if not data:
+            # Get current user data
+            user_resp = await client.get(
+                f"{SUPABASE_URL}/rest/v1/user_profiles"
+                f"?chat_id=eq.{chat_id}&select=first_name,xp,level",
+                headers=headers
+            )
+            user_data = user_resp.json()
+            user = user_data[0] if user_data else None
+
+            if not top_data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    text="🌿 The forest leaderboard is currently empty.\n"
-                         "Be the first to earn some XP and climb the ranks! 🌱✨"
+                    text="🏆 <b>Leaderboard</b>\n\n"
+                         "The Enchanted Clearing is still quiet...\n"
+                         "Be the first to earn XP and claim the top spot! 🌱",
+                    parse_mode='HTML'
                 )
                 return
 
             text = "🏆 <b>Top Wanderers of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
-            for rank, user in enumerate(data, 1):
-                name = html.escape(user.get('first_name', 'Mysterious Wanderer'))
-                xp = user.get('xp', 0)
-                level = user.get('level', 1)
+            # Top 10 List
+            for rank, u in enumerate(top_data, 1):
+                name = html.escape(u.get('first_name', 'Unknown Wanderer'))
+                xp = u.get('xp', 0)
+                level = u.get('level', 1)
                 title = get_level_title(level)
 
                 medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
 
                 text += f"{medal} <b>{name}</b>\n"
                 text += f"   {title} • Level {level}\n"
-                text += f"   ✨ {xp:,} XP\n\n"   # Added comma for better readability
+                text += f"   ✨ {xp:,} XP\n\n"
 
-            text += "<i>May the best wanderer continue to shine brightly.</i> 🍃✨"
+            # User's Rank Section (more professional)
+            text += "━━━━━━━━━━━━━━━━━━\n"
 
-            # Send the message and store its ID
+            if user:
+                user_xp = user.get('xp', 0)
+                user_level = user.get('level', 1)
+                user_title = get_level_title(user_level)
+                user_name = html.escape(user.get('first_name', 'You'))
+
+                if user_xp > 0:
+                    # Calculate user's rank
+                    user_rank = None
+                    for idx, u in enumerate(top_data, 1):
+                        if u.get('xp') == user_xp and u.get('first_name') == user.get('first_name'):
+                            user_rank = idx
+                            break
+
+                    if user_rank:
+                        text += f"📍 <b>Your Current Rank:</b> #{user_rank}\n"
+                    else:
+                        text += f"📍 <b>Your Current Rank:</b> #{len(top_data) + 1}\n"
+                else:
+                    text += "📍 <b>Your Current Rank:</b> Not ranked yet\n"
+
+                text += f"   {user_name}\n"
+                text += f"   {user_title} • Level {user_level}\n"
+                text += f"   ✨ {user_xp:,} XP\n"
+            else:
+                text += "📍 <b>Your Current Rank:</b> Profile not found\n"
+
+            text += "\n<i>May the best wanderer continue to shine brightly.</i> 🍃✨"
+
+            # Send message
             msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text,
