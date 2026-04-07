@@ -1228,46 +1228,36 @@ async def handle_info(chat_id):
             }
 
             async with httpx.AsyncClient(timeout=15.0) as client:
-                # Total Wanderers
+                # === Total Wanderers (Simple & Reliable) ===
                 total_res = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
+                    f"{SUPABASE_URL}/rest/v1/user_profiles",
                     headers=headers,
-                    params={"count": "exact", "head": "true"}
+                    params={"select": "id", "count": "exact"}
                 )
-                total_users = 0
-                if total_res.headers.get("content-range"):
-                    try:
-                        total_users = int(total_res.headers["content-range"].split("/")[-1])
-                    except:
-                        total_users = 0
+                total_users = total_res.json()[0]["count"] if total_res.status_code == 200 and total_res.json() else 0
 
-                # Active Today
+                # === Active Today ===
                 manila_tz = pytz.timezone('Asia/Manila')
                 today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
                 today_utc = today_start.astimezone(pytz.utc).isoformat()
 
                 active_res = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
+                    f"{SUPABASE_URL}/rest/v1/user_profiles",
                     headers=headers,
                     params={
+                        "select": "id",
                         "last_active": f"gte.{today_utc}",
-                        "count": "exact",
-                        "head": "true"
+                        "count": "exact"
                     }
                 )
-                active_today = 0
-                if active_res.headers.get("content-range"):
-                    try:
-                        active_today = int(active_res.headers["content-range"].split("/")[-1])
-                    except:
-                        active_today = 0
+                active_today = active_res.json()[0]["count"] if active_res.status_code == 200 and active_res.json() else 0
 
             # Update cache
             info_cache["total_users"] = total_users
             info_cache["active_today"] = active_today
             info_cache["last_updated"] = current_time
 
-        # Build message
+        # Build the message
         version = "1.3.1"
         last_updated = "April 7, 2026"
         uptime = "2 days, 14 hours"
