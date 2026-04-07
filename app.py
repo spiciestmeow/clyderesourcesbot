@@ -964,7 +964,7 @@ async def handle_callback(update: Update):
     chat_id = update.effective_chat.id
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
-    # ====================== MAIN MENU ======================
+    # ====================== MAIN MENU ENTRY ======================
     if query.data in ["show_main_menu", "main_menu"]:
         try:
             await query.message.delete()
@@ -989,14 +989,13 @@ async def handle_callback(update: Update):
 
         # Get or create profile
         profile = await get_user_profile(chat_id)
+
         if not profile:
-            await add_xp(chat_id, first_name, "general")
-            profile = await get_user_profile(chat_id)
+            await add_xp(chat_id, first_name, "general")   # This creates the user
+            await asyncio.sleep(0.8)                       # ← IMPORTANT: Give Supabase time to save
+            profile = await get_user_profile(chat_id)      # Refresh profile
 
         is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
-
-        # if is_first_time:
-            # await update_has_seen_menu(chat_id)
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -1004,36 +1003,37 @@ async def handle_callback(update: Update):
             pass
 
         await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
-        return   # ← Stop here for main menu
-    
+        return
+
     # ====================== ALL OTHER BUTTONS ======================
     # Enforce registration
     profile = await get_user_profile(chat_id)
+
     if not profile:
+        # This should rarely happen now, but keep as safety
         await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=HELLO_GIF,
             caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
-                "You stand at the edge of a mysterious forest...\n\n"
-                "To step into the Enchanted Clearing, please press the button below.",
+                    "You stand at the edge of a mysterious forest...\n\n"
+                    "To step into the Enchanted Clearing and discover its hidden magic, "
+                    "please press the button below.\n\n"
+                    "<i>The forest is ready to welcome you...</i> 🍃✨",
             parse_mode='HTML',
             reply_markup=get_start_keyboard()
         )
         return
-        
-    # Mark as seen
-    # if not profile.get('has_seen_menu', False):
-        # await update_has_seen_menu(chat_id)
-    
+
     # ====================== INVENTORY & OTHER FEATURES ======================
     if query.data == "check_vamt":
         await query.message.edit_caption(
             caption="📜 <i>The doors of the Ancient Library creak open...</i>\n\n"
                     "Which scrolls call to your heart today, wanderer?\n\n"
-                    "<i>The forest spirits await your choice.</i>", 
-            parse_mode='HTML', 
+                    "<i>The forest spirits await your choice.</i>",
+            parse_mode='HTML',
             reply_markup=get_inventory_categories()
         )
+
 
     # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
