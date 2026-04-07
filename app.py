@@ -1562,33 +1562,74 @@ async def handle_callback(update: Update):
         # Take the item from the LIMITED list (this fixes the inconsistency)
         item = filtered[idx - 1]
 
+        # ==================== IMMERSIVE NETFLIX REVEAL ====================
         cookie = str(item.get('key_id', '')).strip()
         display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
-
         status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
-        # Give XP
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
-        report = (
+        caption = (
+            f"📄 **Netflix_Cookie_{idx}.txt**\n\n"
             f"🍿 **{display_name} Revealed**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🌿 Status: **{status}**\n"
             f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
-            "**📋 The Hidden Cookie:**\n"
-            f"```\n{html.escape(cookie[:1500])}\n```\n\n"   # Increased to 1500 for safety
-            "_Long\\-press the code block above to copy\\._\n"
-            "Use it quickly before the magic fades\\. 🍃"
+            "📥 The forest has wrapped your cookie in an ancient scroll.\n"
+            "_Tap the file below to receive its magic._ 🍃"
         )
+
+        # Immersive text file content
+        from io import BytesIO
+        file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret Netflix Cookie 🌿🍃
+
+══════════════════════════════════════════════════════════════
+
+🌳 Cookie Spirit Awakened
+Name        : {display_name}
+Status      : {status}
+Remaining   : {item.get('remaining', 0)} uses
+Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
+
+🌲 The ancient trees have entrusted you with this cookie.
+Guard it well, wanderer, for its magic fades quickly.
+
+══════════════════════════════════════════════════════════════
+
+{cookie}
+
+══════════════════════════════════════════════════════════════
+
+🍃 May this cookie bring you peaceful streams and hidden stories.
+Use it wisely and with gratitude.
+
+— The Caretaker of the Enchanted Clearing 🌿
+"""
+
+        file_bytes = BytesIO(file_content.encode('utf-8'))
+        file_bytes.name = f"Netflix_Cookie_{idx}.txt"
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
         ])
 
-        await query.message.edit_caption(
-            caption=report, 
-            parse_mode='MarkdownV2', 
-            reply_markup=kb
+        # Preparing message
+        try:
+            await query.message.edit_caption(
+                caption="🌟 The whispering trees are carefully wrapping your cookie in leaves...",
+                parse_mode='MarkdownV2'
+            )
+        except:
+            pass
+
+        # Send the document
+        await tg_app.bot.send_document(
+            chat_id=chat_id,
+            document=file_bytes,
+            caption=caption,
+            parse_mode='MarkdownV2',
+            reply_markup=kb,
+            filename=file_bytes.name
         )
 
     # ====================== BACK TO NETFLIX LIST (No extra XP) ======================
