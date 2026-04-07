@@ -842,7 +842,7 @@ async def handle_leaderboard(chat_id):
 
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            # Get Top 10 users (only those with XP > 0)
+            # Get Top 10 (only users with XP > 0)
             top_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?select=first_name,xp,level"
@@ -852,26 +852,25 @@ async def handle_leaderboard(chat_id):
             )
             top_data = top_resp.json() or []
 
-            # Get current user data
+            # Get current user
             user_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?chat_id=eq.{chat_id}&select=first_name,xp,level",
                 headers=headers
             )
-            user_data = user_resp.json()
-            user = user_data[0] if user_data else None
+            user = user_resp.json()[0] if user_resp.json() else None
 
             if not top_data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    text="🏆 <b>Leaderboard</b>\n\n"
-                         "The Enchanted Clearing is still quiet...\n"
-                         "Be the first to earn XP and claim the top spot! 🌱",
+                    text="🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
+                         "The ancient trees still sleep in silence...\n"
+                         "Be the first to awaken the forest with your steps. 🌱",
                     parse_mode='HTML'
                 )
                 return
 
-            text = "🏆 <b>Top Wanderers of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+            text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
             # Top 10 List
             for rank, u in enumerate(top_data, 1):
@@ -886,39 +885,40 @@ async def handle_leaderboard(chat_id):
                 text += f"   {title} • Level {level}\n"
                 text += f"   ✨ {xp:,} XP\n\n"
 
-            # User's Rank Section (more professional)
-            text += "━━━━━━━━━━━━━━━━━━\n"
-
+            # === Smart "Your Rank" Section ===
             if user:
                 user_xp = user.get('xp', 0)
                 user_level = user.get('level', 1)
                 user_title = get_level_title(user_level)
                 user_name = html.escape(user.get('first_name', 'You'))
 
+                # Only show "Your Rank" if user has XP but is NOT in top 10
                 if user_xp > 0:
-                    # Calculate user's rank
-                    user_rank = None
-                    for idx, u in enumerate(top_data, 1):
-                        if u.get('xp') == user_xp and u.get('first_name') == user.get('first_name'):
-                            user_rank = idx
-                            break
+                    is_in_top_10 = any(
+                        u.get('xp') == user_xp and u.get('first_name') == user.get('first_name')
+                        for u in top_data
+                    )
 
-                    if user_rank:
-                        text += f"📍 <b>Your Current Rank:</b> #{user_rank}\n"
-                    else:
-                        text += f"📍 <b>Your Current Rank:</b> #{len(top_data) + 1}\n"
+                    if not is_in_top_10:
+                        text += "━━━━━━━━━━━━━━━━━━\n"
+                        text += "🌲 <i>The forest whispers of those beyond the canopy...</i>\n\n"
+
+                        user_rank = len(top_data) + 1
+                        text += f"📍 <b>Your place among the wanderers:</b> #{user_rank}\n"
+                        text += f"   {user_name}\n"
+                        text += f"   {user_title} • Level {user_level}\n"
+                        text += f"   ✨ {user_xp:,} XP\n"
                 else:
-                    text += "📍 <b>Your Current Rank:</b> Not ranked yet\n"
+                    # User has 0 XP
+                    text += "━━━━━━━━━━━━━━━━━━\n"
+                    text += "🌲 <i>The trees have not yet marked your steps...</i>\n\n"
+                    text += f"📍 <b>Your place among the wanderers:</b> Not ranked yet (0 XP)\n"
+                    text += f"   {user_name}\n"
+                    text += f"   {user_title} • Level {user_level}\n"
+                    text += f"   ✨ 0 XP\n"
 
-                text += f"   {user_name}\n"
-                text += f"   {user_title} • Level {user_level}\n"
-                text += f"   ✨ {user_xp:,} XP\n"
-            else:
-                text += "📍 <b>Your Current Rank:</b> Profile not found\n"
+            text += "\n<i>May your roots grow deep and your light shine through the canopy.</i> 🍃✨"
 
-            text += "\n<i>May the best wanderer continue to shine brightly.</i> 🍃✨"
-
-            # Send message
             msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text,
@@ -933,7 +933,7 @@ async def handle_leaderboard(chat_id):
             print(f"🔴 Leaderboard error: {e}")
             await tg_app.bot.send_message(
                 chat_id=chat_id,
-                text="🌫️ The ancient trees are having trouble reading the leaderboard right now..."
+                text="🌫️ The ancient trees are having trouble reading the winds right now..."
             )
 
 # ==================== FEEDBACK COMMAND ======================
