@@ -1678,6 +1678,69 @@ Use it wisely and with gratitude.
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
+
+    # ====================== BACK TO NETFLIX LIST ======================
+    elif query.data == "back_to_netflix_list":
+        # Delete the .txt file message so chat stays clean
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        # Show fresh Netflix list
+        profile = await get_user_profile(chat_id)
+        user_level = profile.get('level', 1)
+
+        data = await get_vamt_data()
+        if not data:
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="🌫️ The mist is too thick... Database connection failed.",
+                reply_markup=get_back_to_inventory_keyboard()
+            )
+            return
+
+        filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
+        filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
+
+        if user_level == 1:
+            limit = 1
+            limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
+        elif user_level <= 3:
+            limit = 2
+            limit_note = f"🌿 At Level {user_level}, you can see up to 2 items."
+        elif user_level <= 6:
+            limit = 4 if user_level <= 5 else 5
+            limit_note = f"🌿 At Level {user_level}, you can see up to {limit} items."
+        else:
+            limit = len(filtered)
+            limit_note = "✨ You have full access to all scrolls in the forest."
+
+        report = (
+            "<b>🍿 Secret Netflix Cookies of the Forest</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>{len(filtered)} Cookies Resting in the Glade</b>\n"
+            f"{limit_note}\n\n"
+            "<i>Which one whispers to your spirit?</i>\n\n"
+        )
+
+        buttons = []
+        for display_idx, item in enumerate(filtered[:limit], 1):
+            display_name = f"Netflix Cookie {display_idx}"
+            status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
+            report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n   Remaining: {item.get('remaining', 0)}\n\n"
+            buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")])
+
+        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
+        kb = InlineKeyboardMarkup(buttons)
+
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=report,
+            parse_mode='HTML',
+            reply_markup=kb
+        )
+
     # ====================== HELP (Guidance) - 2 Pages ======================
     elif query.data == "help" or query.data.startswith("help_page_"):
         chat_id = update.effective_chat.id
