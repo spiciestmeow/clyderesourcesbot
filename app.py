@@ -535,22 +535,26 @@ async def handle_history(chat_id: int, first_name: str):
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
 
+    # Get user profile for header info
+    profile = await get_user_profile(chat_id)
+    current_level = profile.get('level', 1) if profile else 1
+    total_xp = profile.get('total_xp_earned', 0) if profile else 0
+    title = get_level_title(current_level)
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}"
                 "&order=created_at.desc"
-                "&limit=20",
+                "&limit=15",
                 headers=headers
             )
             logs = response.json()
         except Exception as e:
             print(f"History fetch error: {e}")
-            await tg_app.bot.send_message(
-                chat_id=chat_id, 
-                text="🌿 The trees are resting... Please try again soon."
-            )
+            await tg_app.bot.send_message(chat_id=chat_id, 
+                text="🌿 The trees are resting... Please try again soon.")
             return
 
     if not logs:
@@ -560,7 +564,13 @@ async def handle_history(chat_id: int, first_name: str):
         )
         return
 
-    lines = [f"🌟 <b>{html.escape(first_name)}'s XP Journey</b>", "━━━━━━━━━━━━━━━━━━"]
+    lines = [
+        f"🌟 <b>{html.escape(first_name)}'s XP Journey</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🏷️ <b>Current Title:</b> {title} • Level {current_level}",
+        f"✨ <b>Total XP Earned:</b> {total_xp:,}",
+        "━━━━━━━━━━━━━━━━━━"
+    ]
 
     for log in logs:
         action_name = log['action'].replace('_', ' ').title()
@@ -572,7 +582,6 @@ async def handle_history(chat_id: int, first_name: str):
         except:
             time_str = str(log['created_at'])[:16]
 
-        # Main line - Level up highlighted
         main_line = f"   {action_name} → +{log['xp_earned']} XP"
         if log.get('leveled_up'):
             main_line += f" → Level {log['new_level']} 🎉"
@@ -580,10 +589,10 @@ async def handle_history(chat_id: int, first_name: str):
         lines.append(f"🕒 {time_str}")
         lines.append(main_line)
         lines.append(f"   {log['previous_xp']} → {log['new_xp']} XP")
-        lines.append("")   # spacing between entries
+        lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
-    lines.append("The trees remember every step of your growth... 🍃")
+    lines.append(f"🌱 Showing last {len(logs)} steps • The trees remember every step of your growth... 🍃")
 
     text = "\n".join(lines)
 
