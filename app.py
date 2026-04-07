@@ -853,8 +853,8 @@ async def handle_leaderboard(chat_id):
             )
             user = user_resp.json()[0] if user_resp.json() else None
 
-            # === Owner Bypass + Level Lock Check ===
-            if chat_id != OWNER_CHAT_ID:   # Only check level for normal users
+            # === Level Lock Check (only for normal users) ===
+            if chat_id != OWNER_CHAT_ID:
                 if not user or user.get('level', 1) < MIN_LEVEL_TO_UNLOCK:
                     current_level = user.get('level', 1) if user else 1
                     await tg_app.bot.send_message(
@@ -879,6 +879,7 @@ async def handle_leaderboard(chat_id):
             )
             top_data = top_resp.json() or []
 
+            # Empty state
             if not top_data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
@@ -905,8 +906,8 @@ async def handle_leaderboard(chat_id):
                 text += f"   {title} • Level {level}\n"
                 text += f"   ✨ {xp:,} XP\n\n"
 
-            # Show "Your place" section only if not in top 10
-            if user and chat_id != OWNER_CHAT_ID:
+            # Show "Your place" section ONLY if user has at least 1 XP and is not in top 10
+            if user and chat_id != OWNER_CHAT_ID and user.get('xp', 0) > 0:
                 is_in_top_10 = any(
                     u.get('xp') == user.get('xp') and 
                     u.get('first_name') == user.get('first_name')
