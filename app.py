@@ -770,7 +770,7 @@ async def handle_stats(chat_id, first_name):
     xp = profile.get('xp', 0)
     xp_required_next = get_cumulative_xp_for_level(level + 1)
 
-    progress_bar = create_progress_bar(xp, xp_required_next, length=13)
+    progress_bar = create_progress_bar(xp, xp_required_next, length=10)
 
     # Date formatting
     joined_date = "Unknown"
@@ -843,16 +843,20 @@ async def handle_leaderboard(chat_id):
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?select=first_name,xp,level&order=xp.desc&limit=10",
+                f"{SUPABASE_URL}/rest/v1/user_profiles"
+                f"?select=first_name,xp,level"
+                f"&xp=gt.0"
+                f"&order=xp.desc&limit=10",
                 headers=headers
             )
-            
-            data = response.json()
+           
+            data = response.json() or []
 
             if not data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    text="🌿 The forest leaderboard is currently empty.\nBe the first to climb the ranks!"
+                    text="🌿 The forest leaderboard is currently empty.\n"
+                         "Be the first to earn some XP and climb the ranks! 🌱✨"
                 )
                 return
 
@@ -865,10 +869,10 @@ async def handle_leaderboard(chat_id):
                 title = get_level_title(level)
 
                 medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
-                
+
                 text += f"{medal} <b>{name}</b>\n"
                 text += f"   {title} • Level {level}\n"
-                text += f"   ✨ {xp} XP\n\n"
+                text += f"   ✨ {xp:,} XP\n\n"   # Added comma for better readability
 
             text += "<i>May the best wanderer continue to shine brightly.</i> 🍃✨"
 
@@ -879,7 +883,6 @@ async def handle_leaderboard(chat_id):
                 parse_mode='HTML'
             )
 
-            # IMPORTANT: Add to forest_memory so /clear can delete it
             if chat_id not in forest_memory:
                 forest_memory[chat_id] = []
             forest_memory[chat_id].append(msg.message_id)
