@@ -1353,15 +1353,25 @@ async def handle_callback(update: Update):
     
     await update_last_active(chat_id)
     
-    # ====================== INVENTORY & OTHER FEATURES ======================
+    # ====================== MAIN INVENTORY MENU ======================
     if query.data == "check_vamt":
-        await query.message.edit_caption(
+        # Delete current message to avoid "no caption" error
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        # Send fresh inventory menu with GIF
+        await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=INVENTORY_GIF,   # Your original inventory GIF
             caption="📜 <i>The doors of the Ancient Library creak open...</i>\n\n"
                     "Which scrolls call to your heart today, wanderer?\n\n"
-                    "<i>The forest spirits await your choice.</i>", 
-            parse_mode='HTML', 
+                    "<i>The forest spirits await your choice.</i>",
+            parse_mode='HTML',
             reply_markup=get_inventory_categories()
         )
+
 
     # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_"):
@@ -1534,14 +1544,10 @@ async def handle_callback(update: Update):
         profile = await get_user_profile(chat_id)
         user_level = profile.get('level', 1)
 
-        if user_level == 1:
-            limit = 1
-        elif user_level <= 3:
-            limit = 2
-        elif user_level <= 6:
-            limit = 4 if user_level <= 5 else 5
-        else:
-            limit = 999
+        if user_level == 1: limit = 1
+        elif user_level <= 3: limit = 2
+        elif user_level <= 6: limit = 4 if user_level <= 5 else 5
+        else: limit = 999
 
         data = await get_vamt_data()
         if not data:
@@ -1563,7 +1569,7 @@ async def handle_callback(update: Update):
 
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
-        # Safe caption for MarkdownV2
+        # Safe caption
         caption = (
             f"📄 **Netflix\\_Cookie\\_{idx}\\.txt**\n\n"
             f"🍿 **{display_name} Revealed**\n"
@@ -1608,13 +1614,13 @@ Use it wisely and with gratitude.
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
         ])
 
-        # Delete the old loading message
+        # Delete old loading message
         try:
             await query.message.delete()
         except:
             pass
 
-        # Send the document
+        # Send document
         await tg_app.bot.send_document(
             chat_id=chat_id,
             document=file_bytes,
@@ -1623,75 +1629,6 @@ Use it wisely and with gratitude.
             reply_markup=kb,
             filename=file_bytes.name
         )
-
-
-    # ====================== BACK TO NETFLIX LIST (No extra XP) ======================
-    elif query.data == "back_to_netflix_list":
-        # Delete the previous message that contains the .txt file
-        try:
-            await query.message.delete()
-        except:
-            pass
-
-        # Redisplay fresh Netflix list
-        profile = await get_user_profile(chat_id)
-        user_level = profile.get('level', 1)
-
-        data = await get_vamt_data()
-        if not data:
-            await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text="🌫️ The mist is too thick... Database connection failed.",
-                reply_markup=get_back_to_inventory_keyboard()
-            )
-            return
-
-        filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-        filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
-
-        if user_level == 1:
-            limit = 1
-            limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
-        elif user_level <= 3:
-            limit = 2
-            limit_note = f"🌿 At Level {user_level}, you can see up to 2 items."
-        elif user_level <= 6:
-            limit = 4 if user_level <= 5 else 5
-            limit_note = f"🌿 At Level {user_level}, you can see up to {limit} items."
-        else:
-            limit = len(filtered)
-            limit_note = "✨ You have full access to all scrolls in the forest."
-
-        report = (
-            "<b>🍿 Secret Netflix Cookies of the Forest</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"📦 <b>{len(filtered)} Cookies Resting in the Glade</b>\n"
-            f"{limit_note}\n\n"
-            "<i>Which one whispers to your spirit?</i>\n\n"
-        )
-
-        buttons = []
-        for display_idx, item in enumerate(filtered[:limit], 1):
-            display_name = f"Netflix Cookie {display_idx}"
-            status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-            report += f"✨ <b>{display_name}</b>\n"
-            report += f"   Status: {status_text}\n"
-            report += f"   Remaining: {item.get('remaining', 0)}\n\n"
-            buttons.append([
-                InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")
-            ])
-
-        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-        kb = InlineKeyboardMarkup(buttons)
-
-        # Send a fresh new message for clean list
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=report,
-            parse_mode='HTML',
-            reply_markup=kb
-        )
-
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
