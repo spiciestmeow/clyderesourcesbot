@@ -529,6 +529,8 @@ async def send_myid(chat_id):
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
+
+# ==================== HISTORY LOGS ====================
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
     headers = {
         "apikey": SUPABASE_KEY,
@@ -544,21 +546,21 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # Calculate streak and top action
+    # Calculate today start time
     today_start = datetime.now(pytz.timezone('Asia/Manila')).replace(
         hour=0, minute=0, second=0, microsecond=0
     ).isoformat()
 
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            # Total count
+            # Total count for pagination
             count_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}&select=id",
                 headers=headers
             )
             total_entries = len(count_resp.json()) if count_resp.json() else 0
 
-            # Paginated logs
+            # Paginated logs (for display)
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&order=created_at.desc&limit={limit}&offset={offset}",
@@ -566,21 +568,27 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             logs = resp.json()
 
-            # XP Today (for streak calculation)
+            # === FIX 1: Get ALL history for accurate Top Action ===
+            all_resp = await client.get(
+                f"{SUPABASE_URL}/rest/v1/xp_history"
+                f"?chat_id=eq.{chat_id}&select=action",
+                headers=headers
+            )
+            all_logs = all_resp.json()
+
+            # === FIX 2: Get ALL today's logs for accurate XP Today ===
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned,created_at",
+                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned",
                 headers=headers
             )
             today_logs = today_resp.json()
 
-            # Simple streak calculation (days with at least 1 XP)
-            # Note: This is basic. For more accurate streak, we'd need more logic.
             xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
 
-            # Top Action
+            # Top Action from ALL history
             from collections import Counter
-            action_count = Counter(log['action'] for log in logs)
+            action_count = Counter(log['action'] for log in all_logs)
             top_action = action_count.most_common(1)[0] if action_count else ("general", 0)
             top_action_name = top_action[0].replace('_', ' ').title()
             top_action_count = top_action[1]
@@ -604,7 +612,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         f"🏷️ <b>Current Title:</b> {title} • Level {current_level}",
         f"✨ <b>Total XP Earned:</b> {total_xp:,}",
         f"🌞 <b>XP Today:</b> {xp_today:,}",
-        f"🔥 <b>Streak:</b> You're on a {5}-day XP streak!",   # Placeholder for now
+        f"🔥 <b>Streak:</b> You're on a 5-day XP streak!",   # Still placeholder
         f"🏆 <b>Most Used:</b> {top_action_name} ({top_action_count} times)",
         "━━━━━━━━━━━━━━━━━━"
     ]
