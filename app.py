@@ -94,8 +94,8 @@ def get_inventory_categories():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🪟 Windows Keys", callback_data="vamt_filter_win"),
          InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office")],
-        [InlineKeyboardButton("🍿 Netflix Keys", callback_data="vamt_filter_netflix"),
-         InlineKeyboardButton("🎥 Prime Video", callback_data="vamt_filter_prime")],
+        [InlineKeyboardButton("🍿 Netflix Premium Cookies", callback_data="vamt_filter_netflix")],
+        [InlineKeyboardButton("🎥 PrimeVideo Premium Cookies", callback_data="vamt_filter_prime")],
         [InlineKeyboardButton("🎮 Steam Accounts", callback_data="vamt_filter_steam")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
     ])
@@ -1364,17 +1364,17 @@ async def handle_callback(update: Update):
         )
 
     # ====================== FILTERED INVENTORY ======================
-    elif query.data.startswith("vamt_filter_") or query.data.startswith("vamt_all_"):
-        category = query.data.replace("vamt_filter_", "").replace("vamt_all_", "").lower()
+    elif query.data.startswith("vamt_filter_"):
+        category = query.data.replace("vamt_filter_", "").lower()
 
-        # Give XP only for working categories
+        # Give XP only for currently working categories
         if category in ["win", "windows"]:
             await add_xp(chat_id, first_name, "view_windows", query=query)
         elif category == "office":
             await add_xp(chat_id, first_name, "view_office", query=query)
         elif category == "netflix":
             await add_xp(chat_id, first_name, "view_netflix", query=query)
-        # No XP for Prime and Steam yet (they are coming soon)
+        # Prime and Steam get no XP for now
 
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>",
@@ -1385,20 +1385,25 @@ async def handle_callback(update: Update):
         if category in ["prime", "steam"]:
             if category == "prime":
                 msg = (
-                    "🎥 <b>Prime Video Cookies</b>\n"
+                    "🎥 <b>PrimeVideo Premium Cookies</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "This treasure is still being prepared by the forest spirits.\n\n"
-                    "<b>Coming Soon</b>\n\n"
-                    "Prime Video cookies will appear here once ready.\n"
-                    "They will be scarce and protected by level requirements."
+                    "Deep within the misty heart of the Enchanted Clearing,\n"
+                    "the rarest Prime Video cookies slumber beneath ancient glowing leaves.\n\n"
+                    "🌫️ <b>The forest spirits are still preparing them...</b>\n\n"
+                    "They are scarce and precious — only wanderers of sufficient level\n"
+                    "will be allowed to behold them.\n\n"
+                    "<i>Patience, dear soul... they will awaken soon.</i> ✨"
                 )
             else:  # steam
                 msg = (
-                    "🎮 <b>Steam Accounts (Daily 8PM Drop)</b>\n"
+                    "🎮 <b>Steam Accounts — Daily 8PM Drop</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "The daily Steam account drop is still being prepared.\n\n"
-                    "<b>Coming Soon</b>\n\n"
-                    "Reach higher levels to get <b>early access</b> before the 8:00 PM public drop."
+                    "High above the canopy, the Wind Spirits guard the daily Steam accounts.\n"
+                    "They descend only at 8:00 PM each night for the worthy.\n\n"
+                    "🌟 <b>Coming Soon</b>\n\n"
+                    "When you reach higher levels, the trees will grant you <b>early access</b> —\n"
+                    "allowing you to claim the account before the public drop at 8:00 PM.\n\n"
+                    "<i>The ancient oaks whisper... keep growing, and the gift shall be yours.</i> 🍃"
                 )
 
             await query.message.edit_caption(
@@ -1407,10 +1412,10 @@ async def handle_callback(update: Update):
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
-        
-        # Get user level
+
+        # ====================== WORKING CATEGORIES (Windows, Office, Netflix) ======================
         profile = await get_user_profile(chat_id)
-        user_level = profile['level'] if profile else 1
+        user_level = profile.get('level', 1) if profile else 1
 
         data = await get_vamt_data()
         if not data:
@@ -1430,7 +1435,6 @@ async def handle_callback(update: Update):
             elif category == "netflix" and "netflix" in s_type:
                 filtered.append(item)
 
-
         if not filtered:
             await query.message.edit_caption(
                 caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing right now.</i>",
@@ -1438,19 +1442,16 @@ async def handle_callback(update: Update):
             )
             return
 
-        # Old limit logic (kept unchanged for safety)
+        # Old limit logic (kept unchanged)
         if user_level == 1:
             limit = 1
             limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
-        
         elif user_level <= 3:
             limit = 2
             limit_note = f"🌿 At Level {user_level}, you can see up to 2 items."
-        
         elif user_level <= 6:
             limit = 4 if user_level <= 5 else 5
             limit_note = f"🌿 At Level {user_level}, you can see up to {limit} items."
-        
         else:
             limit = len(filtered)
             limit_note = "✨ You have full access to all scrolls in the forest."
@@ -1458,7 +1459,7 @@ async def handle_callback(update: Update):
         # Sort for consistency
         filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
 
-        # ====================== NETFLIX ======================
+        # Netflix handling
         if category == "netflix":
             report = (
                 "<b>🍿 Secret Netflix Cookies of the Forest</b>\n"
@@ -1467,47 +1468,35 @@ async def handle_callback(update: Update):
                 f"{limit_note}\n\n"
                 "<i>Which one whispers to your spirit?</i>\n\n"
             )
-
             buttons = []
-            # Force sequential numbering (Netflix Cookie 1, 2, 3...) for consistency
             for display_idx, item in enumerate(filtered[:limit], 1):
-                display_name = f"Netflix Cookie {display_idx}"   # Force correct number
-
+                display_name = f"Netflix Cookie {display_idx}"
                 status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-
                 report += f"✨ <b>{display_name}</b>\n"
-                report += f"   Status: {status_text}\n"
-                report += f"   Remaining: {item.get('remaining', 0)}\n\n"
-
+                report += f" Status: {status_text}\n"
+                report += f" Remaining: {item.get('remaining', 0)}\n\n"
                 buttons.append([
                     InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")
                 ])
-
             buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-
             kb = InlineKeyboardMarkup(buttons)
-
             await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
             return
 
-        # ====================== WINDOWS & OFFICE ======================
+        # Windows & Office handling
         report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-
         for item in filtered[:limit]:
             product = item.get('service_type', 'Unknown')
             key = item.get('key_id', 'HIDDEN')
             raw_val = int(item.get('remaining') or 0)
             stock_text = f"{raw_val}" if raw_val > 0 else "Out of stock"
-
             report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{stock_text}</b>\n\n"
 
         if limit < len(filtered):
             report += f"━━━━━━━━━━━━━━━━━━\n<i>Level up to see more scrolls hidden in the shadows...</i>"
 
         kb = get_back_to_inventory_keyboard()
-
         await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
-
 
     # ====================== HISTORY PAGINATION ======================
     elif query.data.startswith("history_page_"):
