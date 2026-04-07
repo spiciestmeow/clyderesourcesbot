@@ -870,9 +870,7 @@ async def handle_leaderboard(chat_id):
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
-
     OWNER_CHAT_ID = 7399488750
-    # OWNER_CHAT_ID = 1234567890
     MIN_LEVEL_TO_UNLOCK = 3
 
     async with httpx.AsyncClient(timeout=12.0) as client:
@@ -885,33 +883,32 @@ async def handle_leaderboard(chat_id):
             )
             user = user_resp.json()[0] if user_resp.json() else None
 
-            # === Level Lock Check (only for normal users) ===
+            # Level lock for normal users only (Improved message)
             if chat_id != OWNER_CHAT_ID:
                 if not user or user.get('level', 1) < MIN_LEVEL_TO_UNLOCK:
                     current_level = user.get('level', 1) if user else 1
                     await tg_app.bot.send_message(
                         chat_id=chat_id,
                         text=f"🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
-                             f"🌲 You need to reach <b>Level {MIN_LEVEL_TO_UNLOCK}</b> to unlock the leaderboard.\n\n"
+                             f"🌲 The ancient trees guard the leaderboard.\n\n"
+                             f"You need to reach <b>Level {MIN_LEVEL_TO_UNLOCK}</b> to see the guardians.\n\n"
                              f"You are currently <b>Level {current_level}</b>.\n\n"
-                             "Keep exploring the clearing, gaining XP, and growing stronger!\n"
-                             "The trees will reveal the guardians when you're ready. 🌱✨",
+                             "Keep exploring, gaining XP, and the trees will reveal the rankings to you.\n\n"
+                             "🌱 Every step brings you closer.",
                         parse_mode='HTML'
                     )
                     return
 
-            # === Get Top 10 (exclude owner) ===
+            # Get Top 10
             top_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?select=first_name,xp,level"
                 f"&xp=gt.0"
-                f"&chat_id=neq.{OWNER_CHAT_ID}"
                 f"&order=xp.desc&limit=10",
                 headers=headers
             )
             top_data = top_resp.json() or []
 
-            # Empty state
             if not top_data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
@@ -925,53 +922,47 @@ async def handle_leaderboard(chat_id):
 
             text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
-            # Top 10 List
+            # Show Top 10
             for rank, u in enumerate(top_data, 1):
                 name = html.escape(u.get('first_name', 'Unknown Wanderer'))
                 xp = u.get('xp', 0)
                 level = u.get('level', 1)
                 title = get_level_title(level)
-
                 medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
+
+                # Show your special nickname
+                if str(u.get('chat_id')) == str(OWNER_CHAT_ID):
+                    name = "The Forest Warden"
 
                 text += f"{medal} <b>{name}</b>\n"
                 text += f"   {title} • Level {level}\n"
                 text += f"   ✨ {xp:,} XP\n\n"
 
-            # Show "Your place" section ONLY if user has at least 1 XP and is not in top 10
-            if user and chat_id != OWNER_CHAT_ID and user.get('xp', 0) > 0:
-                is_in_top_10 = any(
-                    u.get('xp') == user.get('xp') and 
-                    u.get('first_name') == user.get('first_name')
-                    for u in top_data
+            # Show your rank clearly
+            if user and user.get('xp', 0) > 0:
+                text += "━━━━━━━━━━━━━━━━━━\n"
+                
+                # Calculate real rank
+                count_resp = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/user_profiles"
+                    f"?select=id"
+                    f"&xp=gt.{user.get('xp', 0)}",
+                    headers=headers
                 )
+                higher_count = len(count_resp.json()) if count_resp.json() else 0
+                real_rank = higher_count + 1
 
-                if not is_in_top_10:
-                    text += "━━━━━━━━━━━━━━━━━━\n"
-                    text += "🌲 <i>The forest whispers of those beyond the canopy...</i>\n\n"
-
-                    user_rank = len(top_data) + 1
-                    user_name = html.escape(user.get('first_name', 'You'))
-                    user_xp = user.get('xp', 0)
-                    user_level = user.get('level', 1)
-                    user_title = get_level_title(user_level)
-
-                    text += f"📍 <b>Your place among the wanderers:</b> #{user_rank}\n"
-                    text += f"   <b>{user_name}</b>\n"
-                    text += f"   <b>{user_title} • Level {user_level}</b>\n"
-                    text += f"   <b>✨ {user_xp:,} XP</b>\n"
+                text += f"📍 <b>You are The Forest Warden</b> • Currently ranked **#{real_rank}**\n"
+                text += f"   {get_level_title(user.get('level', 1))} • Level {user.get('level', 1)}\n"
+                text += f"   ✨ {user.get('xp', 0):,} XP\n"
 
             text += "\n<i>May your roots grow deep and your light shine through the canopy.</i> 🍃✨"
 
-            msg = await tg_app.bot.send_message(
+            await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text,
                 parse_mode='HTML'
             )
-
-            if chat_id not in forest_memory:
-                forest_memory[chat_id] = []
-            forest_memory[chat_id].append(msg.message_id)
 
         except Exception as e:
             print(f"🔴 Leaderboard error: {e}")
@@ -1527,7 +1518,7 @@ async def handle_callback(update: Update):
             await query.answer("Invalid selection", show_alert=True)
             return
 
-        # Loading animation
+        # Loading
         await query.message.edit_caption(
             caption="🍿 <i>Searching deep within the glowing glade...</i>",
             parse_mode='HTML'
@@ -1540,7 +1531,7 @@ async def handle_callback(update: Update):
         )
         await asyncio.sleep(1.5)
 
-        # Get data
+        # Get data (same as before)
         profile = await get_user_profile(chat_id)
         user_level = profile.get('level', 1)
 
@@ -1569,7 +1560,7 @@ async def handle_callback(update: Update):
 
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
-        # Safe caption
+        # Document caption
         caption = (
             f"📄 **Netflix\\_Cookie\\_{idx}\\.txt**\n\n"
             f"🍿 **{display_name} Revealed**\n"
@@ -1614,13 +1605,12 @@ Use it wisely and with gratitude.
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
         ])
 
-        # Delete old loading message
         try:
             await query.message.delete()
         except:
             pass
 
-        # Send document
+        # Send the document
         await tg_app.bot.send_document(
             chat_id=chat_id,
             document=file_bytes,
@@ -1628,6 +1618,19 @@ Use it wisely and with gratitude.
             parse_mode='MarkdownV2',
             reply_markup=kb,
             filename=file_bytes.name
+        )
+
+        # ← NEW: Small success message after file is sent
+        await asyncio.sleep(0.8)   # Small delay so it appears nicely below
+        success_msg = (
+            "✨ **Cookie successfully delivered!**\n\n"
+            "🌿 The ancient scroll has been handed to you.\n"
+            "May its magic serve you well, wanderer."
+        )
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=success_msg,
+            parse_mode='MarkdownV2'
         )
 
     # ====================== ABOUT (Lore) ======================
