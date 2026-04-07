@@ -540,27 +540,26 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     limit = 8
     offset = page * limit
 
-    # Get user profile
     profile = await get_user_profile(chat_id)
     current_level = profile.get('level', 1) if profile else 1
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # Calculate today start time
-    today_start = datetime.now(pytz.timezone('Asia/Manila')).replace(
+    # Today start time in UTC (Supabase stores created_at in UTC by default)
+    today_start = datetime.now(pytz.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     ).isoformat()
 
-    async with httpx.AsyncClient(timeout=12.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         try:
-            # Total count for pagination
+            # Total entries for pagination
             count_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}&select=id",
                 headers=headers
             )
             total_entries = len(count_resp.json()) if count_resp.json() else 0
 
-            # Paginated logs (for display)
+            # Paginated logs for display
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&order=created_at.desc&limit={limit}&offset={offset}",
@@ -568,7 +567,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             logs = resp.json()
 
-            # === FIX 1: Get ALL history for accurate Top Action ===
+            # ALL logs for Most Used
             all_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&select=action",
@@ -576,19 +575,18 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             all_logs = all_resp.json()
 
-            # === FIX 2: Get ALL today's logs for accurate XP Today ===
+            # Today's XP (using UTC)
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned",
                 headers=headers
             )
             today_logs = today_resp.json()
-
             xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
 
-            # Top Action from ALL history
+            # Top Action
             from collections import Counter
-            action_count = Counter(log['action'] for log in all_logs)
+            action_count = Counter(log.get('action') for log in all_logs if log.get('action'))
             top_action = action_count.most_common(1)[0] if action_count else ("general", 0)
             top_action_name = top_action[0].replace('_', ' ').title()
             top_action_count = top_action[1]
@@ -612,7 +610,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         f"🏷️ <b>Current Title:</b> {title} • Level {current_level}",
         f"✨ <b>Total XP Earned:</b> {total_xp:,}",
         f"🌞 <b>XP Today:</b> {xp_today:,}",
-        f"🔥 <b>Streak:</b> You're on a 5-day XP streak!",   # Still placeholder
+        f"🔥 <b>Streak:</b> You're on a 5-day XP streak!",
         f"🏆 <b>Most Used:</b> {top_action_name} ({top_action_count} times)",
         "━━━━━━━━━━━━━━━━━━"
     ]
@@ -637,7 +635,6 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
-
     total_pages = (total_entries + limit - 1) // limit
     lines.append(f"🌱 Page {page + 1} of {total_pages} • The trees remember every step of your growth... 🍃")
 
