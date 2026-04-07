@@ -15,14 +15,14 @@ app = Flask(__name__)
 
 
 # ==================== ANTI-XP ABUSE ====================
-xp_cooldowns = {}         
+xp_cooldowns = {}
 user_action_history = {}
 
 COOLDOWN_SECONDS = {
-    "view_windows": 8,
-    "view_office": 8,
-    "view_netflix": 10,
-    "reveal_netflix": 15,
+    "view_windows": 12,
+    "view_office": 12,
+    "view_netflix": 12,
+    "reveal_netflix": 18,
     "profile": 12,
     "clear": 25,
     "guidance": 20,
