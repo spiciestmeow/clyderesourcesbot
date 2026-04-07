@@ -545,10 +545,13 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # Use UTC for today_start (Supabase stores created_at in UTC)
-    today_start = datetime.now(pytz.utc).replace(
+    # ====================== FIX: Calculate Manila "Today" ======================
+    manila_tz = pytz.timezone('Asia/Manila')
+    today_manila = datetime.now(manila_tz).replace(
         hour=0, minute=0, second=0, microsecond=0
-    ).isoformat()
+    )
+    today_start_utc = today_manila.astimezone(pytz.utc).isoformat()
+    print(f"DEBUG: Today start (UTC): {today_start_utc}")   # Uncomment only when testing
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
@@ -559,44 +562,56 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             total_entries = len(count_resp.json()) if count_resp.json() else 0
 
-            # Paginated logs for display only
+            # Paginated logs for display
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
                 f"?chat_id=eq.{chat_id}&order=created_at.desc&limit={limit}&offset={offset}",
                 headers=headers
             )
-            logs = resp.json()
+            logs = resp.json() or []
 
             # ALL logs for "Most Used"
             all_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}&select=action",
+                f"?chat_id=eq.{chat_id}&select=action&limit=1000",
                 headers=headers
             )
-            all_logs = all_resp.json()
+            all_logs = all_resp.json() or []
 
-            # Today's XP — using UTC
+            # Calculate Most Used
+            from collections import Counter
+            action_count = Counter(
+                log.get('action') 
+                for log in all_logs 
+                if log.get('action') and str(log.get('action')).strip()
+            )
+
+            if action_count:
+                top_action = action_count.most_common(1)[0]
+                top_action_name = top_action[0].replace('_', ' ').title()
+                top_action_count = top_action[1]
+            else:
+                top_action_name = "None yet"
+                top_action_count = 0
+
+            # ====================== TODAY'S XP (Fixed) ======================
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned",
+                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start_utc}&select=xp_earned",
                 headers=headers
             )
-            today_logs = today_resp.json()
+            today_logs = today_resp.json() or []
             xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
-
-            # Top Action from ALL history
-            from collections import Counter
-            action_count = Counter(log.get('action') for log in all_logs if log.get('action'))
-            top_action = action_count.most_common(1)[0] if action_count else ("general", 0)
-            top_action_name = top_action[0].replace('_', ' ').title()
-            top_action_count = top_action[1]
 
         except Exception as e:
             print(f"History fetch error: {e}")
             xp_today = 0
             top_action_name = "Unknown"
             top_action_count = 0
+            logs = []
+            total_entries = 0
 
+    # No XP logs yet
     if not logs and page == 0:
         await tg_app.bot.send_message(
             chat_id=chat_id,
@@ -604,6 +619,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         )
         return
 
+    # Build message
     lines = [
         f"🌟 <b>{html.escape(first_name)}'s XP Journey</b>",
         "━━━━━━━━━━━━━━━━━━",
@@ -616,22 +632,22 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     ]
 
     for log in logs:
-        action_name = log['action'].replace('_', ' ').title()
+        action_name = log.get('action', 'Unknown').replace('_', ' ').title()
 
         try:
             dt = datetime.fromisoformat(log['created_at'].replace('Z', '+00:00'))
             dt = dt.astimezone(pytz.timezone('Asia/Manila'))
             time_str = dt.strftime("%Y-%m-%d %H:%M")
         except:
-            time_str = str(log['created_at'])[:16]
+            time_str = str(log.get('created_at', ''))[:16]
 
-        main_line = f"   {action_name} → +{log['xp_earned']} XP"
+        main_line = f"   {action_name} → +{log.get('xp_earned', 0)} XP"
         if log.get('leveled_up'):
-            main_line += f" → <b>Level {log['new_level']} 🎉</b>"
+            main_line += f" → <b>Level {log.get('new_level')} 🎉</b>"
 
         lines.append(f"🕒 {time_str}")
         lines.append(main_line)
-        lines.append(f"   {log['previous_xp']} → {log['new_xp']} XP")
+        lines.append(f"   {log.get('previous_xp', 0)} → {log.get('new_xp', 0)} XP")
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
@@ -655,6 +671,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         parse_mode='HTML',
         reply_markup=keyboard
     )
+
 
 # ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
