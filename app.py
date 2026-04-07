@@ -841,11 +841,11 @@ async def handle_leaderboard(chat_id):
     }
 
     OWNER_CHAT_ID = 7399488750
-    MIN_LEVEL_TO_UNLOCK = 3   # Change this if you want a different requirement
+    MIN_LEVEL_TO_UNLOCK = 3
 
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            # Get current user to check level
+            # Get current user
             user_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles"
                 f"?chat_id=eq.{chat_id}&select=first_name,xp,level",
@@ -853,19 +853,20 @@ async def handle_leaderboard(chat_id):
             )
             user = user_resp.json()[0] if user_resp.json() else None
 
-            # === Level Lock Check ===
-            if not user or user.get('level', 1) < MIN_LEVEL_TO_UNLOCK:
-                current_level = user.get('level', 1) if user else 1
-                await tg_app.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
-                         f"🌲 You need to reach **Level {MIN_LEVEL_TO_UNLOCK}** to unlock the leaderboard.\n\n"
-                         f"You are currently **Level {current_level}**.\n\n"
-                         "Keep exploring the clearing, gaining XP, and growing stronger!\n"
-                         "The trees will reveal the guardians when you're ready. 🌱✨",
-                    parse_mode='HTML'
-                )
-                return
+            # === Owner Bypass + Level Lock Check ===
+            if chat_id != OWNER_CHAT_ID:   # Only check level for normal users
+                if not user or user.get('level', 1) < MIN_LEVEL_TO_UNLOCK:
+                    current_level = user.get('level', 1) if user else 1
+                    await tg_app.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
+                             f"🌲 You need to reach <b>Level {MIN_LEVEL_TO_UNLOCK}</b> to unlock the leaderboard.\n\n"
+                             f"You are currently <b>Level {current_level}</b>.\n\n"
+                             "Keep exploring the clearing, gaining XP, and growing stronger!\n"
+                             "The trees will reveal the guardians when you're ready. 🌱✨",
+                        parse_mode='HTML'
+                    )
+                    return
 
             # === Get Top 10 (exclude owner) ===
             top_resp = await client.get(
@@ -878,7 +879,6 @@ async def handle_leaderboard(chat_id):
             )
             top_data = top_resp.json() or []
 
-            # Empty state
             if not top_data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
@@ -890,7 +890,6 @@ async def handle_leaderboard(chat_id):
                 )
                 return
 
-            # Build leaderboard text
             text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
             # Top 10 List
@@ -925,13 +924,12 @@ async def handle_leaderboard(chat_id):
                     user_title = get_level_title(user_level)
 
                     text += f"📍 <b>Your place among the wanderers:</b> #{user_rank}\n"
-                    text += f"   **{user_name}**\n"                    # Bolded for emphasis
-                    text += f"   **{user_title} • Level {user_level}**\n"
-                    text += f"   **✨ {user_xp:,} XP**\n"
+                    text += f"   <b>{user_name}</b>\n"
+                    text += f"   <b>{user_title} • Level {user_level}</b>\n"
+                    text += f"   <b>✨ {user_xp:,} XP</b>\n"
 
             text += "\n<i>May your roots grow deep and your light shine through the canopy.</i> 🍃✨"
 
-            # Send message
             msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text,
@@ -948,6 +946,7 @@ async def handle_leaderboard(chat_id):
                 chat_id=chat_id,
                 text="🌫️ The ancient trees are having trouble reading the winds right now..."
             )
+
 
 # ==================== FEEDBACK COMMAND ======================
 async def handle_feedback(chat_id, first_name, feedback_text):
