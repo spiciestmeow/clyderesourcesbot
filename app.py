@@ -1197,26 +1197,81 @@ async def handle_clear(chat_id, user_command_id, first_name):
     print(f"🌿 Chat cleared magically for user {chat_id}")
 
 # ==================== BOT INFO / STATUS COMMAND ======================
+# Simple cache storage (will remember numbers for 60 seconds)
+info_cache = {
+    "total_users": 0,
+    "active_today": 0,
+    "last_updated": 0
+}
+CACHE_DURATION = 60  # seconds (1 minute)
+
 async def handle_info(chat_id):
     try:
-        # You can make these dynamic later if you want
-        version = "1.3.0"                    # Update this when you release new version
-        last_updated = "April 7, 2026"       # You can make this dynamic if needed
-        total_users = "87"                   # You can make this dynamic from database later
-        active_today = "24"                  # Same, can be dynamic
+        current_time = time.time()
 
-        # Calculate uptime (simple version - you can improve this later)
-        uptime = "2 days, 14 hours"          # For now static, can be made real later
+        # Check if cache is still fresh (less than 60 seconds old)
+        if current_time - info_cache["last_updated"] < CACHE_DURATION:
+            total_users = info_cache["total_users"]
+            active_today = info_cache["active_today"]
+        else:
+            # Cache is old → fetch fresh data from Supabase
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}"
+            }
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                manila_tz = pytz.timezone('Asia/Manila')
+                today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+                today_utc = today_start.astimezone(pytz.utc).isoformat()
+
+                # === Total Wanderers ===
+                total_res = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/user_profiles",
+                    headers=headers,
+                    params={"select": "id", "count": "exact", "head": "true"}
+                )
+                total_users = total_res.json().get("count", 0) if total_res.status_code == 200 else 0
+
+                # Fallback if needed
+                if total_users == 0 and total_res.headers.get("content-range"):
+                    try:
+                        total_users = int(total_res.headers["content-range"].split("/")[-1])
+                    except:
+                        pass
+
+                # === Active Today ===
+                active_res = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/user_profiles",
+                    headers=headers,
+                    params={
+                        "select": "id",
+                        "last_active": f"gte.{today_utc}",
+                        "count": "exact",
+                        "head": "true"
+                    }
+                )
+                active_today = active_res.json().get("count", 0) if active_res.status_code == 200 else 0
+
+            # Save the new numbers to cache
+            info_cache["total_users"] = total_users
+            info_cache["active_today"] = active_today
+            info_cache["last_updated"] = current_time
+
+        # === Build the message ===
+        version = "1.3.1"
+        last_updated = "April 7, 2026"
+        uptime = "2 days, 14 hours"   # You can make this dynamic later
 
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "🌳 The forest is thriving peacefully.\n\n"
             f"🕒 Uptime: <b>{uptime}</b>\n"
-            f"🌱 Total Wanderers: <b>{total_users}</b>\n"
-            f"✨ Active today: <b>{active_today}</b>\n\n"
+            f"🌱 Total Wanderers: <b>{total_users:,}</b>\n"
+            f"✨ Active Today: <b>{active_today:,}</b>\n\n"
             f"📜 Current Version: <b>{version}</b>\n"
-            f"🌲 Last updated: <b>{last_updated}</b>\n\n"
+            f"🌲 Last Updated: <b>{last_updated}</b>\n\n"
             "⚠️ <i>For personal and educational use only.</i>\n"
             "The developer is not responsible for any misuse.\n\n"
             "Made with care by the Forest Caretaker 🍃"
