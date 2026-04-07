@@ -1207,55 +1207,32 @@ async def handle_clear(chat_id, user_command_id, first_name):
     print(f"🌿 Chat cleared magically for user {chat_id}")
 
 # ==================== BOT INFO / STATUS COMMAND ======================
-info_cache = {
-    "total_users": 0,
-    "active_today": 0,
-    "last_updated": 0
-}
-CACHE_DURATION = 60  # 1 minute
-
 async def handle_info(chat_id):
     try:
-        current_time = time.time()
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}"
+        }
 
-        if current_time - info_cache["last_updated"] < CACHE_DURATION:
-            total_users = info_cache["total_users"]
-            active_today = info_cache["active_today"]
-        else:
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}"
-            }
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            # === Total Wanderers ===
+            total_res = await client.get(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
+                headers=headers
+            )
+            total_users = len(total_res.json()) if total_res.status_code == 200 and total_res.json() else 0
 
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                # === Total Wanderers (Simple & Reliable) ===
-                total_res = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles",
-                    headers=headers,
-                    params={"select": "id", "count": "exact"}
-                )
-                total_users = total_res.json()[0]["count"] if total_res.status_code == 200 and total_res.json() else 0
+            # === Active Today ===
+            manila_tz = pytz.timezone('Asia/Manila')
+            today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_utc = today_start.astimezone(pytz.utc).isoformat()
 
-                # === Active Today ===
-                manila_tz = pytz.timezone('Asia/Manila')
-                today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
-                today_utc = today_start.astimezone(pytz.utc).isoformat()
-
-                active_res = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles",
-                    headers=headers,
-                    params={
-                        "select": "id",
-                        "last_active": f"gte.{today_utc}",
-                        "count": "exact"
-                    }
-                )
-                active_today = active_res.json()[0]["count"] if active_res.status_code == 200 and active_res.json() else 0
-
-            # Update cache
-            info_cache["total_users"] = total_users
-            info_cache["active_today"] = active_today
-            info_cache["last_updated"] = current_time
+            active_res = await client.get(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?select=id",
+                headers=headers,
+                params={"last_active": f"gte.{today_utc}"}
+            )
+            active_today = len(active_res.json()) if active_res.status_code == 200 and active_res.json() else 0
 
         # Build the message
         version = "1.3.1"
@@ -1276,10 +1253,14 @@ async def handle_info(chat_id):
             "Made with care by the Forest Caretaker 🍃"
         )
 
-        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML'
+        )
 
     except Exception as e:
-        print(f"Info command error: {e}")
+        print(f"Info command error: {str(e)}")
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌫️ The ancient trees are having trouble sharing the forest status right now..."
