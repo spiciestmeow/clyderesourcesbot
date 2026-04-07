@@ -348,6 +348,26 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     return True
 
+# ==================== UPDATE LAST ACTIVE LOGGING ====================
+async def update_last_active(chat_id: int):
+    """Automatically update last_active whenever user interacts with the bot"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {"last_active": datetime.now(pytz.utc).isoformat()}
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        try:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers,
+                json=payload
+            )
+        except:
+            pass   # silent fail
+
 # ==================== XP HISTORY LOGGING ====================
 async def log_xp_history(chat_id: int, first_name: str, action: str,
                          xp_earned: int, previous_xp: int, new_xp: int,
@@ -1214,21 +1234,15 @@ async def handle_info(chat_id):
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            print("🌿 /forest debug started")
-
-            # Simplest possible query - select only one column
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            # Total Wanderers
             total_res = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
                 headers=headers
             )
-            print(f"Total status: {total_res.status_code}")
-            if total_res.status_code != 200:
-                print(f"Total error body: {total_res.text}")
-
             total_users = len(total_res.json()) if total_res.status_code == 200 else 0
 
-            # Active Today
+            # Active Today - Instant
             manila_tz = pytz.timezone('Asia/Manila')
             today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
             today_utc = today_start.astimezone(pytz.utc).isoformat()
@@ -1238,26 +1252,31 @@ async def handle_info(chat_id):
                 headers=headers,
                 params={"last_active": f"gte.{today_utc}"}
             )
-            print(f"Active status: {active_res.status_code}")
-            if active_res.status_code != 200:
-                print(f"Active error body: {active_res.text}")
-
             active_today = len(active_res.json()) if active_res.status_code == 200 else 0
 
-        # Message
+        version = "1.3.1"
+        last_updated = "April 7, 2026"
+        uptime = "2 days, 14 hours"
+
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "🌳 The forest is thriving peacefully.\n\n"
-            f"🕒 Uptime: <b>2 days, 14 hours</b>\n"
+            f"🕒 Uptime: <b>{uptime}</b>\n"
             f"🌱 Total Wanderers: <b>{total_users:,}</b>\n"
             f"✨ Active Today: <b>{active_today:,}</b>\n\n"
-            "📜 Current Version: <b>1.3.1</b>\n"
-            "🌲 Last Updated: <b>April 7, 2026</b>\n\n"
+            f"📜 Current Version: <b>{version}</b>\n"
+            f"🌲 Last Updated: <b>{last_updated}</b>\n\n"
+            "⚠️ <i>For personal and educational use only.</i>\n"
+            "The developer is not responsible for any misuse.\n\n"
             "Made with care by the Forest Caretaker 🍃"
         )
 
-        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML'
+        )
 
     except Exception as e:
         print(f"Info command error: {str(e)}")
@@ -1303,10 +1322,10 @@ async def handle_callback(update: Update):
             await add_xp(chat_id, first_name, "general")
             profile = await get_user_profile(chat_id)
 
-        is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
+            if profile:
+                await update_last_active(chat_id)
 
-        # if is_first_time:
-            # await update_has_seen_menu(chat_id)
+        is_first_time = not bool(profile.get('has_seen_menu', False)) if profile else True
 
         try:
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
@@ -1330,6 +1349,8 @@ async def handle_callback(update: Update):
             reply_markup=get_start_keyboard()
         )
         return
+    
+    await update_last_active(chat_id)
         
     # Mark as seen
     # if not profile.get('has_seen_menu', False):
@@ -1847,48 +1868,38 @@ def webhook():
                     await tg_app.bot.send_animation(
                         chat_id=chat_id,
                         animation=HELLO_GIF,
-                        caption =
-                            "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
-                            "The ancient trees watch you with quiet curiosity.\n\n"
-                            "To step into the Enchanted Clearing and discover its magic,\n"
-                            "please press the button below.\n\n"
-                            "<i>The forest is ready to welcome you.</i> 🍃✨",
+                        caption="<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
+                                "The ancient trees watch you with quiet curiosity.\n\n"
+                                "To step into the Enchanted Clearing...\n",
                         parse_mode='HTML',
                         reply_markup=get_start_keyboard()
                     )
                     return
 
-            # Command handlers
-            if text.startswith("/start"): 
-                await send_initial_welcome(chat_id, name)
+            # Update last_active for returning users on any text command
+            await update_last_active(chat_id)
 
+            # Command handlers
+            if text.startswith("/start"):
+                await send_initial_welcome(chat_id, name)
             elif text.startswith("/forest"):
                 await handle_info(chat_id)
-
             elif text.startswith("/history"):
                 await handle_history(chat_id, name)
-
             elif text.startswith("/leaderboard"):
                 await handle_leaderboard(chat_id)
-
             elif text.startswith("/profile"):
                 await handle_profile(chat_id, name)
-
             elif text.startswith("/mystats"):
                 await handle_stats(chat_id, name)
-
-            elif text.startswith("/menu"): 
+            elif text.startswith("/menu"):
                 profile = await get_user_profile(chat_id)
                 is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
-                # Do NOT mark as seen here (soft version)
                 await send_full_menu(chat_id, name, is_first_time=is_first)
-
             elif text.startswith("/myid"):
                 await send_myid(chat_id)
-
             elif text.startswith("/clear"):
                 await handle_clear(chat_id, user_msg_id, name)
-
             elif text.startswith("/feedback"):
                 feedback_text = text.replace("/feedback", "").strip()
                 if feedback_text:
@@ -1899,10 +1910,9 @@ def webhook():
                         text="🌿 Please write your feedback after the /feedback command.\n\n"
                              "Example: `/feedback I really like the immersive captions!`"
                     )
-
             elif text.startswith("/viewfeedback") or text.startswith("/feedbacks"):
                 await handle_view_feedback(
-                    chat_id, 
+                    chat_id,
                     update.effective_user.id if update.effective_user else None
                 )
             elif text.startswith("/resetfirst") or text.startswith("/reset"):
