@@ -530,46 +530,54 @@ async def send_myid(chat_id):
     forest_memory[chat_id].append(msg.message_id)
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
-    """Advanced XP History with Pagination"""
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
 
-    limit = 10                    # Entries per page
+    limit = 8
     offset = page * limit
 
-    # Get user profile for header
+    # Get user profile
     profile = await get_user_profile(chat_id)
     current_level = profile.get('level', 1) if profile else 1
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # Fetch total count for pagination
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    # Calculate XP Today + Levels Gained (from history)
+    today_start = datetime.now(pytz.timezone('Asia/Manila')).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            # Get total count
+            # Total count
             count_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}&select=id",
                 headers=headers
             )
             total_entries = len(count_resp.json()) if count_resp.json() else 0
 
-            # Get paginated logs
+            # Paginated logs
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}"
-                f"&order=created_at.desc"
-                f"&limit={limit}&offset={offset}",
+                f"?chat_id=eq.{chat_id}&order=created_at.desc&limit={limit}&offset={offset}",
                 headers=headers
             )
             logs = resp.json()
 
+            # XP Today
+            today_resp = await client.get(
+                f"{SUPABASE_URL}/rest/v1/xp_history"
+                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start}&select=xp_earned",
+                headers=headers
+            )
+            today_logs = today_resp.json()
+            xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
+
         except Exception as e:
             print(f"History fetch error: {e}")
-            await tg_app.bot.send_message(chat_id=chat_id, 
-                text="🌿 The trees are resting... Please try again soon.")
-            return
+            xp_today = 0
 
     if not logs and page == 0:
         await tg_app.bot.send_message(
@@ -583,13 +591,13 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         "━━━━━━━━━━━━━━━━━━",
         f"🏷️ <b>Current Title:</b> {title} • Level {current_level}",
         f"✨ <b>Total XP Earned:</b> {total_xp:,}",
-        f"📊 <b>Total Records:</b> {total_entries}",
+        f"🌞 <b>XP Today:</b> {xp_today:,}",
         "━━━━━━━━━━━━━━━━━━"
     ]
 
     for log in logs:
         action_name = log['action'].replace('_', ' ').title()
-        
+
         try:
             dt = datetime.fromisoformat(log['created_at'].replace('Z', '+00:00'))
             dt = dt.astimezone(pytz.timezone('Asia/Manila'))
@@ -607,11 +615,12 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
-    lines.append(f"🌱 Page {page + 1} of {(total_entries + limit - 1) // limit} • The trees remember every step... 🍃")
+    total_pages = (total_entries + limit - 1) // limit
+    lines.append(f"🌱 Page {page + 1} of {total_pages} • The trees remember every step of your growth... 🍃")
 
     text = "\n".join(lines)
 
-    # Create pagination buttons
+    # Pagination buttons
     buttons = []
     if page > 0:
         buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"history_page_{page-1}"))
