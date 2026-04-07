@@ -545,13 +545,13 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     total_xp = profile.get('total_xp_earned', 0) if profile else 0
     title = get_level_title(current_level)
 
-    # ====================== FIX: Calculate Manila "Today" ======================
+    # Calculate start of today in Manila time → convert to UTC without timezone suffix
     manila_tz = pytz.timezone('Asia/Manila')
-    today_manila = datetime.now(manila_tz).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    today_start_utc = today_manila.astimezone(pytz.utc).isoformat()
-    print(f"DEBUG: Today start (UTC): {today_start_utc}")   # Uncomment only when testing
+    today_manila = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_manila.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # Optional: keep debug for now
+    # print(f"DEBUG: Today start (UTC): {today_start_utc}")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
@@ -594,13 +594,20 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
                 top_action_name = "None yet"
                 top_action_count = 0
 
-            # ====================== TODAY'S XP (Fixed) ======================
+            # ====================== TODAY'S XP (Fixed + Safe) ======================
             today_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/xp_history"
-                f"?chat_id=eq.{chat_id}&created_at=gte.{today_start_utc}&select=xp_earned",
+                f"?chat_id=eq.{chat_id}"
+                f"&created_at=gte.{today_start_utc}&select=xp_earned",
                 headers=headers
             )
-            today_logs = today_resp.json() or []
+            
+            if today_resp.status_code == 200:
+                today_logs = today_resp.json() or []
+            else:
+                print(f"Today XP query failed with status {today_resp.status_code}: {today_resp.text}")
+                today_logs = []
+                
             xp_today = sum(item.get('xp_earned', 0) for item in today_logs)
 
         except Exception as e:
