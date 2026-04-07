@@ -938,14 +938,13 @@ async def handle_leaderboard(chat_id):
             if user and user.get('xp', 0) > 0:
                 text += "━━━━━━━━━━━━━━━━━━\n"
                 
-                count_resp = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles"
-                    f"?select=id"
-                    f"&xp=gt.{user.get('xp', 0)}",
+                rank_resp = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/user_leaderboard"
+                    f"?chat_id=eq.{chat_id}&select=rank",
                     headers=headers
                 )
-                higher_count = len(count_resp.json()) if count_resp.json() else 0
-                real_rank = higher_count + 1
+                rank_data = rank_resp.json()
+                real_rank = rank_data[0].get('rank', 1) if rank_data else 1
 
                 text += f"📍 <b>You are The Forest Warden</b> • Currently ranked <b>#{real_rank}</b>\n"
                 text += f"   {get_level_title(user.get('level', 1))} • Level {user.get('level', 1)}\n"
