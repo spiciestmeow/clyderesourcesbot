@@ -2033,19 +2033,16 @@ def webhook():
 
 
 if __name__ == "__main__":
+    load_dotenv()
+
     # ==================== LOCAL TESTING (Polling) ====================
     if len(sys.argv) > 1 and sys.argv[1] == "poll":
         print("🌿 Bot started in LOCAL POLLING mode...")
         print("✅ Open Telegram and type /forest to test live uptime!")
         tg_app.run_polling(drop_pending_updates=True)
 
-    # ==================== VERCEL / PRODUCTION (Webhook) ====================
+    # ==================== VERCEL PRODUCTION (Webhook) ====================
     else:
         print("🌿 Running in WEBHOOK mode (for Vercel)")
-        # Start the bot properly for webhook
-        async def start_bot():
-            await tg_app.initialize()
-            await tg_app.start()
-        loop.run_until_complete(start_bot())
-        
+        # No blocking startup needed here — Vercel uses the webhook route
         app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
