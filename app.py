@@ -1894,31 +1894,25 @@ def webhook():
     if not update_data:
         return "No data", 400
 
-    # ====================== PROCESS UPDATE ======================
     async def process_update():
         try:
             update = Update.de_json(update_data, tg_app.bot)
 
-            # ==================== MAINTENANCE MODE ====================
+            # MAINTENANCE MODE
             global MAINTENANCE_MODE
             OWNER_CHAT_ID = 7399488750
-
             if MAINTENANCE_MODE:
                 chat_id = None
                 if update.effective_chat:
                     chat_id = update.effective_chat.id
                 elif update.callback_query and update.callback_query.message:
                     chat_id = update.callback_query.message.chat.id
-
                 if chat_id and chat_id != OWNER_CHAT_ID:
                     try:
                         if update.message:
                             await tg_app.bot.send_message(chat_id=chat_id, text=MAINTENANCE_MESSAGE, parse_mode='HTML')
                         elif update.callback_query:
-                            await update.callback_query.answer(
-                                "🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!", 
-                                show_alert=True
-                            )
+                            await update.callback_query.answer("🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!", show_alert=True)
                     except:
                         pass
                     return
@@ -1934,15 +1928,13 @@ def webhook():
                     forest_memory[chat_id] = []
                 forest_memory[chat_id].append(user_msg_id)
 
-                # Registration check
                 if not text.startswith("/start"):
                     profile = await get_user_profile(chat_id)
                     if not profile:
                         await tg_app.bot.send_animation(
                             chat_id=chat_id,
                             animation=HELLO_GIF,
-                            caption="🌿 <b>Welcome to the Forest Hub</b>\n\n"
-                                    "To start using the resources, please tap the button below.",
+                            caption="🌿 <b>Welcome to the Forest Hub</b>\n\nTo start using the resources, please tap the button below.",
                             parse_mode='HTML',
                             reply_markup=get_start_keyboard()
                         )
@@ -1950,7 +1942,6 @@ def webhook():
 
                 await update_last_active(chat_id)
 
-                # Command handlers
                 if text.startswith("/start"):
                     await send_initial_welcome(chat_id, name)
                 elif text.startswith("/forest"):
@@ -1978,15 +1969,9 @@ def webhook():
                     if feedback_text:
                         await handle_feedback(chat_id, name, feedback_text)
                     else:
-                        await tg_app.bot.send_message(
-                            chat_id=chat_id,
-                            text="🌿 Please write your feedback after the /feedback command."
-                        )
+                        await tg_app.bot.send_message(chat_id=chat_id, text="🌿 Please write your feedback after the /feedback command.")
                 elif text.startswith("/viewfeedback") or text.startswith("/feedbacks"):
-                    await handle_view_feedback(
-                        chat_id,
-                        update.effective_user.id if update.effective_user else None
-                    )
+                    await handle_view_feedback(chat_id, update.effective_user.id if update.effective_user else None)
                 elif text.startswith("/resetfirst") or text.startswith("/reset"):
                     await handle_reset_first_time(chat_id)
 
@@ -2004,8 +1989,7 @@ def webhook():
                     await tg_app.bot.send_animation(
                         chat_id=chat_id,
                         animation=HELLO_GIF,
-                        caption="🌿 <b>Welcome to the Forest Hub</b>\n\n"
-                                "To start using the resources, please tap the button below.",
+                        caption="🌿 <b>Welcome to the Forest Hub</b>\n\nTo start using the resources, please tap the button below.",
                         parse_mode='HTML',
                         reply_markup=get_start_keyboard()
                     )
@@ -2017,20 +2001,20 @@ def webhook():
             print(f"🔴 ERROR in process_update: {type(e).__name__} - {e}")
             print(traceback.format_exc())
 
-    # ====================== FIXED: Always create a fresh loop (Vercel-safe) ======================
+    # ====================== SAFER EXECUTION FOR VERCEL ======================
     try:
-        # Create a brand new event loop for every request - this fixes the thread error
+        # Always create a fresh event loop for this request
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
         loop.run_until_complete(process_update())
-        
-        # Clean up
-        loop.close()
-        
     except Exception as e:
         print(f"🔴 CRITICAL WEBHOOK ERROR: {type(e).__name__} - {e}")
         print(traceback.format_exc())
+    finally:
+        try:
+            loop.close()
+        except:
+            pass
 
     return "OK", 200
 
