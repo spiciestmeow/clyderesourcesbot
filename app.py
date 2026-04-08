@@ -1895,11 +1895,11 @@ Use it wisely and with gratitude.
                 await update_has_seen_menu(chat_id)
         
 # ==================== WEBHOOK ====================
-# async def start_tg_app():
-#     await tg_app.initialize()
-#     await tg_app.start()
+async def start_tg_app():
+    await tg_app.initialize()
+    await tg_app.start()
 
-# loop.run_until_complete(start_tg_app())
+loop.run_until_complete(start_tg_app())
 
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
