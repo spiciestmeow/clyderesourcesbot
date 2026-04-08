@@ -1894,6 +1894,16 @@ def webhook():
     if not update_data:
         return "No data", 400
 
+@app.route('/', methods=['GET', 'POST'])
+def webhook():
+    if request.method == 'GET':
+        return "🌿 Clyde's Enchanted Clearing is awake.", 200
+
+    update_data = request.get_json(silent=True)
+    if not update_data:
+        return "No data", 400
+
+    # ====================== PROCESS UPDATE ======================
     async def process_update():
         try:
             update = Update.de_json(update_data, tg_app.bot)
@@ -1908,12 +1918,16 @@ def webhook():
                     chat_id = update.effective_chat.id
                 elif update.callback_query and update.callback_query.message:
                     chat_id = update.callback_query.message.chat.id
+
                 if chat_id and chat_id != OWNER_CHAT_ID:
                     try:
                         if update.message:
                             await tg_app.bot.send_message(chat_id=chat_id, text=MAINTENANCE_MESSAGE, parse_mode='HTML')
                         elif update.callback_query:
-                            await update.callback_query.answer("🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!", show_alert=True)
+                            await update.callback_query.answer(
+                                "🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!", 
+                                show_alert=True
+                            )
                     except:
                         pass
                     return
@@ -1951,7 +1965,7 @@ def webhook():
                 elif text.startswith("/forest"):
                     await handle_info(chat_id)
                 elif text.startswith("/testerror"):
-                    1 / 0  # For testing error handler
+                    1 / 0
                 elif text.startswith("/history"):
                     await handle_history(chat_id, name)
                 elif text.startswith("/leaderboard"):
@@ -2012,13 +2026,17 @@ def webhook():
             print(f"🔴 ERROR in process_update: {type(e).__name__} - {e}")
             print(traceback.format_exc())
 
-    # Run the async function safely
+    # ====================== FIXED: Always create a fresh loop (Vercel-safe) ======================
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # Create a brand new event loop for every request - this fixes the thread error
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         loop.run_until_complete(process_update())
+        
+        # Clean up
+        loop.close()
+        
     except Exception as e:
         print(f"🔴 CRITICAL WEBHOOK ERROR: {type(e).__name__} - {e}")
         print(traceback.format_exc())
