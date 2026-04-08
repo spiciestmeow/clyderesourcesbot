@@ -1,6 +1,5 @@
 import os
 import asyncio
-
 import html
 import httpx
 from flask import Flask, request
@@ -10,7 +9,48 @@ from datetime import datetime
 from collections import Counter
 import pytz
 import time
+import traceback
+from telegram.ext import ContextTypes
 
+import traceback
+from telegram.ext import ContextTypes
+
+# ==================== GLOBAL ERROR HANDLER ====================
+async def global_error_handler(update: object, context):
+    """Tracks ALL errors - prints to Vercel Logs + sends notification to your private chat"""
+    
+    error = context.error
+    error_type = type(error).__name__
+    error_msg = str(error)
+    
+    # Get full traceback
+    tb_string = "".join(traceback.format_exception(None, error, error.__traceback__))
+
+    # === 1. Print to Vercel Logs (This is very important) ===
+    print(f"🔴 ERROR: {error_type} | {error_msg}")
+    print("─" * 80)
+    print(tb_string)
+    print("─" * 80)
+
+    # === 2. Send notification to your private Telegram ===
+    OWNER_CHAT_ID = 7399488750
+
+    notification = (
+        f"🔴 <b>Forest Hub Error Detected</b>\n\n"
+        f"<b>Type:</b> {error_type}\n"
+        f"<b>Message:</b> {html.escape(error_msg)}\n\n"
+        f"<b>Time:</b> {datetime.now(pytz.timezone('Asia/Manila')).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"<pre>{html.escape(tb_string[-3000:])}</pre>"   # Truncated safely
+    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=OWNER_CHAT_ID,
+            text=notification,
+            parse_mode='HTML'
+        )
+    except Exception as send_err:
+        print(f"Failed to send error notification to Telegram: {send_err}")
 
 forest_memory = {}
 app = Flask(__name__)
@@ -60,6 +100,10 @@ MAINTENANCE_MESSAGE = (
 )
 
 tg_app = Application.builder().token(TOKEN).build()
+
+# Register global error handler - catches almost all errors
+tg_app.add_error_handler(global_error_handler)
+
 loop = asyncio.new_event_loop()
 BOT_START_TIME = datetime.now(pytz.utc)
 asyncio.set_event_loop(loop)
@@ -1910,6 +1954,9 @@ def webhook():
                 await send_initial_welcome(chat_id, name)
             elif text.startswith("/forest"):
                 await handle_info(chat_id)
+            elif text.startswith("/testerror"):
+                # This will intentionally trigger an error
+                1 / 0   # ZeroDivisionError
             elif text.startswith("/history"):
                 await handle_history(chat_id, name)
             elif text.startswith("/leaderboard"):
@@ -1969,9 +2016,12 @@ def webhook():
 
             # Registered user → normal handling
             await handle_callback(update)
-    try: loop.run_until_complete(process_update())
-    except Exception as e: print(f"🔴 Webhook Error: {e}")
-    return "OK", 200
+    try:
+        loop.run_until_complete(process_update())
+    except Exception as e:
+        print(f"🔴 CRITICAL WEBHOOK ERROR: {type(e).__name__} - {e}")
+        print(traceback.format_exc())
+        return "OK", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
