@@ -1558,18 +1558,23 @@ async def handle_callback(update: Update):
 
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
-        # Document caption
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        # Use HTML instead of MarkdownV2 — much more forgiving with dynamic text
         caption = (
-            f"📄 **Netflix\\_Cookie\\_{idx}\\.txt**\n\n"
-            f"🍿 **{display_name} Revealed**\n"
+            f"📄 <b>Netflix_Cookie_{idx}.txt</b>\n\n"
+            f"🍿 <b>{html.escape(display_name)} Revealed</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🌿 Status: **{status}**\n"
-            f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
-            "📥 The forest has wrapped your cookie in an ancient scroll\\.\n"
-            "_Tap the file below to receive its magic\\._ 🍃"
+            f"🌿 Status: <b>{html.escape(status)}</b>\n"
+            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
+            "📥 The forest has wrapped your cookie in an ancient scroll.\n"
+            "<i>Tap the file below to receive its magic.</i> 🍃"
         )
 
-        # Immersive file content
+        # Immersive file content (plain text is safest)
         from io import BytesIO
         file_content = f"""🌿🍃 Clyde's Forest Hub — Secret Netflix Cookie 🌿🍃
 
@@ -1603,38 +1608,34 @@ Use it wisely and with gratitude.
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
         ])
 
-        try:
-            await query.message.delete()
-        except:
-            pass
-
-        # Send the document
+        # Send document with HTML (much safer)
         doc_msg = await tg_app.bot.send_document(
             chat_id=chat_id,
             document=file_bytes,
             caption=caption,
-            parse_mode='MarkdownV2',
+            parse_mode='HTML',
             reply_markup=kb,
             filename=file_bytes.name
         )
 
-        # Track in forest_memory so /clear can delete it
+        # Track BOTH messages for /clear
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(doc_msg.message_id)
 
-        # ← NEW: Small success message after file is sent
-        await asyncio.sleep(0.8)   # Small delay so it appears nicely below
+        # Success message
+        await asyncio.sleep(0.8)
         success_msg = (
             "✨ <b>Cookie successfully delivered!</b>\n\n"
             "🌿 The ancient scroll has been handed to you.\n"
             "May its magic serve you well, wanderer."
         )
-        await tg_app.bot.send_message(
+        success_sent = await tg_app.bot.send_message(
             chat_id=chat_id,
             text=success_msg,
             parse_mode='HTML'
         )
+        forest_memory[chat_id].append(success_sent.message_id)
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
@@ -1646,7 +1647,7 @@ Use it wisely and with gratitude.
             pass
 
         loading_msg = await tg_app.bot.send_animation(
-            chat_id=chat_id,                                   # ← Fixed
+            chat_id=chat_id,
             animation=LOADING_GIF,
             caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>",
             parse_mode='HTML'
@@ -1898,7 +1899,7 @@ def webhook():
             update = Update.de_json(update_data, tg_app.bot)
 
             # ==================== MAINTENANCE MODE ====================
-            MAINTENANCE_MODE = True
+            global MAINTENANCE_MODE
             OWNER_CHAT_ID = 7399488750
 
             if MAINTENANCE_MODE:
@@ -2013,12 +2014,15 @@ def webhook():
 
     # Run the async function safely
     try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         loop.run_until_complete(process_update())
     except Exception as e:
         print(f"🔴 CRITICAL WEBHOOK ERROR: {type(e).__name__} - {e}")
         print(traceback.format_exc())
 
-    # ←←← THIS LINE IS VERY IMPORTANT ←←←
     return "OK", 200
 
 if __name__ == "__main__":
