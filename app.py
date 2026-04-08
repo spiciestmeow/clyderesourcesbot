@@ -1844,24 +1844,24 @@ async def handle_callback(update: Update):
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
-                "Gain XP as you explore. Higher levels unlock more items in the Inventory.\n\n"
+                "Gain XP to unlock more items in Inventory.\n\n"
                 
                 "<b>📊 Item Limits by Level</b>\n\n"
                 
-                "🪟 <b>Windows & Office</b>\n"
-                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
-                "• Lv6: 5 • Lv7: Up to 6 • Lv8: Up to 8\n"
-                "• Lv9: Up to 10 • Lv10+: Up to All\n\n"
+                "🪟 <b>Win / Office</b>\n"
+                "• 1: 1 • 2-3: 2 • 4-5: 3\n"
+                "• 6: 5 • 7: up to 6 • 8: up to 8\n"
+                "• 9: up to 10 • 10+: All\n\n"
                 
                 "🍿 <b>Netflix Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 2-3\n"
-                "• Lv6: 4 • Lv7: Up to 5 • Lv8: Up to 7\n"
-                "• Lv9: Up to 8 • Lv10+: Up to All\n\n"
+                "• 1: 1 • 2-3: 2 • 4-5: 2-3\n"
+                "• 6: 4 • 7: up to 5 • 8: up to 7\n"
+                "• 9: up to 8 • 10+: All\n\n"
                 
-                "🎥 <b>Prime Video Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 1-2 • Lv4-5: 2\n"
-                "• Lv6: 3 • Lv7: Up to 3 • Lv8: Up to 4\n"
-                "• Lv9: Up to 5 • Lv10+: Up to All\n\n"
+                "🎥 <b>Prime Video</b>\n"
+                "• 1: 1 • 2-3: 1-2 • 4-5: 2\n"
+                "• 6-7: 3 • 8: up to 4 • 9: up to 5\n"
+                "• 10+: All\n\n"
                 
                 "🎮 <b>Steam Accounts</b>\n"
                 "• Lv1-6: Public Drop Only\n"
@@ -1869,20 +1869,11 @@ async def handle_callback(update: Update):
                 "• Lv9: Early Preview + Sunday Double\n"
                 "• Lv10+: 🌟 Legend Tier\n\n"
                 
-                "<b>How to Gain XP:</b>\n"
-                "• View Win/Office Keys → <b>+6 XP</b>\n"
-                "• View Netflix Keys → <b>+6 XP</b>\n"
-                "• Reveal Netflix Cookie → <b>+10 XP</b>\n"
-                "• /profile → <b>+5 XP</b>\n"
-                "• /clear → <b>+5 XP</b>\n"
-                "• First-time Guidance or Lore → <b>+8 XP</b>\n\n"
+                "<b>XP Gains:</b>\n"
+                "• View keys → +6 • Reveal Netflix → +10\n"
+                "• Profile / Clear → +5 • First Guidance or Lore → +8\n\n"
                 
-                f"<b>Level Requirements:</b>\n"
-                f"{level_req_text}\n\n"
-                
-                "<b>Note:</b>\n"
-                "• New users start at Level 1 with 0 XP\n"
-                "• You will see a celebration when you level up\n\n"
+                f"<b>Level Requirements:</b>\n{level_req_text}\n\n"
                 
                 "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
             )
