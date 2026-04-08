@@ -209,6 +209,16 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     # 200 base + 100 increasing per level (feels good for a Telegram bot)
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
+def extract_netflix_number(item):
+    """Extract the number from 'Netflix Cookie 10' → returns 10"""
+    name = str(item.get('display_name', '')).strip()
+    if 'Netflix Cookie' in name:
+        try:
+            return int(name.split()[-1])
+        except:
+            pass
+    return 9999
+
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
     
@@ -1469,8 +1479,11 @@ async def handle_callback(update: Update):
             limit = len(filtered)
             limit_note = "✨ You have full access to all scrolls in the forest."
 
-        # Sort for consistency
-        filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
+        # OLD (delete this line)
+        # filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
+
+        # NEW (replace with this)
+        filtered.sort(key=extract_netflix_number)
 
         # Netflix handling
         if category == "netflix":
@@ -1558,7 +1571,12 @@ async def handle_callback(update: Update):
             return
 
         filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
+
+        # OLD (delete this line)
         filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
+
+        # NEW (replace with this)
+        filtered.sort(key=extract_netflix_number)
 
         if idx < 1 or idx > len(filtered[:limit]):
             await query.answer("❌ Cookie not found", show_alert=True)
@@ -1720,7 +1738,12 @@ Use it wisely and with gratitude.
             return
 
         filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-        filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
+
+        # OLD (delete this line)
+        # filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
+
+        # NEW (replace with this)
+        filtered.sort(key=extract_netflix_number)
 
         if user_level == 1:
             limit = 1
