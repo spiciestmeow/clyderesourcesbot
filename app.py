@@ -1489,29 +1489,45 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        # ====================== COMING SOON - PRIME & STEAM ======================
-        if category in ["prime", "steam"]:
-            if category == "prime":
+        # ====================== STEAM ACCOUNTS ======================
+        if category == "steam":
+            profile = await get_user_profile(chat_id)
+            user_level = profile.get('level', 1) if profile else 1
+
+            if user_level <= 6:
                 msg = (
-                    "🎥 <b>PrimeVideo Premium Cookies</b>\n"
+                    "🎮 <b>Steam Accounts — Public Drop Only</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "Deep within the misty heart of the Enchanted Clearing,\n"
-                    "the rarest Prime Video cookies slumber beneath ancient glowing leaves.\n\n"
-                    "🌫️ <b>The forest spirits are still preparing them...</b>\n\n"
-                    "They are scarce and precious — only wanderers of sufficient level\n"
-                    "will be allowed to behold them.\n\n"
-                    "<i>Patience, dear soul... they will awaken soon.</i> ✨"
+                    "Steam accounts are released daily at **8:00 PM**.\n\n"
+                    "You can only claim them on the website during public drop.\n\n"
+                    "🔗 <b>Go to Clyde's Resource Hub</b>\n"
+                    "https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed"
                 )
-            else:  # steam
+            elif user_level <= 8:
                 msg = (
-                    "🎮 <b>Steam Accounts — Daily 8PM Drop</b>\n"
+                    "🎮 <b>Steam Accounts — Early Preview</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "High above the canopy, the Wind Spirits guard the daily Steam accounts.\n"
-                    "They descend only at 8:00 PM each night for the worthy.\n\n"
-                    "🌟 <b>Coming Soon</b>\n\n"
-                    "When you reach higher levels, the trees will grant you <b>early access</b> —\n"
-                    "allowing you to claim the account before the public drop at 8:00 PM.\n\n"
-                    "<i>The ancient oaks whisper... keep growing, and the gift shall be yours.</i> 🍃"
+                    f"🌟 Level {user_level} Wanderer\n"
+                    "You have **Early Preview** access!\n\n"
+                    "New accounts will appear here before the public drop.\n"
+                    "Stay tuned — fresh accounts coming soon!"
+                )
+            elif user_level == 9:
+                msg = (
+                    "🎮 <b>Steam Accounts — Early Preview + Sunday Double</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "🌟 Level 9 Wanderer\n"
+                    "You get Early Preview + **Sunday Double Drop**!\n\n"
+                    "Accounts appear here earlier than everyone else."
+                )
+            else:  # Level 10+
+                msg = (
+                    "🎮 <b>Steam Accounts — Legend Tier</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "👑 Legend Tier Activated!\n"
+                    "You have **priority access** to all Steam accounts.\n"
+                    "You see them first — before any other level.\n\n"
+                    "Legendary drops are loading..."
                 )
 
             await query.message.edit_caption(
