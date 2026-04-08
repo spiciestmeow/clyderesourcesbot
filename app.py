@@ -109,7 +109,7 @@ def get_back_to_inventory_keyboard():
     ])
 
 def get_back_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to the Clearing", callback_data="main_menu")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to the Hub", callback_data="main_menu")]])
 
 
 def get_first_time_menu_keyboard():
@@ -266,7 +266,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         elif action == "lore":
             stats_update["lore_reads"] = (profile.get('lore_reads') or 0) + 1
         elif action == "profile":
-            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1   # New tracking
+            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1
 
         current_total = profile.get('total_xp_earned') or 0
         stats_update["total_xp_earned"] = current_total + xp_amount
@@ -1622,7 +1622,7 @@ Use it wisely and with gratitude.
         await asyncio.sleep(1.0)
 
         text = (
-            "<b>🌿 About Clyde's Resource Hub</b>\n\n"
+            "<b>🌿 About Clyde's Forest Hub</b>\n\n"
             "This peaceful sanctuary was created to make useful digital resources easy and stress-free to access all wrapped in a calm, Studio Ghibli-inspired forest theme.\n\n"
             "You can find:\n"
             "• Windows & Office activation keys\n"
@@ -1704,7 +1704,7 @@ Use it wisely and with gratitude.
             report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n   Remaining: {item.get('remaining', 0)}\n\n"
             buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")])
 
-        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
+        buttons.append([InlineKeyboardButton("⬅️ Back to the Hub", callback_data="check_vamt")])
         kb = InlineKeyboardMarkup(buttons)
 
         # Send with GIF (this brings back the logo)
@@ -1800,12 +1800,19 @@ Use it wisely and with gratitude.
                 "• Use /clear → <b>+5 XP</b>\n"
                 "• Open Guidance or Lore → <b>+8 XP</b> (first time only)\n\n"
 
-                "<b>Items Visible in Inventory:</b>\n"
-                "• Level 1     → 1 item\n"
-                "• Level 2–3   → 2 items\n"
-                "• Level 4–5   → 4 items\n"
-                "• Level 6     → 5 items\n"
-                "• Level 7+    → All items\n\n"
+                "<b>Items Visible in Inventory:</b>\n\n"
+                "<pre>"
+                "Level     Win/Office     Netflix     Prime Video     Steam Accounts\n"
+                "────────────────────────────────────────────────────────────────\n"
+                " 1         1              1           1               Public Drop Only\n"
+                " 2–3       2              2           1–2             Public Drop Only\n"
+                " 4–5       3              2–3         2               Public Drop Only\n"
+                " 6         5              4           3               Public Drop Only\n"
+                " 7         Up to 6        Up to 5     Up to 3         Early Preview\n"
+                " 8         Up to 8        Up to 7     Up to 4         Early Preview\n"
+                " 9         Up to 10       Up to 8     Up to 5         Early Preview + Sunday Double\n"
+                "10+        Up to All      Up to All   Up to All       🌟 Legend Tier\n"
+                "</pre>\n\n"
 
                 f"<b>XP Required:</b>\n{level_req_text}\n\n"
 
