@@ -49,6 +49,9 @@ CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXd
 GUIDANCE_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 HELLO_GIF = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
 
+# ==================== DYNAMIC UPTIME ====================
+BOT_START_TIME = datetime.now(pytz.utc)
+
 # ==================== MAINTENANCE MODE ====================
 MAINTENANCE_MODE = True
 MAINTENANCE_MESSAGE = (
@@ -74,6 +77,29 @@ async def get_vamt_data():
         except Exception as e:
             print(f"🔴 Supabase Error: {e}")
             return None
+        
+# ==================== DYNAMIC UPTIME & LAST UPDATED ====================
+BOT_START_TIME = datetime.now(pytz.utc)
+
+def get_uptime():
+    """Live uptime since last restart"""
+    delta = datetime.now(pytz.utc) - BOT_START_TIME
+    days = delta.days
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+
+    if days > 0:
+        return f"{days} day{'s' if days > 1 else ''}, {hours} hour{'s' if hours > 1 else ''}"
+    elif hours > 0:
+        return f"{hours} hour{'s' if hours > 1 else ''}, {minutes} minute{'s' if minutes > 1 else ''}"
+    else:
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+def get_last_updated():
+    """Shows when the bot was last restarted (Manila time)"""
+    manila_tz = pytz.timezone('Asia/Manila')
+    local_time = BOT_START_TIME.astimezone(manila_tz)
+    return local_time.strftime("%B %d, %Y • %I:%M %p")
 
 # ==================== KEYBOARDS ====================
 def get_start_keyboard():
@@ -1223,20 +1249,16 @@ async def handle_info(chat_id):
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
-
         async with httpx.AsyncClient(timeout=12.0) as client:
-            # Total Wanderers
             total_res = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
                 headers=headers
             )
             total_users = len(total_res.json()) if total_res.status_code == 200 else 0
 
-            # Active Today - Instant
             manila_tz = pytz.timezone('Asia/Manila')
             today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
             today_utc = today_start.astimezone(pytz.utc).isoformat()
-
             active_res = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
                 headers=headers,
@@ -1244,30 +1266,22 @@ async def handle_info(chat_id):
             )
             active_today = len(active_res.json()) if active_res.status_code == 200 else 0
 
-        version = "1.3.1"
-        last_updated = "April 7, 2026"
-        uptime = "2 days, 14 hours"
+        version = "1.3.2"
 
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "🌳 The forest is thriving peacefully.\n\n"
-            f"🕒 Uptime: <b>{uptime}</b>\n"
-            f"🌱 Total Wanderers: <b>{total_users:,}</b>\n"
-            f"✨ Active Today: <b>{active_today:,}</b>\n\n"
-            f"📜 Current Version: <b>{version}</b>\n"
-            f"🌲 Last Updated: <b>{last_updated}</b>\n\n"
+            f"🕒 <b>Uptime:</b> {get_uptime()}\n"
+            f"🌱 <b>Total Wanderers:</b> {total_users:,}\n"
+            f"✨ <b>Active Today:</b> {active_today:,}\n\n"
+            f"📜 <b>Current Version:</b> {version}\n"
+            f"🔄 <b>Last Updated:</b> {get_last_updated()}\n\n"
             "⚠️ <i>For personal and educational use only.</i>\n"
             "The developer is not responsible for any misuse.\n\n"
             "Made with care by the Forest Caretaker 🍃"
         )
-
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode='HTML'
-        )
-
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
     except Exception as e:
         print(f"Info command error: {str(e)}")
         await tg_app.bot.send_message(
