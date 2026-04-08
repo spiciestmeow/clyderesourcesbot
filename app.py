@@ -1835,16 +1835,39 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
-        else:
+        else:  # page == 2
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
                 for lvl in range(2, 11)
             )
-
+            
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
-                "Gain XP as you explore. Higher levels unlock more items.\n\n"
+                "Gain XP as you explore. Higher levels unlock more items in the Inventory.\n\n"
+                
+                "<b>📊 Item Limits by Level</b>\n\n"
+                
+                "🪟 <b>Windows & Office</b>\n"
+                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
+                "• Lv6: 5 • Lv7: Up to 6 • Lv8: Up to 8\n"
+                "• Lv9: Up to 10 • Lv10+: Up to All\n\n"
+                
+                "🍿 <b>Netflix Cookies</b>\n"
+                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 2-3\n"
+                "• Lv6: 4 • Lv7: Up to 5 • Lv8: Up to 7\n"
+                "• Lv9: Up to 8 • Lv10+: Up to All\n\n"
+                
+                "🎥 <b>Prime Video Cookies</b>\n"
+                "• Lv1: 1 • Lv2-3: 1-2 • Lv4-5: 2\n"
+                "• Lv6: 3 • Lv7: Up to 3 • Lv8: Up to 4\n"
+                "• Lv9: Up to 5 • Lv10+: Up to All\n\n"
+                
+                "🎮 <b>Steam Accounts</b>\n"
+                "• Lv1-6: Public Drop Only\n"
+                "• Lv7-8: Early Preview\n"
+                "• Lv9: Early Preview + Sunday Double\n"
+                "• Lv10+: 🌟 Legend Tier\n\n"
                 
                 "<b>How to Gain XP:</b>\n"
                 "• View Win/Office Keys → <b>+6 XP</b>\n"
@@ -1852,27 +1875,17 @@ async def handle_callback(update: Update):
                 "• Reveal Netflix Cookie → <b>+10 XP</b>\n"
                 "• /profile → <b>+5 XP</b>\n"
                 "• /clear → <b>+5 XP</b>\n"
-                "• Open Guidance → <b>+8 XP</b> (only first time)\n"
-                "• Open Lore (About) → <b>+8 XP</b> (only first time)\n\n"
-                
-                "<b>Items Shown in Inventory:</b>\n"
-                "• Level 1 → 1 item\n"
-                "• Level 2–3 → 2 items\n"
-                "• Level 4–5 → 4 items\n"
-                "• Level 6 → 5 items\n"
-                "• Level 7+ → All items\n\n"
+                "• First-time Guidance or Lore → <b>+8 XP</b>\n\n"
                 
                 f"<b>Level Requirements:</b>\n"
                 f"{level_req_text}\n\n"
                 
                 "<b>Note:</b>\n"
                 "• New users start at Level 1 with 0 XP\n"
-                "• You will see a celebration when you level up\n"
-                "• Level 7 gives full access to all scrolls\n\n"
+                "• You will see a celebration when you level up\n\n"
                 
                 "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
             )
-
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
