@@ -240,6 +240,43 @@ def extract_netflix_number(item):
             pass
     return 9999
 
+# ==================== NEW: ITEM DISTRIBUTION SYSTEM ====================
+def get_max_items(category: str, level: int) -> int:
+    """Updated item limits based on your new table"""
+    level = int(level)
+
+    if category in ["win", "windows", "office"]:
+        if level == 1: return 1
+        if level <= 3: return 2
+        if level <= 5: return 3
+        if level == 6: return 5
+        if level == 7: return 6
+        if level == 8: return 8
+        if level == 9: return 10
+        return 999  # All for Level 10+
+
+    elif category == "netflix":
+        if level == 1: return 1
+        if level <= 3: return 2
+        if level <= 5: return 3
+        if level == 6: return 4
+        if level == 7: return 5
+        if level == 8: return 7
+        if level == 9: return 8
+        return 999
+
+    elif category == "prime":
+        if level == 1: return 1
+        if level <= 3: return 2
+        if level <= 5: return 2
+        if level == 6: return 3
+        if level == 7: return 3
+        if level == 8: return 4
+        if level == 9: return 5
+        return 999
+
+    return 0
+
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
     
@@ -1489,7 +1526,7 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        # ====================== STEAM ACCOUNTS ======================
+        # ====================== STEAM ACCOUNTS (New System) ======================
         if category == "steam":
             profile = await get_user_profile(chat_id)
             user_level = profile.get('level', 1) if profile else 1
@@ -1499,34 +1536,34 @@ async def handle_callback(update: Update):
                     "🎮 <b>Steam Accounts — Public Drop Only</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                     "Steam accounts are released daily at **8:00 PM**.\n\n"
-                    "You can only claim them on the website during public drop.\n\n"
-                    "🔗 <b>Go to Clyde's Resource Hub</b>\n"
+                    "At your current level, you can only claim them on the website.\n\n"
+                    "🔗 <b>Visit Clyde's Resource Hub</b>\n"
                     "https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed"
                 )
             elif user_level <= 8:
                 msg = (
                     "🎮 <b>Steam Accounts — Early Preview</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    f"🌟 Level {user_level} Wanderer\n"
-                    "You have **Early Preview** access!\n\n"
-                    "New accounts will appear here before the public drop.\n"
-                    "Stay tuned — fresh accounts coming soon!"
+                    f"🌟 Level {user_level} Wanderer\n\n"
+                    "You have **Early Preview** access!\n"
+                    "New accounts will appear here before the public drop.\n\n"
+                    "Stay tuned — fresh Steam accounts coming soon!"
                 )
             elif user_level == 9:
                 msg = (
                     "🎮 <b>Steam Accounts — Early Preview + Sunday Double</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "🌟 Level 9 Wanderer\n"
-                    "You get Early Preview + **Sunday Double Drop**!\n\n"
-                    "Accounts appear here earlier than everyone else."
+                    "🌟 Level 9 Wanderer\n\n"
+                    "You get **Early Preview** + **Sunday Double Drop**!\n"
+                    "You are ahead of everyone else."
                 )
             else:  # Level 10+
                 msg = (
                     "🎮 <b>Steam Accounts — Legend Tier</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "👑 Legend Tier Activated!\n"
+                    "👑 Legend Tier Activated!\n\n"
                     "You have **priority access** to all Steam accounts.\n"
-                    "You see them first — before any other level.\n\n"
+                    "You see and claim them before any other level.\n\n"
                     "Legendary drops are loading..."
                 )
 
@@ -1566,19 +1603,9 @@ async def handle_callback(update: Update):
             )
             return
 
-        # Old limit logic (kept unchanged)
-        if user_level == 1:
-            limit = 1
-            limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
-        elif user_level <= 3:
-            limit = 2
-            limit_note = f"🌿 At Level {user_level}, you can see up to 2 items."
-        elif user_level <= 6:
-            limit = 4 if user_level <= 5 else 5
-            limit_note = f"🌿 At Level {user_level}, you can see up to {limit} items."
-        else:
-            limit = len(filtered)
-            limit_note = "✨ You have full access to all scrolls in the forest."
+        # New item distribution
+        limit = get_max_items(category, user_level)
+        limit_note = f"🌿 At Level {user_level}, you can see up to {limit} items."
 
         # OLD (delete this line)
         # filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
