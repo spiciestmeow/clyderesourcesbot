@@ -31,12 +31,13 @@ COOLDOWN_SECONDS = {
 }
 
 MAX_ACTIONS_PER_MINUTE = 8
+NETFLIX_ITEMS_PER_PAGE = 8
 
 # ==================== CONFIG ====================
 TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-NETFLIX_ITEMS_PER_PAGE = 5   # ← Netflix items per page (you can change to 6 or 8 later)
+
 
 # ==================== GIFS ====================
 WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
