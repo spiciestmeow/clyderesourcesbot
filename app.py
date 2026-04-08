@@ -1,11 +1,13 @@
 import os
 import asyncio
+
 import html
 import httpx
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from datetime import datetime
+from collections import Counter
 import pytz
 import time
 
@@ -60,6 +62,7 @@ MAINTENANCE_MESSAGE = (
 
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
+BOT_START_TIME = datetime.now(pytz.utc)
 asyncio.set_event_loop(loop)
 
 # ==================== DATABASE ====================
@@ -163,19 +166,7 @@ async def update_has_seen_menu(chat_id):
             )
         except Exception as e:
             print(f"Failed to update has_seen_menu: {e}")
-
-    payload = {"has_seen_menu": True}
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            await client.patch(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
-                headers=headers,
-                json=payload
-            )
-        except Exception as e:
-            print(f"Failed to force set has_seen_menu: {e}")
-
+            
 def get_cumulative_xp_for_level(target_level: int) -> int:
     """Returns total XP needed to reach this level (new balanced formula)"""
     if target_level <= 1:
@@ -195,6 +186,12 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     # Global Rate Limit
     user_action_history[chat_id] = [t for t in user_action_history[chat_id] if current_time - t < 60]
+
+    # Cleanup old cooldown entries to prevent memory growth
+    xp_cooldowns[chat_id] = {
+        action: t for action, t in xp_cooldowns[chat_id].items()
+        if current_time - t < 600  # remove entries older than 10 minutes
+    }
 
     if len(user_action_history[chat_id]) >= MAX_ACTIONS_PER_MINUTE:
         if query:
@@ -604,7 +601,6 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             all_logs = all_resp.json() or []
 
-            from collections import Counter
             action_count = Counter(
                 log.get('action')
                 for log in all_logs
@@ -864,7 +860,6 @@ async def handle_stats(chat_id, first_name):
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
-# ==================== LEADERBOARD COMMAND ======================
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
     headers = {
@@ -1127,8 +1122,7 @@ async def handle_view_feedback(chat_id, user_id):
 
 # ==================== RESET FIRST-TIME EXPERIENCE (Owner Only) ======================
 async def handle_reset_first_time(chat_id):
-    if chat_id != 123456789:
-    # if chat_id != 7399488750:
+    if chat_id != 7399488750:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker can reset the forest memory."
@@ -1178,7 +1172,7 @@ async def handle_clear(chat_id, user_command_id, first_name):
                 await tg_app.bot.delete_message(chat_id, msg_id)
             except:
                 pass  # Message already deleted or doesn't exist
-        forest_memory[chat_id] = []
+        del forest_memory[chat_id]  # Remove entirely instead of leaving empty list
 
     # ====================== MAGICAL CLEARING ANIMATION ======================
     loading_msg = await tg_app.bot.send_animation(
@@ -1246,7 +1240,12 @@ async def handle_info(chat_id):
 
         version = "1.3.1"
         last_updated = "April 7, 2026"
-        uptime = "2 days, 14 hours"
+        uptime_delta = datetime.now(pytz.utc) - BOT_START_TIME
+        total_seconds = int(uptime_delta.total_seconds())
+        days = total_seconds // 86400
+        hours = (total_seconds % 86400) // 3600
+        minutes = (total_seconds % 3600) // 60
+        uptime = f"{days}d {hours}h {minutes}m"
 
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
@@ -1609,7 +1608,7 @@ Use it wisely and with gratitude.
             pass
 
         # Send the document
-        await tg_app.bot.send_document(
+        doc_msg = await tg_app.bot.send_document(
             chat_id=chat_id,
             document=file_bytes,
             caption=caption,
@@ -1618,17 +1617,22 @@ Use it wisely and with gratitude.
             filename=file_bytes.name
         )
 
+        # Track in forest_memory so /clear can delete it
+        if chat_id not in forest_memory:
+            forest_memory[chat_id] = []
+        forest_memory[chat_id].append(doc_msg.message_id)
+
         # ← NEW: Small success message after file is sent
         await asyncio.sleep(0.8)   # Small delay so it appears nicely below
         success_msg = (
-            "✨ **Cookie successfully delivered!**\n\n"
+            "✨ <b>Cookie successfully delivered!</b>\n\n"
             "🌿 The ancient scroll has been handed to you.\n"
             "May its magic serve you well, wanderer."
         )
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=success_msg,
-            parse_mode='MarkdownV2'
+            parse_mode='HTML'
         )
 
     # ====================== ABOUT (Lore) ======================
