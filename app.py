@@ -1895,7 +1895,7 @@ def webhook():
                     await tg_app.bot.send_animation(
                         chat_id=chat_id,
                         animation=HELLO_GIF,
-                        ccaption="🌿 <b>Welcome to the Forest Hub</b>\n\n"
+                        caption="🌿 <b>Welcome to the Forest Hub</b>\n\n"
                                 "To start using the resources, please tap the button below.",
                         parse_mode='HTML',
                         reply_markup=get_start_keyboard()
