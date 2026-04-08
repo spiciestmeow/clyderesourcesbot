@@ -8,6 +8,8 @@ from telegram.ext import Application
 from datetime import datetime
 import pytz
 import time
+from collections import Counter
+from io import BytesIO
 
 
 forest_memory = {}
@@ -51,11 +53,8 @@ CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXd
 GUIDANCE_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 HELLO_GIF = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
 
-# ==================== DYNAMIC UPTIME ====================
-BOT_START_TIME = datetime.now(pytz.utc)
-
 # ==================== MAINTENANCE MODE ====================
-MAINTENANCE_MODE = True
+MAINTENANCE_MODE = False
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
     "The ancient trees are resting and being prepared for new wonders...\n\n"
@@ -642,7 +641,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             all_logs = all_resp.json() or []
 
-            from collections import Counter
+
             action_count = Counter(
                 log.get('action')
                 for log in all_logs
@@ -1148,7 +1147,6 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 
     try:
         await tg_app.bot.send_message(
-            # chat_id=1234567890,
             chat_id=7399488750,
             text=owner_message,
             parse_mode='HTML'
@@ -1159,7 +1157,6 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 # ==================== VIEW FEEDBACK COMMAND (Owner Only) ======================
 async def handle_view_feedback(chat_id, user_id):
     # Security: Only you (the owner) can use this command
-    # if chat_id != 1234567890:   # Your owner chat_id
     if chat_id != 7399488750:   # Your owner chat_id
 
         await tg_app.bot.send_message(
@@ -1657,7 +1654,7 @@ async def handle_callback(update: Update):
         )
 
         # File content + filename based on real display_name
-        from io import BytesIO
+        
         file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret Netflix Cookie 🌿🍃
 ══════════════════════════════════════════════════════════════
 🌳 Cookie Spirit Awakened
@@ -1912,8 +1909,7 @@ def webhook():
         update = Update.de_json(update_data, tg_app.bot)
 
         # ==================== MAINTENANCE MODE ====================
-        MAINTENANCE_MODE = False
-        OWNER_CHAT_ID = 1234567890
+        OWNER_CHAT_ID = 7399488750
 
         if MAINTENANCE_MODE:
             chat_id = None
@@ -2001,34 +1997,8 @@ def webhook():
                 await handle_reset_first_time(chat_id)
 
         elif update.callback_query:
-            query = update.callback_query
-            chat_id = update.effective_chat.id
-            first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
-
-            # === Allow Enter button for unregistered users ===
-            if query.data in ["show_main_menu", "main_menu"]:
-                await handle_callback(update)
-                return
-
-            # === Enforce registration for all other buttons ===
-            profile = await get_user_profile(chat_id)
-            if not profile:
-                await tg_app.bot.send_animation(
-                    chat_id=chat_id,
-                    animation=HELLO_GIF,
-                    caption =
-                        "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
-                        "The ancient trees watch you with quiet curiosity.\n\n"
-                        "To step into the Enchanted Clearing and discover its magic,\n"
-                        "please press the button below.\n\n"
-                        "<i>The forest is ready to welcome you.</i> 🍃✨",
-                    parse_mode='HTML',
-                    reply_markup=get_start_keyboard()
-                )
-                return
-
-            # Registered user → normal handling
             await handle_callback(update)
+            
     try: loop.run_until_complete(process_update())
     except Exception as e: print(f"🔴 Webhook Error: {e}")
     return "OK", 200
