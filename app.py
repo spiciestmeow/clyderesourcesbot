@@ -1894,15 +1894,6 @@ def webhook():
     if not update_data:
         return "No data", 400
 
-@app.route('/', methods=['GET', 'POST'])
-def webhook():
-    if request.method == 'GET':
-        return "🌿 Clyde's Enchanted Clearing is awake.", 200
-
-    update_data = request.get_json(silent=True)
-    if not update_data:
-        return "No data", 400
-
     # ====================== PROCESS UPDATE ======================
     async def process_update():
         try:
