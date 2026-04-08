@@ -98,7 +98,7 @@ tg_app = Application.builder().token(TOKEN).build()
 tg_app.add_error_handler(global_error_handler)
 
 # loop = asyncio.new_event_loop()
-# BOT_START_TIME = datetime.now(pytz.utc)
+BOT_START_TIME = datetime.now(pytz.utc)
 # asyncio.set_event_loop(loop)
 
 # ==================== DATABASE ====================
@@ -1890,9 +1890,9 @@ async def process_update(update_data: dict):
     try:
         update = Update.de_json(update_data, tg_app.bot)
 
-        # MAINTENANCE MODE
         global MAINTENANCE_MODE
         OWNER_CHAT_ID = 7399488750
+
         if MAINTENANCE_MODE:
             chat_id = None
             if update.effective_chat:
@@ -1910,7 +1910,6 @@ async def process_update(update_data: dict):
                     pass
                 return
 
-        # Normal processing
         if update.message and update.message.text:
             await handle_text_message(update)
         elif update.callback_query:
