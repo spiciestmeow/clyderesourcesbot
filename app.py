@@ -975,7 +975,7 @@ async def show_netflix_list(chat_id: int, query, page: int = 0):
         report += f"✨ <b>{display_name}</b>\n"
         report += f" Status: {status_text}\n"
         report += f" Remaining: {item.get('remaining', 0)}\n\n"
-        buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}")])
+        buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}|{page}")])
 
     nav_buttons = []
     if page > 0:
@@ -1692,8 +1692,15 @@ Guard it well, wanderer.
         file_bytes = BytesIO(file_content.encode('utf-8'))
         file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
 
+        # Parse the page from callback_data (format: reveal_nf|idx|page)
+        try:
+            _, idx_str, current_page = query.data.split("|")
+            current_page = int(current_page)
+        except:
+            current_page = 0
+
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
+            [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data=f"back_to_netflix_list|{current_page}")]
         ])
 
         try:
@@ -1770,11 +1777,21 @@ Guard it well, wanderer.
         forest_memory[chat_id].append(final_msg.message_id)
 
     # ====================== BACK TO NETFLIX LIST ======================
-    elif query.data == "back_to_netflix_list":
+    elif query.data.startswith("back_to_netflix_list"):
         try:
             await query.message.delete()
         except:
             pass
+
+        # Get the saved page number (default to 0 if not provided)
+        if "|" in query.data:
+            try:
+                page = int(query.data.split("|")[1])
+            except:
+                page = 0
+        else:
+            page = 0
+
         loading_msg = await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=INVENTORY_GIF,
@@ -1783,7 +1800,7 @@ Guard it well, wanderer.
         )
         class FakeQuery:
             message = loading_msg
-        await show_netflix_list(chat_id, FakeQuery(), page=0)
+        await show_netflix_list(chat_id, FakeQuery(), page=page)
         return
 
     # ====================== HELP (Guidance) - 2 Pages ======================
