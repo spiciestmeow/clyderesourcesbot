@@ -9,6 +9,8 @@ from datetime import datetime
 import pytz
 import time
 
+import sys
+from dotenv import load_dotenv
 
 forest_memory = {}
 app = Flask(__name__)
@@ -31,6 +33,9 @@ COOLDOWN_SECONDS = {
 }
 
 MAX_ACTIONS_PER_MINUTE = 8
+
+# ==================== BOT UPTIME TRACKING ====================
+BOT_START_TIME = time.time()  # Captured the exact moment the bot started
 
 # ==================== CONFIG ====================
 TOKEN = os.getenv("BOT_TOKEN")
@@ -61,6 +66,23 @@ MAINTENANCE_MESSAGE = (
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+
+# ==================== GET UPTIME REALTIME ====================
+def get_bot_uptime() -> str:
+    """Return beautiful, human-readable uptime of the bot process"""
+    seconds = int(time.time() - BOT_START_TIME)
+    
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+
+    if days > 0:
+        return f"{days} day{'s' if days != 1 else ''}, {hours} hour{'s' if hours != 1 else ''}"
+    elif hours > 0:
+        return f"{hours} hour{'s' if hours != 1 else ''}, {minutes} minute{'s' if minutes != 1 else ''}"
+    else:
+        return f"{minutes} minute{'s' if minutes != 1 else ''}, {secs} second{'s' if secs != 1 else ''}"
 
 # ==================== DATABASE ====================
 async def get_vamt_data():
@@ -1246,8 +1268,8 @@ async def handle_info(chat_id):
 
         version = "1.3.1"
         last_updated = "April 7, 2026"
-        uptime = "2 days, 14 hours"
-
+        uptime = get_bot_uptime()
+        
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1873,11 +1895,11 @@ Use it wisely and with gratitude.
                 await update_has_seen_menu(chat_id)
         
 # ==================== WEBHOOK ====================
-async def start_tg_app():
-    await tg_app.initialize()
-    await tg_app.start()
+# async def start_tg_app():
+#     await tg_app.initialize()
+#     await tg_app.start()
 
-loop.run_until_complete(start_tg_app())
+# loop.run_until_complete(start_tg_app())
 
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
@@ -2009,5 +2031,21 @@ def webhook():
     except Exception as e: print(f"🔴 Webhook Error: {e}")
     return "OK", 200
 
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # ==================== LOCAL TESTING (Polling) ====================
+    if len(sys.argv) > 1 and sys.argv[1] == "poll":
+        print("🌿 Bot started in LOCAL POLLING mode...")
+        print("✅ Open Telegram and type /forest to test live uptime!")
+        tg_app.run_polling(drop_pending_updates=True)
+
+    # ==================== VERCEL / PRODUCTION (Webhook) ====================
+    else:
+        print("🌿 Running in WEBHOOK mode (for Vercel)")
+        # Start the bot properly for webhook
+        async def start_bot():
+            await tg_app.initialize()
+            await tg_app.start()
+        loop.run_until_complete(start_bot())
+        
+        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
