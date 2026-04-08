@@ -2,45 +2,38 @@ import os
 import asyncio
 import html
 import httpx
+import traceback
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application
+from telegram.ext import Application, ContextTypes
 from datetime import datetime
 from collections import Counter
 import pytz
 import time
-import traceback
-from telegram.ext import ContextTypes
-
-import traceback
-from telegram.ext import ContextTypes
 
 # ==================== GLOBAL ERROR HANDLER ====================
 async def global_error_handler(update: object, context):
-    """Tracks ALL errors - prints to Vercel Logs + sends notification to your private chat"""
+    """Tracks ALL errors - prints to Vercel + sends to your private chat"""
     
     error = context.error
     error_type = type(error).__name__
     error_msg = str(error)
-    
-    # Get full traceback
     tb_string = "".join(traceback.format_exception(None, error, error.__traceback__))
 
-    # === 1. Print to Vercel Logs (This is very important) ===
+    # Print to Vercel Logs
     print(f"🔴 ERROR: {error_type} | {error_msg}")
     print("─" * 80)
     print(tb_string)
     print("─" * 80)
 
-    # === 2. Send notification to your private Telegram ===
+    # Send to your private chat
     OWNER_CHAT_ID = 7399488750
-
     notification = (
         f"🔴 <b>Forest Hub Error Detected</b>\n\n"
         f"<b>Type:</b> {error_type}\n"
         f"<b>Message:</b> {html.escape(error_msg)}\n\n"
         f"<b>Time:</b> {datetime.now(pytz.timezone('Asia/Manila')).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        f"<pre>{html.escape(tb_string[-3000:])}</pre>"   # Truncated safely
+        f"<pre>{html.escape(tb_string[-3000:])}</pre>"
     )
 
     try:
@@ -50,7 +43,7 @@ async def global_error_handler(update: object, context):
             parse_mode='HTML'
         )
     except Exception as send_err:
-        print(f"Failed to send error notification to Telegram: {send_err}")
+        print(f"Failed to send error notification: {send_err}")
 
 forest_memory = {}
 app = Flask(__name__)
@@ -1893,47 +1886,113 @@ loop.run_until_complete(start_tg_app())
 
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
-    if request.method == 'GET': return "🌿 Clyde's Enchanted Clearing is awake.", 200
+    if request.method == 'GET':
+        return "🌿 Clyde's Enchanted Clearing is awake.", 200
+
     update_data = request.get_json(silent=True)
-    if not update_data: return "No data", 400
+    if not update_data:
+        return "No data", 400
 
     async def process_update():
-        update = Update.de_json(update_data, tg_app.bot)
+        try:
+            update = Update.de_json(update_data, tg_app.bot)
 
-        # ==================== MAINTENANCE MODE ====================
-        MAINTENANCE_MODE = True
-        OWNER_CHAT_ID = 1234567890
+            # ==================== MAINTENANCE MODE ====================
+            MAINTENANCE_MODE = True
+            OWNER_CHAT_ID = 7399488750
 
-        if MAINTENANCE_MODE:
-            chat_id = None
-            if update.effective_chat:
+            if MAINTENANCE_MODE:
+                chat_id = None
+                if update.effective_chat:
+                    chat_id = update.effective_chat.id
+                elif update.callback_query and update.callback_query.message:
+                    chat_id = update.callback_query.message.chat.id
+                if chat_id and chat_id != OWNER_CHAT_ID:
+                    try:
+                        if update.message:
+                            await tg_app.bot.send_message(chat_id=chat_id, text=MAINTENANCE_MESSAGE, parse_mode='HTML')
+                        elif update.callback_query:
+                            await update.callback_query.answer("🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!", show_alert=True)
+                    except:
+                        pass
+                    return
+
+            # ==================== NORMAL PROCESSING ====================
+            if update.message and update.message.text:
+                text = update.message.text.lower().strip()
                 chat_id = update.effective_chat.id
-            elif update.callback_query and update.callback_query.message:
-                chat_id = update.callback_query.message.chat.id
+                user_msg_id = update.message.message_id
+                name = update.effective_user.first_name if update.effective_user else "Traveler"
 
-            if chat_id and chat_id != OWNER_CHAT_ID:
-                try:
-                    if update.message:
-                        await tg_app.bot.send_message(chat_id=chat_id, text=MAINTENANCE_MESSAGE, parse_mode='HTML')
-                    elif update.callback_query:
-                        await update.callback_query.answer("🌿 The Enchanted Clearing is under maintenance.\nPlease come back later!", show_alert=True)
-                except:
-                    pass
-                return
+                if chat_id not in forest_memory:
+                    forest_memory[chat_id] = []
+                forest_memory[chat_id].append(user_msg_id)
 
-        # ==================== NORMAL PROCESSING ====================
-        if update.message and update.message.text:
-            text = update.message.text.lower().strip()
-            chat_id = update.effective_chat.id
-            user_msg_id = update.message.message_id
-            name = update.effective_user.first_name if update.effective_user else "Traveler"
+                # Registration check
+                if not text.startswith("/start"):
+                    profile = await get_user_profile(chat_id)
+                    if not profile:
+                        await tg_app.bot.send_animation(
+                            chat_id=chat_id,
+                            animation=HELLO_GIF,
+                            caption="🌿 <b>Welcome to the Forest Hub</b>\n\n"
+                                    "To start using the resources, please tap the button below.",
+                            parse_mode='HTML',
+                            reply_markup=get_start_keyboard()
+                        )
+                        return
 
-            if chat_id not in forest_memory:
-                forest_memory[chat_id] = []
-            forest_memory[chat_id].append(user_msg_id)
+                await update_last_active(chat_id)
 
-            # === STRICT REGISTRATION CHECK ===
-            if not text.startswith("/start"):
+                # Command handlers
+                if text.startswith("/start"):
+                    await send_initial_welcome(chat_id, name)
+                elif text.startswith("/forest"):
+                    await handle_info(chat_id)
+                elif text.startswith("/testerror"):
+                    1 / 0  # For testing error handler
+                elif text.startswith("/history"):
+                    await handle_history(chat_id, name)
+                elif text.startswith("/leaderboard"):
+                    await handle_leaderboard(chat_id)
+                elif text.startswith("/profile"):
+                    await handle_profile(chat_id, name)
+                elif text.startswith("/mystats"):
+                    await handle_stats(chat_id, name)
+                elif text.startswith("/menu"):
+                    profile = await get_user_profile(chat_id)
+                    is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
+                    await send_full_menu(chat_id, name, is_first_time=is_first)
+                elif text.startswith("/myid"):
+                    await send_myid(chat_id)
+                elif text.startswith("/clear"):
+                    await handle_clear(chat_id, user_msg_id, name)
+                elif text.startswith("/feedback"):
+                    feedback_text = text.replace("/feedback", "").strip()
+                    if feedback_text:
+                        await handle_feedback(chat_id, name, feedback_text)
+                    else:
+                        await tg_app.bot.send_message(
+                            chat_id=chat_id,
+                            text="🌿 Please write your feedback after the /feedback command."
+                        )
+                elif text.startswith("/viewfeedback") or text.startswith("/feedbacks"):
+                    await handle_view_feedback(
+                        chat_id,
+                        update.effective_user.id if update.effective_user else None
+                    )
+                elif text.startswith("/resetfirst") or text.startswith("/reset"):
+                    await handle_reset_first_time(chat_id)
+
+            elif update.callback_query:
+                query = update.callback_query
+                chat_id = update.effective_chat.id
+                first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
+
+                if query.data in ["show_main_menu", "main_menu"]:
+                    await handle_callback(update)
+                    return
+
                 profile = await get_user_profile(chat_id)
                 if not profile:
                     await tg_app.bot.send_animation(
@@ -1946,82 +2005,21 @@ def webhook():
                     )
                     return
 
-            # Update last_active for returning users on any text command
-            await update_last_active(chat_id)
-
-            # Command handlers
-            if text.startswith("/start"):
-                await send_initial_welcome(chat_id, name)
-            elif text.startswith("/forest"):
-                await handle_info(chat_id)
-            elif text.startswith("/testerror"):
-                # This will intentionally trigger an error
-                1 / 0   # ZeroDivisionError
-            elif text.startswith("/history"):
-                await handle_history(chat_id, name)
-            elif text.startswith("/leaderboard"):
-                await handle_leaderboard(chat_id)
-            elif text.startswith("/profile"):
-                await handle_profile(chat_id, name)
-            elif text.startswith("/mystats"):
-                await handle_stats(chat_id, name)
-            elif text.startswith("/menu"):
-                profile = await get_user_profile(chat_id)
-                is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
-                await send_full_menu(chat_id, name, is_first_time=is_first)
-            elif text.startswith("/myid"):
-                await send_myid(chat_id)
-            elif text.startswith("/clear"):
-                await handle_clear(chat_id, user_msg_id, name)
-            elif text.startswith("/feedback"):
-                feedback_text = text.replace("/feedback", "").strip()
-                if feedback_text:
-                    await handle_feedback(chat_id, name, feedback_text)
-                else:
-                    await tg_app.bot.send_message(
-                        chat_id=chat_id,
-                        text="🌿 Please write your feedback after the /feedback command.\n\n"
-                             "Example: `/feedback I really like the immersive captions!`"
-                    )
-            elif text.startswith("/viewfeedback") or text.startswith("/feedbacks"):
-                await handle_view_feedback(
-                    chat_id,
-                    update.effective_user.id if update.effective_user else None
-                )
-            elif text.startswith("/resetfirst") or text.startswith("/reset"):
-                await handle_reset_first_time(chat_id)
-
-        elif update.callback_query:
-            query = update.callback_query
-            chat_id = update.effective_chat.id
-            first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
-
-            # === Allow Enter button for unregistered users ===
-            if query.data in ["show_main_menu", "main_menu"]:
                 await handle_callback(update)
-                return
 
-            # === Enforce registration for all other buttons ===
-            profile = await get_user_profile(chat_id)
-            if not profile:
-                await tg_app.bot.send_animation(
-                    chat_id=chat_id,
-                    animation=HELLO_GIF,
-                    caption="🌿 <b>Welcome to the Forest Hub</b>\n\n"
-                            "To start using the resources, please tap the button below.",
-                    parse_mode='HTML',
-                    reply_markup=get_start_keyboard()
-                )
-                return
+        except Exception as e:
+            print(f"🔴 ERROR in process_update: {type(e).__name__} - {e}")
+            print(traceback.format_exc())
 
-            # Registered user → normal handling
-            await handle_callback(update)
+    # Run the async function safely
     try:
         loop.run_until_complete(process_update())
     except Exception as e:
         print(f"🔴 CRITICAL WEBHOOK ERROR: {type(e).__name__} - {e}")
         print(traceback.format_exc())
-        return "OK", 200
+
+    # ←←← THIS LINE IS VERY IMPORTANT ←←←
+    return "OK", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
