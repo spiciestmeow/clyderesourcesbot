@@ -15,6 +15,10 @@ from io import BytesIO
 forest_memory = {}
 app = Flask(__name__)
 
+# ==================== GLOBAL CACHE FOR VAMT DATA ====================
+vamt_cache = None
+vamt_cache_time = 0
+CACHE_TTL = 60
 
 # ==================== ANTI-XP ABUSE ====================
 xp_cooldowns = {}
@@ -66,18 +70,34 @@ tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-# ==================== DATABASE ====================
+# ==================== DATABASE (WITH CACHING) ====================
 async def get_vamt_data():
+    """Cached version - much faster for Netflix list"""
+    global vamt_cache, vamt_cache_time
+    
+    current_time = time.time()
+    
+    # Check if we have fresh cache
+    if vamt_cache and (current_time - vamt_cache_time < CACHE_TTL):
+        print("⚡ [CACHE] Using cached Netflix data")
+        return vamt_cache
+
+    # No cache or cache expired → fetch from Supabase
+    print("📡 [SUPABASE] Fetching fresh Netflix data...")
+    
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     async with httpx.AsyncClient(timeout=15.0) as client:
-        url = f"{SUPABASE_URL}/rest/v1/vamt_keys?select=*&order=service_type.asc"
         try:
+            url = f"{SUPABASE_URL}/rest/v1/vamt_keys?select=*&order=service_type.asc"
             response = await client.get(url, headers=headers)
             response.raise_for_status()
-            return response.json()
+            vamt_cache = response.json()
+            vamt_cache_time = current_time
+            print(f"✅ [SUPABASE] Successfully loaded {len(vamt_cache)} items")
+            return vamt_cache
         except Exception as e:
             print(f"🔴 Supabase Error: {e}")
-            return None
+            return vamt_cache if vamt_cache is not None else None
         
 # ==================== DYNAMIC UPTIME & LAST UPDATED ====================
 BOT_START_TIME = datetime.now(pytz.utc)
@@ -1157,8 +1177,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 # ==================== VIEW FEEDBACK COMMAND (Owner Only) ======================
 async def handle_view_feedback(chat_id, user_id):
     # Security: Only you (the owner) can use this command
-    if chat_id != 7399488750:   # Your owner chat_id
-
+    if chat_id != 7399488750:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker of the forest can view the feedback scrolls."
@@ -1230,8 +1249,7 @@ async def handle_view_feedback(chat_id, user_id):
 
 # ==================== RESET FIRST-TIME EXPERIENCE (Owner Only) ======================
 async def handle_reset_first_time(chat_id):
-    if chat_id != 123456789:
-    # if chat_id != 7399488750:
+    if chat_id != 7399488750:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker can reset the forest memory."
