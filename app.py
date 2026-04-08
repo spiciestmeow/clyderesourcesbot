@@ -277,6 +277,163 @@ def get_max_items(category: str, level: int) -> int:
 
     return 0
 
+# ==================== REUSABLE COOKIE SYSTEM (Netflix + PrimeVideo) ====================
+async def show_paginated_cookie_list(service_type: str, chat_id: int, query, page: int = 0):
+    """Reusable paginated list for any cookie type"""
+    profile = await get_user_profile(chat_id)
+    user_level = profile.get('level', 1) if profile else 1
+    max_items = get_max_items(service_type, user_level)
+
+    title = "Netflix" if service_type == "netflix" else "PrimeVideo"
+    emoji = "🍿" if service_type == "netflix" else "🎥"
+
+    # Beautiful limit note
+    if user_level == 1:
+        limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
+    elif user_level <= 3:
+        limit_note = f"🌿 Level {user_level} → Up to {max_items} {title} cookies"
+    elif user_level <= 5:
+        limit_note = f"🌿 Level {user_level} → Up to {max_items} {title} cookies"
+    elif user_level == 6:
+        limit_note = f"🌲 Level 6 → Up to {max_items} {title} cookies"
+    elif user_level == 7:
+        limit_note = f"🌟 Level 7 → Early Preview (Up to {max_items} cookies)"
+    elif user_level == 8:
+        limit_note = f"🌟 Level 8 → Early Preview (Up to {max_items} cookies)"
+    elif user_level == 9:
+        limit_note = f"🌟 Level 9 → Early Preview + Sunday Double (Up to {max_items} cookies)"
+    else:
+        limit_note = f"👑 Legend Tier → Full access to all {title} cookies"
+
+    data = await get_vamt_data()
+    if not data:
+        await query.message.edit_caption(
+            caption="🌫️ The mist is too thick... Database connection failed.",
+            reply_markup=get_back_to_inventory_keyboard()
+        )
+        return
+
+    filtered = [item for item in data if service_type in str(item.get('service_type', '')).lower()]
+    filtered.sort(key=extract_netflix_number if service_type == "netflix" else lambda x: str(x.get('display_name', '')))
+
+    total_items = min(len(filtered), max_items)
+    filtered = filtered[:max_items]
+
+    start = page * NETFLIX_ITEMS_PER_PAGE
+    end = start + NETFLIX_ITEMS_PER_PAGE
+    page_items = filtered[start:end]
+
+    total_pages = (total_items + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
+
+    report = (
+        f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 <b>{total_items} Cookies Resting in the Glade</b>\n"
+        f"{limit_note}\n"
+        f"📄 Page {page + 1} of {total_pages}\n\n"
+        "<i>Which one whispers to your spirit?</i>\n\n"
+    )
+
+    buttons = []
+    for idx, item in enumerate(page_items, start=start + 1):
+        display_name = str(item.get('display_name', f'{title} Cookie {idx}')).strip()
+        status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
+        report += f"✨ <b>{display_name}</b>\n Status: {status_text}\n Remaining: {item.get('remaining', 0)}\n\n"
+        buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_{service_type}|{idx}|{page}")])
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"{service_type}_page_{page-1}"))
+    if end < total_items:
+        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"{service_type}_page_{page+1}"))
+    if nav_buttons:
+        buttons.append(nav_buttons)
+
+    buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
+
+    kb = InlineKeyboardMarkup(buttons)
+    await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+
+
+async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
+    """Reusable reveal function for any cookie type"""
+    emoji = "🍿" if service_type == "netflix" else "🎥"
+    await query.message.edit_caption(caption=f"{emoji} <i>Searching deep within the glowing glade...</i>", parse_mode='HTML')
+    await asyncio.sleep(1.3)
+    await query.message.edit_caption(caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...", parse_mode='HTML')
+    await asyncio.sleep(1.5)
+
+    profile = await get_user_profile(chat_id)
+    user_level = profile.get('level', 1) if profile else 1
+    limit = get_max_items(service_type, user_level)
+
+    data = await get_vamt_data()
+    filtered = [item for item in data if service_type in str(item.get('service_type', '')).lower()]
+    filtered.sort(key=extract_netflix_number if service_type == "netflix" else lambda x: str(x.get('display_name', '')))
+
+    if idx < 1 or idx > len(filtered[:limit]):
+        await query.answer("❌ Cookie not found", show_alert=True)
+        return
+
+    item = filtered[idx - 1]
+    cookie = str(item.get('key_id', '')).strip()
+    display_name = str(item.get('display_name', f'{service_type.title()} Cookie {idx}')).strip()
+    status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
+
+    # Now we pass first_name correctly
+    await add_xp(chat_id, first_name, "reveal_netflix", query=query)
+
+    caption = (
+        f"📄 **{display_name.replace(' ', '_')}\\.txt**\n\n"
+        f"{emoji} **{display_name} Revealed**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🌿 Status: **{status}**\n"
+        f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
+        "📥 The forest has wrapped your cookie in an ancient scroll\\.\n"
+        "_Tap the file below to receive its magic\\._ 🍃"
+    )
+
+    file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret {service_type.title()} Cookie 🌿🍃
+══════════════════════════════════════════════════════════════
+🌳 Cookie Spirit Awakened
+Name     : {display_name}
+Status   : {status}
+Remaining: {item.get('remaining', 0)} uses
+Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
+🌲 Guard it well, wanderer.
+══════════════════════════════════════════════════════════════
+{cookie}
+══════════════════════════════════════════════════════════════
+🍃 May this cookie bring you peaceful streams.
+— The Caretaker of the Enchanted Clearing 🌿
+"""
+    file_bytes = BytesIO(file_content.encode('utf-8'))
+    file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"⬅️ Back to {service_type.title()} Cookies", callback_data=f"back_to_{service_type}_list|{page}")]
+    ])
+
+    try:
+        await query.message.delete()
+    except:
+        pass
+
+    await tg_app.bot.send_document(
+        chat_id=chat_id,
+        document=file_bytes,
+        caption=caption,
+        parse_mode='MarkdownV2',
+        reply_markup=kb,
+        filename=file_bytes.name
+    )
+    await asyncio.sleep(0.8)
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=f"✨ **{service_type.title()} cookie successfully delivered!**",
+        parse_mode='MarkdownV2'
+    )
+
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
     
@@ -957,159 +1114,6 @@ async def handle_stats(chat_id, first_name):
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
-
-# ==================== NEW: PAGINATED NETFLIX LIST ====================
-async def show_netflix_list(chat_id: int, query, page: int = 0):
-    """Paginated Netflix list with exact new distribution"""
-    profile = await get_user_profile(chat_id)
-    user_level = profile.get('level', 1) if profile else 1
-    max_items = get_max_items("netflix", user_level)
-
-    # Beautiful limit notes matching your table
-    if user_level == 1:
-        limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
-    elif user_level <= 3:
-        limit_note = f"🌿 Level {user_level} → Up to {max_items} Netflix cookies"
-    elif user_level <= 5:
-        limit_note = f"🌿 Level {user_level} → Up to {max_items} Netflix cookies"
-    elif user_level == 6:
-        limit_note = "🌲 Level 6 → Up to 4 Netflix cookies"
-    elif user_level == 7:
-        limit_note = "🌟 Level 7 → Early Preview (Up to 5 cookies)"
-    elif user_level == 8:
-        limit_note = "🌟 Level 8 → Early Preview (Up to 7 cookies)"
-    elif user_level == 9:
-        limit_note = "🌟 Level 9 → Early Preview + Sunday Double (Up to 8 cookies)"
-    else:
-        limit_note = "👑 Legend Tier → Full access to all Netflix cookies"
-
-    data = await get_vamt_data()
-    if not data:
-        await query.message.edit_caption(
-            caption="🌫️ The mist is too thick... Database connection failed.",
-            reply_markup=get_back_to_inventory_keyboard()
-        )
-        return
-
-    filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-    filtered.sort(key=extract_netflix_number)
-
-    total_items = min(len(filtered), max_items)
-    filtered = filtered[:max_items]
-
-    start = page * NETFLIX_ITEMS_PER_PAGE
-    end = start + NETFLIX_ITEMS_PER_PAGE
-    page_items = filtered[start:end]
-
-    total_pages = (total_items + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
-
-    report = (
-        "<b>🍿 Secret Netflix Cookies of the Forest</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"📦 <b>{total_items} Cookies Resting in the Glade</b>\n"
-        f"{limit_note}\n"
-        f"📄 Page {page + 1} of {total_pages}\n\n"
-        "<i>Which one whispers to your spirit?</i>\n\n"
-    )
-
-    buttons = []
-    for idx, item in enumerate(page_items, start=start + 1):
-        display_name = str(item.get('display_name', f'Netflix Cookie {idx}')).strip()
-        status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-        report += f"✨ <b>{display_name}</b>\n"
-        report += f" Status: {status_text}\n"
-        report += f" Remaining: {item.get('remaining', 0)}\n\n"
-        buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{idx}|{page}")])
-
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"netflix_page_{page-1}"))
-    if end < total_items:
-        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"netflix_page_{page+1}"))
-    if nav_buttons:
-        buttons.append(nav_buttons)
-
-    buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-
-    kb = InlineKeyboardMarkup(buttons)
-    await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
-
-
-# ==================== NEW: PAGINATED PRIMEVIDEO LIST ====================
-async def show_prime_list(chat_id: int, query, page: int = 0):
-    """Paginated PrimeVideo list - exactly like Netflix"""
-    profile = await get_user_profile(chat_id)
-    user_level = profile.get('level', 1) if profile else 1
-    max_items = get_max_items("prime", user_level)
-
-    # Beautiful limit notes (matching your table)
-    if user_level == 1:
-        limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
-    elif user_level <= 3:
-        limit_note = f"🌿 Level {user_level} → Up to {max_items} PrimeVideo cookies"
-    elif user_level <= 5:
-        limit_note = f"🌿 Level {user_level} → Up to {max_items} PrimeVideo cookies"
-    elif user_level == 6:
-        limit_note = "🌲 Level 6 → Up to 3 PrimeVideo cookies"
-    elif user_level == 7:
-        limit_note = "🌟 Level 7 → Early Preview (Up to 3 cookies)"
-    elif user_level == 8:
-        limit_note = "🌟 Level 8 → Early Preview (Up to 4 cookies)"
-    elif user_level == 9:
-        limit_note = "🌟 Level 9 → Early Preview + Sunday Double (Up to 5 cookies)"
-    else:
-        limit_note = "👑 Legend Tier → Full access to all PrimeVideo cookies"
-
-    data = await get_vamt_data()
-    if not data:
-        await query.message.edit_caption(
-            caption="🌫️ The mist is too thick... Database connection failed.",
-            reply_markup=get_back_to_inventory_keyboard()
-        )
-        return
-
-    filtered = [item for item in data if "prime" in str(item.get('service_type', '')).lower()]
-    filtered.sort(key=lambda x: str(x.get('display_name', '')))
-
-    total_items = min(len(filtered), max_items)
-    filtered = filtered[:max_items]
-
-    start = page * NETFLIX_ITEMS_PER_PAGE
-    end = start + NETFLIX_ITEMS_PER_PAGE
-    page_items = filtered[start:end]
-
-    total_pages = (total_items + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
-
-    report = (
-        "<b>🎥 PrimeVideo Premium Cookies</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"📦 <b>{total_items} Cookies Resting in the Glade</b>\n"
-        f"{limit_note}\n"
-        f"📄 Page {page + 1} of {total_pages}\n\n"
-        "<i>Which one whispers to your spirit?</i>\n\n"
-    )
-
-    buttons = []
-    for idx, item in enumerate(page_items, start=start + 1):
-        display_name = str(item.get('display_name', f'PrimeVideo Cookie {idx}')).strip()
-        status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-        report += f"✨ <b>{display_name}</b>\n"
-        report += f" Status: {status_text}\n"
-        report += f" Remaining: {item.get('remaining', 0)}\n\n"
-        buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_prime|{idx}|{page}")])
-
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"prime_page_{page-1}"))
-    if end < total_items:
-        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"prime_page_{page+1}"))
-    if nav_buttons:
-        buttons.append(nav_buttons)
-
-    buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-
-    kb = InlineKeyboardMarkup(buttons)
-    await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
     
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
@@ -1596,7 +1600,7 @@ async def handle_callback(update: Update):
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "").lower()
 
-        # Give XP only for working categories
+        # Give XP
         if category in ["win", "windows"]:
             await add_xp(chat_id, first_name, "view_windows", query=query)
         elif category == "office":
@@ -1609,63 +1613,38 @@ async def handle_callback(update: Update):
             parse_mode='HTML'
         )
 
-        # ====================== STEAM ACCOUNTS ======================
+        # ====================== STEAM ======================
         if category == "steam":
             profile = await get_user_profile(chat_id)
             user_level = profile.get('level', 1) if profile else 1
-
             if user_level <= 6:
-                msg = (
-                    "🎮 <b>Steam Accounts — Public Drop Only</b>\n"
-                    "━━━━━━━━━━━━━━━━━━\n\n"
-                    "Steam accounts are released daily at <b>8:00 PM</b>.\n\n"
-                    "At your current level, you can only claim them on the website.\n\n"
-                    "🔗 <b>Visit Clyde's Resource Hub</b>\n"
-                    "https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed"
-                )
+                msg = ("🎮 <b>Steam Accounts — Public Drop Only</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+                       "Steam accounts are released daily at <b>8:00 PM</b>.\n\n"
+                       "At your current level, you can only claim them on the website.\n\n"
+                       "🔗 <b>Visit Clyde's Resource Hub</b>\nhttps://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed")
             elif user_level <= 8:
-                msg = (
-                    "🎮 <b>Steam Accounts — Early Preview</b>\n"
-                    "━━━━━━━━━━━━━━━━━━\n\n"
-                    f"🌟 Level {user_level} Wanderer\n\n"
-                    "You have <b>Early Preview</b> access!\n"
-                    "New accounts will appear here before the public drop.\n\n"
-                    "Stay tuned — fresh Steam accounts coming soon!"
-                )
+                msg = ("🎮 <b>Steam Accounts — Early Preview</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+                       f"🌟 Level {user_level} Wanderer\n\nYou have <b>Early Preview</b> access!")
             elif user_level == 9:
-                msg = (
-                    "🎮 <b>Steam Accounts — Early Preview + Sunday Double</b>\n"
-                    "━━━━━━━━━━━━━━━━━━\n\n"
-                    "🌟 Level 9 Wanderer\n\n"
-                    "You get <b>Early Preview</b> + <b>Sunday Double Drop</b>!\n"
-                    "You are ahead of everyone else."
-                )
-            else:  # Level 10+
-                msg = (
-                    "🎮 <b>Steam Accounts — Legend Tier</b>\n"
-                    "━━━━━━━━━━━━━━━━━━\n\n"
-                    "👑 Legend Tier Activated!\n\n"
-                    "You have <b>priority access</b> to all Steam accounts.\n"
-                    "You see and claim them before any other level.\n\n"
-                    "Legendary drops are loading..."
-                )
-
-            await query.message.edit_caption(
-                caption=msg,
-                parse_mode='HTML',
-                reply_markup=get_back_to_inventory_keyboard()
-            )
+                msg = ("🎮 <b>Steam Accounts — Early Preview + Sunday Double</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+                       "🌟 Level 9 Wanderer\n\nYou get <b>Early Preview</b> + <b>Sunday Double Drop</b>!")
+            else:
+                msg = ("🎮 <b>Steam Accounts — Legend Tier</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+                       "👑 Legend Tier Activated!\nYou have priority access to all Steam accounts.")
+            await query.message.edit_caption(caption=msg, parse_mode='HTML', reply_markup=get_back_to_inventory_keyboard())
             return
 
-        # ====================== WINDOWS, OFFICE, NETFLIX, PRIME ======================
+        # ====================== COOKIE TYPES (Netflix + PrimeVideo) ======================
+        if category in ["netflix", "prime"]:
+            await show_paginated_cookie_list(category, chat_id, query, page=0)
+            return
+
+        # ====================== WINDOWS / OFFICE (simple list) ======================
         profile = await get_user_profile(chat_id)
         user_level = profile.get('level', 1) if profile else 1
         data = await get_vamt_data()
         if not data:
-            await query.message.edit_caption(
-                caption="🌫️ <i>The mist is too thick... Database connection failed.</i>",
-                reply_markup=get_back_to_inventory_keyboard()
-            )
+            await query.message.edit_caption(caption="🌫️ The mist is too thick...", reply_markup=get_back_to_inventory_keyboard())
             return
 
         filtered = []
@@ -1675,28 +1654,13 @@ async def handle_callback(update: Update):
                 filtered.append(item)
             elif category == "office" and "office" in s_type:
                 filtered.append(item)
-            elif category == "netflix" and "netflix" in s_type:
-                filtered.append(item)
-            elif category == "prime" and "prime" in s_type:
-                filtered.append(item)
 
         if not filtered:
-            await query.message.edit_caption(
-                caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing right now.</i>",
-                reply_markup=get_back_to_inventory_keyboard()
-            )
+            await query.message.edit_caption(caption=f"🍃 No {category.upper()} scrolls found.", reply_markup=get_back_to_inventory_keyboard())
             return
 
         limit = get_max_items(category, user_level)
-
-        if category == "netflix":
-            filtered.sort(key=extract_netflix_number)
-        else:
-            filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
-
-        if category == "netflix":
-            await show_netflix_list(chat_id, query, page=0)
-            return
+        filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
 
         report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
         for item in filtered[:limit]:
@@ -1723,243 +1687,36 @@ async def handle_callback(update: Update):
         await handle_history(chat_id, first_name, page=page)
         return
     
-    # ====================== NETFLIX PAGINATION ======================
-    elif query.data.startswith("netflix_page_"):
-        try:
-            page = int(query.data.split("_")[2])
-        except:
-            page = 0
-        await show_netflix_list(chat_id, query, page=page)
-        return
-    
-        # ====================== PRIMEVIDEO PAGINATION ======================
-    elif query.data.startswith("prime_page_"):
-        try:
-            page = int(query.data.split("_")[2])
-        except:
-            page = 0
-        await show_prime_list(chat_id, query, page=page)
-        return
-
-    # ====================== REVEAL PRIMEVIDEO (same as Netflix) ======================
-    elif query.data.startswith("reveal_prime|"):
+# ====================== REVEAL COOKIE (Reusable for both) ======================
+    elif query.data.startswith("reveal_netflix|") or query.data.startswith("reveal_prime|"):
         try:
             parts = query.data.split("|")
+            service_type = "netflix" if parts[0] == "reveal_netflix" else "prime"
             idx = int(parts[1])
+            page = int(parts[2]) if len(parts) > 2 else 0
         except:
             await query.answer("Invalid selection", show_alert=True)
             return
+        await reveal_cookie(service_type, chat_id, first_name, query, idx, page)
+        return
 
-        # Loading animation
-        await query.message.edit_caption(
-            caption="🎥 <i>Searching deep within the glowing glade...</i>",
+# ====================== BACK TO COOKIE LIST ======================
+    elif query.data.startswith("back_to_netflix_list") or query.data.startswith("back_to_prime_list"):
+        try:
+            service_type = "netflix" if query.data.startswith("back_to_netflix_list") else "prime"
+            page = int(query.data.split("|")[1]) if "|" in query.data else 0
+        except:
+            page = 0
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=INVENTORY_GIF,
+            caption=f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Loading {service_type.title()} Cookies...</i>",
             parse_mode='HTML'
         )
-        await asyncio.sleep(1.3)
-        await query.message.edit_caption(
-            caption="🌟 <i>The hidden PrimeVideo cookie spirit is slowly awakening...</i>\n\n"
-                    "Please wait as the forest carefully reveals its secret...",
-            parse_mode='HTML'
-        )
-        await asyncio.sleep(1.5)
-
-        profile = await get_user_profile(chat_id)
-        user_level = profile.get('level', 1) if profile else 1
-        limit = get_max_items("prime", user_level)
-
-        data = await get_vamt_data()
-        if not data:
-            await query.answer("Database error", show_alert=True)
-            return
-
-        filtered = [item for item in data if "prime" in str(item.get('service_type', '')).lower()]
-        filtered.sort(key=lambda x: str(x.get('display_name', '')))
-
-        if idx < 1 or idx > len(filtered[:limit]):
-            await query.answer("❌ Cookie not found", show_alert=True)
-            return
-
-        item = filtered[idx - 1]
-        cookie = str(item.get('key_id', '')).strip()
-        display_name = str(item.get('display_name', f'PrimeVideo Cookie {idx}')).strip()
-        status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-
-        await add_xp(chat_id, first_name, "reveal_netflix", query=query)  # reuse reveal_netflix XP
-
-        caption = (
-            f"📄 **{display_name.replace(' ', '_')}\\.txt**\n\n"
-            f"🎥 **{display_name} Revealed**\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🌿 Status: **{status}**\n"
-            f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
-            "📥 The forest has wrapped your cookie in an ancient scroll\\.\n"
-            "_Tap the file below to receive its magic\\._ 🍃"
-        )
-
-        file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret PrimeVideo Cookie 🌿🍃
-══════════════════════════════════════════════════════════════
-🌳 Cookie Spirit Awakened
-Name     : {display_name}
-Status   : {status}
-Remaining: {item.get('remaining', 0)} uses
-Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
-🌲 The ancient trees have entrusted you with this cookie.
-Guard it well, wanderer.
-══════════════════════════════════════════════════════════════
-{cookie}
-══════════════════════════════════════════════════════════════
-🍃 May this cookie bring you peaceful streams and hidden stories.
-— The Caretaker of the Enchanted Clearing 🌿
-"""
-        file_bytes = BytesIO(file_content.encode('utf-8'))
-        file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
-
-        try:
-            _, idx_str, current_page = query.data.split("|")
-            current_page = int(current_page)
-        except:
-            current_page = 0
-
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back to PrimeVideo Cookies", callback_data=f"back_to_prime_list|{current_page}")]
-        ])
-
-        try:
-            await query.message.delete()
-        except:
-            pass
-
-        await tg_app.bot.send_document(
-            chat_id=chat_id,
-            document=file_bytes,
-            caption=caption,
-            parse_mode='MarkdownV2',
-            reply_markup=kb,
-            filename=file_bytes.name
-        )
-        await asyncio.sleep(0.8)
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text="✨ **PrimeVideo cookie successfully delivered!**\n\n🌿 The ancient scroll has been handed to you.",
-            parse_mode='MarkdownV2'
-        )
-
-
-    # ====================== REVEAL NETFLIX ======================
-    elif query.data.startswith("reveal_nf|"):
-        try:
-            # New format: reveal_nf|idx|page
-            parts = query.data.split("|")
-            idx = int(parts[1])
-        except:
-            await query.answer("Invalid selection", show_alert=True)
-            return
-
-        # Loading animation
-        await query.message.edit_caption(
-            caption="🍿 <i>Searching deep within the glowing glade...</i>",
-            parse_mode='HTML'
-        )
-        await asyncio.sleep(1.3)
-        await query.message.edit_caption(
-            caption="🌟 <i>The hidden cookie spirit is slowly awakening...</i>\n\n"
-                    "Please wait as the forest carefully reveals its secret...",
-            parse_mode='HTML'
-        )
-        await asyncio.sleep(1.5)
-
-        # Get data + proper numeric sort
-        profile = await get_user_profile(chat_id)
-        user_level = profile.get('level', 1)
-        if user_level == 1: limit = 1
-        elif user_level <= 3: limit = 2
-        elif user_level <= 6: limit = 4 if user_level <= 5 else 5
-        else: limit = 999
-
-        data = await get_vamt_data()
-        if not data:
-            await query.answer("Database error", show_alert=True)
-            return
-
-        filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-        filtered.sort(key=extract_netflix_number)   # ← Numeric sort by display_name
-
-        if idx < 1 or idx > len(filtered[:limit]):
-            await query.answer("❌ Cookie not found", show_alert=True)
-            return
-
-        item = filtered[idx - 1]
-        cookie = str(item.get('key_id', '')).strip()
-        
-        # Use REAL display_name from Supabase
-        display_name = str(item.get('display_name', f'Netflix Cookie {idx}')).strip()
-        status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-
-        await add_xp(chat_id, first_name, "reveal_netflix", query=query)
-
-        # Document caption
-        caption = (
-            f"📄 **{display_name.replace(' ', '_')}\\.txt**\n\n"
-            f"🍿 **{display_name} Revealed**\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🌿 Status: **{status}**\n"
-            f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
-            "📥 The forest has wrapped your cookie in an ancient scroll\\.\n"
-            "_Tap the file below to receive its magic\\._ 🍃"
-        )
-
-        # File content + filename based on real display_name
-        
-        file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret Netflix Cookie 🌿🍃
-══════════════════════════════════════════════════════════════
-🌳 Cookie Spirit Awakened
-Name     : {display_name}
-Status   : {status}
-Remaining: {item.get('remaining', 0)} uses
-Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
-🌲 The ancient trees have entrusted you with this cookie.
-Guard it well, wanderer.
-══════════════════════════════════════════════════════════════
-{cookie}
-══════════════════════════════════════════════════════════════
-🍃 May this cookie bring you peaceful streams and hidden stories.
-— The Caretaker of the Enchanted Clearing 🌿
-"""
-
-        file_bytes = BytesIO(file_content.encode('utf-8'))
-        file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
-
-        # Parse the page from callback_data (format: reveal_nf|idx|page)
-        try:
-            _, idx_str, current_page = query.data.split("|")
-            current_page = int(current_page)
-        except:
-            current_page = 0
-
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data=f"back_to_netflix_list|{current_page}")]
-        ])
-
-        try:
-            await query.message.delete()
-        except:
-            pass
-
-        await tg_app.bot.send_document(
-            chat_id=chat_id,
-            document=file_bytes,
-            caption=caption,
-            parse_mode='MarkdownV2',
-            reply_markup=kb,
-            filename=file_bytes.name
-        )
-
-        await asyncio.sleep(0.8)
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text="✨ **Cookie successfully delivered!**\n\n🌿 The ancient scroll has been handed to you.",
-            parse_mode='MarkdownV2'
-        )
+        class FakeQuery:
+            message = loading_msg
+        await show_paginated_cookie_list(service_type, chat_id, FakeQuery(), page=page)
+        return
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
@@ -2012,58 +1769,6 @@ Guard it well, wanderer.
         if chat_id not in forest_memory: 
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
-
-
-    # ====================== BACK TO PRIMEVIDEO LIST ======================
-    elif query.data.startswith("back_to_prime_list"):
-        try:
-            await query.message.delete()
-        except:
-            pass
-        if "|" in query.data:
-            try:
-                page = int(query.data.split("|")[1])
-            except:
-                page = 0
-        else:
-            page = 0
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=INVENTORY_GIF,
-            caption="🎥 <i>Loading PrimeVideo Cookies...</i>",
-            parse_mode='HTML'
-        )
-        class FakeQuery:
-            message = loading_msg
-        await show_prime_list(chat_id, FakeQuery(), page=page)
-        return
-
-    # ====================== BACK TO NETFLIX LIST ======================
-    elif query.data.startswith("back_to_netflix_list"):
-        try:
-            await query.message.delete()
-        except:
-            pass
-
-        # Get the saved page number (default to 0 if not provided)
-        if "|" in query.data:
-            try:
-                page = int(query.data.split("|")[1])
-            except:
-                page = 0
-        else:
-            page = 0
-
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=INVENTORY_GIF,
-            caption="🍿 <i>Loading Netflix Cookies...</i>",
-            parse_mode='HTML'
-        )
-        class FakeQuery:
-            message = loading_msg
-        await show_netflix_list(chat_id, FakeQuery(), page=page)
-        return
 
     # ====================== HELP (Guidance) - 2 Pages ======================
     elif query.data == "help" or query.data.startswith("help_page_"):
