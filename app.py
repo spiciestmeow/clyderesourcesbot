@@ -240,25 +240,25 @@ def extract_netflix_number(item):
             pass
     return 9999
 
-# ==================== NEW: ITEM DISTRIBUTION SYSTEM ====================
+# ==================== ITEM DISTRIBUTION SYSTEM (EXACT TABLE) ====================
 def get_max_items(category: str, level: int) -> int:
-    """Updated item limits based on your new table"""
+    """Exact distribution from your table"""
     level = int(level)
 
     if category in ["win", "windows", "office"]:
         if level == 1: return 1
-        if level <= 3: return 2
-        if level <= 5: return 3
+        if 2 <= level <= 3: return 2
+        if 4 <= level <= 5: return 3
         if level == 6: return 5
         if level == 7: return 6
         if level == 8: return 8
         if level == 9: return 10
-        return 999  # All for Level 10+
+        return 999
 
     elif category == "netflix":
         if level == 1: return 1
-        if level <= 3: return 2
-        if level <= 5: return 3
+        if 2 <= level <= 3: return 2
+        if 4 <= level <= 5: return 3
         if level == 6: return 4
         if level == 7: return 5
         if level == 8: return 7
@@ -267,8 +267,8 @@ def get_max_items(category: str, level: int) -> int:
 
     elif category == "prime":
         if level == 1: return 1
-        if level <= 3: return 2
-        if level <= 5: return 2
+        if 2 <= level <= 3: return 2
+        if 4 <= level <= 5: return 2
         if level == 6: return 3
         if level == 7: return 3
         if level == 8: return 4
@@ -960,22 +960,28 @@ async def handle_stats(chat_id, first_name):
 
 # ==================== NEW: PAGINATED NETFLIX LIST ====================
 async def show_netflix_list(chat_id: int, query, page: int = 0):
-    """Paginated Netflix list - prevents Media_caption_too_long at Level 7+"""
+    """Paginated Netflix list with exact new distribution"""
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
+    max_items = get_max_items("netflix", user_level)
 
+    # Beautiful limit notes matching your table
     if user_level == 1:
-        max_items = 1
         limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
     elif user_level <= 3:
-        max_items = 2
-        limit_note = f"🌿 At Level {user_level}, you can see up to 2 items."
-    elif user_level <= 6:
-        max_items = 4 if user_level <= 5 else 5
-        limit_note = f"🌿 At Level {user_level}, you can see up to {max_items} items."
+        limit_note = f"🌿 Level {user_level} → Up to {max_items} Netflix cookies"
+    elif user_level <= 5:
+        limit_note = f"🌿 Level {user_level} → Up to {max_items} Netflix cookies"
+    elif user_level == 6:
+        limit_note = "🌲 Level 6 → Up to 4 Netflix cookies"
+    elif user_level == 7:
+        limit_note = "🌟 Level 7 → Early Preview (Up to 5 cookies)"
+    elif user_level == 8:
+        limit_note = "🌟 Level 8 → Early Preview (Up to 7 cookies)"
+    elif user_level == 9:
+        limit_note = "🌟 Level 9 → Early Preview + Sunday Double (Up to 8 cookies)"
     else:
-        max_items = 999
-        limit_note = "✨ You have full access to all scrolls in the forest."
+        limit_note = "👑 Legend Tier → Full access to all Netflix cookies"
 
     data = await get_vamt_data()
     if not data:
@@ -994,6 +1000,7 @@ async def show_netflix_list(chat_id: int, query, page: int = 0):
     start = page * NETFLIX_ITEMS_PER_PAGE
     end = start + NETFLIX_ITEMS_PER_PAGE
     page_items = filtered[start:end]
+
     total_pages = (total_items + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
 
     report = (
@@ -1023,8 +1030,8 @@ async def show_netflix_list(chat_id: int, query, page: int = 0):
         buttons.append(nav_buttons)
 
     buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-    kb = InlineKeyboardMarkup(buttons)
 
+    kb = InlineKeyboardMarkup(buttons)
     await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
     
 # ==================== LEADERBOARD COMMAND ======================
@@ -1512,21 +1519,20 @@ async def handle_callback(update: Update):
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "").lower()
 
-        # Give XP only for currently working categories
+        # Give XP only for working categories
         if category in ["win", "windows"]:
             await add_xp(chat_id, first_name, "view_windows", query=query)
         elif category == "office":
             await add_xp(chat_id, first_name, "view_office", query=query)
         elif category == "netflix":
             await add_xp(chat_id, first_name, "view_netflix", query=query)
-        
 
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>",
             parse_mode='HTML'
         )
 
-        # ====================== STEAM ACCOUNTS (New System) ======================
+        # ====================== STEAM ACCOUNTS ======================
         if category == "steam":
             profile = await get_user_profile(chat_id)
             user_level = profile.get('level', 1) if profile else 1
@@ -1562,7 +1568,7 @@ async def handle_callback(update: Update):
                     "🎮 <b>Steam Accounts — Legend Tier</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                     "👑 Legend Tier Activated!\n\n"
-                    "You have <b>bpriority access</b> to all Steam accounts.\n"
+                    "You have <b>priority access</b> to all Steam accounts.\n"
                     "You see and claim them before any other level.\n\n"
                     "Legendary drops are loading..."
                 )
@@ -1574,10 +1580,9 @@ async def handle_callback(update: Update):
             )
             return
 
-        # ====================== WORKING CATEGORIES (Windows, Office, Netflix) ======================
+        # ====================== WINDOWS, OFFICE, NETFLIX, PRIME ======================
         profile = await get_user_profile(chat_id)
         user_level = profile.get('level', 1) if profile else 1
-
         data = await get_vamt_data()
         if not data:
             await query.message.edit_caption(
@@ -1595,6 +1600,8 @@ async def handle_callback(update: Update):
                 filtered.append(item)
             elif category == "netflix" and "netflix" in s_type:
                 filtered.append(item)
+            elif category == "prime" and "prime" in s_type:
+                filtered.append(item)
 
         if not filtered:
             await query.message.edit_caption(
@@ -1603,22 +1610,17 @@ async def handle_callback(update: Update):
             )
             return
 
-        # New item distribution
         limit = get_max_items(category, user_level)
-        limit_note = f"🌿 At Level {user_level}, you can see up to {limit} items."
 
-        # OLD (delete this line)
-        # filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
+        if category == "netflix":
+            filtered.sort(key=extract_netflix_number)
+        else:
+            filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
 
-        # NEW (replace with this)
-        filtered.sort(key=extract_netflix_number)
-
-        # ====================== NETFLIX LIST (UPDATED) ======================
         if category == "netflix":
             await show_netflix_list(chat_id, query, page=0)
             return
 
-        # Windows & Office handling
         report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
         for item in filtered[:limit]:
             product = item.get('service_type', 'Unknown')
