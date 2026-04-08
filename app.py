@@ -1519,7 +1519,7 @@ async def handle_callback(update: Update):
             await add_xp(chat_id, first_name, "view_office", query=query)
         elif category == "netflix":
             await add_xp(chat_id, first_name, "view_netflix", query=query)
-        # Prime and Steam get no XP for now
+        
 
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>",
@@ -1535,7 +1535,7 @@ async def handle_callback(update: Update):
                 msg = (
                     "🎮 <b>Steam Accounts — Public Drop Only</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "Steam accounts are released daily at **8:00 PM**.\n\n"
+                    "Steam accounts are released daily at <b>8:00 PM</b>.\n\n"
                     "At your current level, you can only claim them on the website.\n\n"
                     "🔗 <b>Visit Clyde's Resource Hub</b>\n"
                     "https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed"
@@ -1545,7 +1545,7 @@ async def handle_callback(update: Update):
                     "🎮 <b>Steam Accounts — Early Preview</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                     f"🌟 Level {user_level} Wanderer\n\n"
-                    "You have **Early Preview** access!\n"
+                    "You have <b>Early Preview</b> access!\n"
                     "New accounts will appear here before the public drop.\n\n"
                     "Stay tuned — fresh Steam accounts coming soon!"
                 )
@@ -1554,7 +1554,7 @@ async def handle_callback(update: Update):
                     "🎮 <b>Steam Accounts — Early Preview + Sunday Double</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                     "🌟 Level 9 Wanderer\n\n"
-                    "You get **Early Preview** + **Sunday Double Drop**!\n"
+                    "You get <b>Early Preview</b> + <b>Sunday Double Drop</b>!\n"
                     "You are ahead of everyone else."
                 )
             else:  # Level 10+
@@ -1562,7 +1562,7 @@ async def handle_callback(update: Update):
                     "🎮 <b>Steam Accounts — Legend Tier</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                     "👑 Legend Tier Activated!\n\n"
-                    "You have **priority access** to all Steam accounts.\n"
+                    "You have <b>bpriority access</b> to all Steam accounts.\n"
                     "You see and claim them before any other level.\n\n"
                     "Legendary drops are loading..."
                 )
