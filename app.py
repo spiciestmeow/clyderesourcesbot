@@ -1610,10 +1610,12 @@ async def handle_callback(update: Update):
         await show_netflix_list(chat_id, query, page=page)
         return
 
-    # ====================== REVEAL NETFLIX (NOW USES REAL DISPLAY_NAME) ======================
+    # ====================== REVEAL NETFLIX ======================
     elif query.data.startswith("reveal_nf|"):
         try:
-            idx = int(query.data.split("|", 1)[1])
+            # New format: reveal_nf|idx|page
+            parts = query.data.split("|")
+            idx = int(parts[1])
         except:
             await query.answer("Invalid selection", show_alert=True)
             return
