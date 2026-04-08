@@ -2,48 +2,13 @@ import os
 import asyncio
 import html
 import httpx
-import traceback
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, ContextTypes
+from telegram.ext import Application
 from datetime import datetime
-from collections import Counter
 import pytz
 import time
 
-# ==================== GLOBAL ERROR HANDLER ====================
-async def global_error_handler(update: object, context):
-    """Tracks ALL errors - prints to Vercel + sends to your private chat"""
-    
-    error = context.error
-    error_type = type(error).__name__
-    error_msg = str(error)
-    tb_string = "".join(traceback.format_exception(None, error, error.__traceback__))
-
-    # Print to Vercel Logs
-    print(f"🔴 ERROR: {error_type} | {error_msg}")
-    print("─" * 80)
-    print(tb_string)
-    print("─" * 80)
-
-    # Send to your private chat
-    OWNER_CHAT_ID = 7399488750
-    notification = (
-        f"🔴 <b>Forest Hub Error Detected</b>\n\n"
-        f"<b>Type:</b> {error_type}\n"
-        f"<b>Message:</b> {html.escape(error_msg)}\n\n"
-        f"<b>Time:</b> {datetime.now(pytz.timezone('Asia/Manila')).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        f"<pre>{html.escape(tb_string[-3000:])}</pre>"
-    )
-
-    try:
-        await context.bot.send_message(
-            chat_id=OWNER_CHAT_ID,
-            text=notification,
-            parse_mode='HTML'
-        )
-    except Exception as send_err:
-        print(f"Failed to send error notification: {send_err}")
 
 forest_memory = {}
 app = Flask(__name__)
@@ -73,33 +38,29 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # ==================== GIFS ====================
-WELCOME_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
-MENU_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
+WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
+MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
-ABOUT_GIF = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
-HELP_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
-LOADING_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
+ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
+HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
+LOADING_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
 MYID_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM5OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
-CLEAN_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
+CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
 GUIDANCE_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 HELLO_GIF = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
 
 # ==================== MAINTENANCE MODE ====================
-MAINTENANCE_MODE = True
+MAINTENANCE_MODE = False
 MAINTENANCE_MESSAGE = (
-    "🌿 <b>The Forest Hub is currently under maintenance</b>\n\n"
-    "We are making improvements and will be back shortly.\n\n"
-    "<i>Thank you for your patience.</i> 🍃"
+    "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
+    "The ancient trees are resting and being prepared for new wonders...\n\n"
+    "We will be back very soon with a smoother experience!\n\n"
+    "<i>Thank you for your patience, kind wanderer.</i> 🍃✨"
 )
 
 tg_app = Application.builder().token(TOKEN).build()
-
-# Register global error handler - catches almost all errors
-tg_app.add_error_handler(global_error_handler)
-
-# loop = asyncio.new_event_loop()
-BOT_START_TIME = datetime.now(pytz.utc)
-# asyncio.set_event_loop(loop)
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 # ==================== DATABASE ====================
 async def get_vamt_data():
@@ -116,7 +77,7 @@ async def get_vamt_data():
 
 # ==================== KEYBOARDS ====================
 def get_start_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🌿 Enter the Forest Hub", callback_data="show_main_menu")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")]])
 
 def get_full_menu_keyboard():
     return InlineKeyboardMarkup([
@@ -136,7 +97,7 @@ def get_inventory_categories():
         [InlineKeyboardButton("🍿 Netflix Premium Cookies", callback_data="vamt_filter_netflix")],
         [InlineKeyboardButton("🎥 PrimeVideo Premium Cookies", callback_data="vamt_filter_prime")],
         [InlineKeyboardButton("🎮 Steam Accounts", callback_data="vamt_filter_steam")],
-        [InlineKeyboardButton("⬅️ Back to Hub", callback_data="main_menu")]
+        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
     ])
 
 def get_back_to_inventory_keyboard():
@@ -146,12 +107,12 @@ def get_back_to_inventory_keyboard():
     ])
 
 def get_back_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to the Hub", callback_data="main_menu")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Return to the Clearing", callback_data="main_menu")]])
 
 
 def get_first_time_menu_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❓ Start Here → Guidance", callback_data="help")],
+        [InlineKeyboardButton("❓ Start Here → Guidance", callback_data="help")],   # Highlighted
         [InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account")],
         [InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
@@ -166,7 +127,7 @@ async def get_user_profile(chat_id):
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
-
+    
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
@@ -181,7 +142,7 @@ async def get_user_profile(chat_id):
         except Exception as e:
             print(f"Error fetching profile: {e}")
             return None
-
+        
 async def update_has_seen_menu(chat_id):
     """Mark that the user has seen the main menu"""
     headers = {
@@ -190,7 +151,7 @@ async def update_has_seen_menu(chat_id):
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
-
+    
     payload = {"has_seen_menu": True}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -202,7 +163,19 @@ async def update_has_seen_menu(chat_id):
             )
         except Exception as e:
             print(f"Failed to update has_seen_menu: {e}")
-            
+
+    payload = {"has_seen_menu": True}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                headers=headers,
+                json=payload
+            )
+        except Exception as e:
+            print(f"Failed to force set has_seen_menu: {e}")
+
 def get_cumulative_xp_for_level(target_level: int) -> int:
     """Returns total XP needed to reach this level (new balanced formula)"""
     if target_level <= 1:
@@ -212,7 +185,7 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
 
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
-
+    
     current_time = time.time()
 
     if chat_id not in xp_cooldowns:
@@ -222,12 +195,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     # Global Rate Limit
     user_action_history[chat_id] = [t for t in user_action_history[chat_id] if current_time - t < 60]
-
-    # Cleanup old cooldown entries to prevent memory growth
-    xp_cooldowns[chat_id] = {
-        action: t for action, t in xp_cooldowns[chat_id].items()
-        if current_time - t < 600  # remove entries older than 10 minutes
-    }
 
     if len(user_action_history[chat_id]) >= MAX_ACTIONS_PER_MINUTE:
         if query:
@@ -253,7 +220,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     # ====================== XP AMOUNT LOGIC ======================
     profile = await get_user_profile(chat_id)
-
+    
     xp_amount = 0   # Default is now 0 (no accidental XP)
 
     if action == "guidance":
@@ -303,7 +270,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         elif action == "lore":
             stats_update["lore_reads"] = (profile.get('lore_reads') or 0) + 1
         elif action == "profile":
-            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1
+            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1   # New tracking
 
         current_total = profile.get('total_xp_earned') or 0
         stats_update["total_xp_earned"] = current_total + xp_amount
@@ -372,7 +339,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "lore_reads": 0,
             "profile_views": 0
         }
-
+        
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(
                 f"{SUPABASE_URL}/rest/v1/user_profiles",
@@ -457,13 +424,13 @@ def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> 
     """Create a green forest-themed progress bar"""
     if required_xp <= 0:
         return "🟩" * length
-
+    
     percentage = min(current_xp / required_xp, 1.0)
     filled = int(percentage * length)
-
+    
     bar = "🟩" * filled + "⬜" * (length - filled)
     percent_text = f"{int(percentage * 100)}%"
-
+    
     return f"[{bar}] {percent_text}"
 
 # ==================== MESSAGES ====================
@@ -475,9 +442,10 @@ async def send_initial_welcome(chat_id, first_name):
 
     caption = (
         f"{time_icon} {greeting}, {html.escape(str(first_name))}!\n\n"
-        "🌿 Welcome to Clyde's Forest Hub.\n\n"
-        "A calm place to find Windows keys, Office keys, Netflix cookies, PrimeVideo cookies, Steam accounts, and useful guides.\n\n"
-        "<i>Tap the button below to enter the main menu.</i> 🍃"
+        "🌿 Welcome, dear wanderer, to Clyde's Enchanted Clearing.\n\n"
+        "Beneath the whispering ancient trees, a world of gentle magic awaits.\n"
+        "Hidden wonders and peaceful moments are ready to be discovered.\n\n"
+        "<i>Tap the button below to step into the heart of the forest.</i> 🍃✨"
     )
 
     msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
@@ -487,13 +455,15 @@ async def send_initial_welcome(chat_id, first_name):
 async def send_level_up_message(chat_id, first_name, old_level, new_level):
     """Send a beautiful level up celebration message"""
     title = get_level_title(new_level)
-
+    
     caption = (
         f"🌟 <b>Congratulations, {html.escape(first_name)}!</b>\n\n"
-        f"You reached Level <b>{old_level}</b> → <b>{new_level}</b>\n\n"
-        f"New title: <b>{title}</b>\n\n"
-        "More resources are now unlocked.\n\n"
-        "<i>Great work!</i> 🍃"
+        f"You have grown stronger!\n\n"
+        f"🏷️ New Title: <b>{title}</b>\n"
+        f"⭐ Level: <b>{old_level}</b> → <b>{new_level}</b>\n\n"
+        "The forest spirits celebrate your growth.\n"
+        "More scrolls and wonders are now within your reach.\n\n"
+        "<i>May your bond with the Enchanted Clearing continue to deepen.</i> 🍃✨"
     )
 
     try:
@@ -511,7 +481,7 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
-
+    
     # Get user profile to show current level and title
     profile = await get_user_profile(chat_id)
 
@@ -525,20 +495,20 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
     if is_first_time:
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-            "🌿 <b>Welcome to Clyde's Forest Hub</b>\n\n"
+            "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
             f"{level_info}\n\n"
-            "Browse the forest paths below.\n\n"
-            "🌱 New here? Start with <b>❓ Guidance</b> — it will help you get started.\n\n"
-            "<i>Enjoy your time in the hub.</i> 🍃"
+            "Beneath the whispering ancient trees, many paths lie before you...\n\n"
+            "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
+            "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
         )
         keyboard = get_first_time_menu_keyboard()
     else:
         caption = (
-                f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-                "🌿 <b>Welcome back to Clyde's Forest Hub</b>\n\n"
-                f"{level_info}\n\n"
-                "Choose what you'd like to do today.\n\n"
-                "<i>Have a peaceful stay.</i> 🍃"
+            f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+            "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
+            f"{level_info}\n\n"
+            "The clearing welcomes you back, wanderer.\n\n"
+            "<i>May the forest welcome you once more.</i> 🍃✨"
         )
         keyboard = get_full_menu_keyboard()
 
@@ -549,29 +519,37 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
         parse_mode='HTML',
         reply_markup=keyboard
     )
-
+    
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
 async def send_myid(chat_id):
     caption_text = (
-        "🌿 <b>Your User ID</b>\n"
+        "🌿 <b>Forest Spirit Identification</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🆔 <b>Your ID:</b> <code>{chat_id}</code>\n\n"
-        "This is your unique user ID in the Forest Hub.\n"
-        "You may need it for support or future features.\n\n"
-        "<i>Keep it safe.</i> 🍃"
+        "✨ <i>The ancient mist slowly parts before you...</i>\n\n"
+        "Deep within the heart of the Enchanted Clearing,\n"
+        "the oldest trees awaken to reveal your true essence.\n\n"
+        "🪄 <b>The Forest Spirit Whispers:</b>\n"
+        f"🌳 <b>Your Eternal ID:</b> <code>{chat_id}</code>\n\n"
+        "This number is your unique bond with the forest —\n"
+        "a mark carried by only you among all wanderers.\n\n"
+        "<i>May this knowledge guide and protect you on your journey.</i>\n\n"
+        "🍃 <b>The trees shall remember you always.</b>"
     )
+    
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
         caption=caption_text,
         parse_mode="HTML"
     )
-    if chat_id not in forest_memory:
+    
+    if chat_id not in forest_memory: 
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
+
 
 # ==================== HISTORY LOGS ====================
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
@@ -626,6 +604,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
             )
             all_logs = all_resp.json() or []
 
+            from collections import Counter
             action_count = Counter(
                 log.get('action')
                 for log in all_logs
@@ -657,7 +636,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     if not logs and page == 0:
         await tg_app.bot.send_message(
             chat_id=chat_id,
-            text="🌱 No steps recorded yet.\nStart using the hub to earn XP!"
+            text="🌱 No steps recorded yet.\nStart exploring the clearing to grow!"
         )
         return
 
@@ -696,7 +675,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
 
     lines.append("━━━━━━━━━━━━━━━━━━")
     total_pages = (total_entries + limit - 1) // limit
-    lines.append(f"🌱 Page {page + 1} of {total_pages} • Keep exploring to grow more.")
+    lines.append(f"🌱 Page {page + 1} of {total_pages} • The trees remember every step of your growth... 🍃")
 
     text = "\n".join(lines)
 
@@ -726,13 +705,13 @@ async def calculate_streak(chat_id: int, client, headers):
             headers=headers
         )
         logs = resp.json() or []
-
+        
         if not logs:
             return 0
 
         manila_tz = pytz.timezone('Asia/Manila')
         today = datetime.now(manila_tz).date()
-
+        
         streak = 0
         seen_dates = set()
 
@@ -741,7 +720,7 @@ async def calculate_streak(chat_id: int, client, headers):
                 dt = datetime.fromisoformat(log['created_at'].replace('Z', '+00:00'))
                 dt_manila = dt.astimezone(manila_tz)
                 log_date = dt_manila.date()
-
+                
                 if log_date not in seen_dates:
                     seen_dates.add(log_date)
                     # Check if it's consecutive from today
@@ -760,7 +739,7 @@ async def calculate_streak(chat_id: int, client, headers):
 # ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
     await add_xp(chat_id, first_name, "profile")
-
+    
     profile = await get_user_profile(chat_id)
     if not profile:
         return
@@ -774,14 +753,14 @@ async def handle_profile(chat_id, first_name):
     progress_bar = create_progress_bar(xp, xp_required_next, length=10)
 
     caption = (
-        f"🌿 <b>{html.escape(first_name)}'s Profile</b>\n"
+        f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
         f"⭐ <b>Level:</b> {level}\n\n"
-        f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,} XP\n"
+        f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
         f"{progress_bar}\n\n"
-        f"📈 To next level: <b>{xp_to_next:,}</b> XP\n\n"
-        "<i>Keep using the hub to level up and unlock more resources.</i> 🍃"
+        f"📈 <b>To Next Level:</b> {xp_to_next:,} XP\n\n"
+        "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
 
     msg = await tg_app.bot.send_animation(
@@ -790,7 +769,7 @@ async def handle_profile(chat_id, first_name):
         caption=caption,
         parse_mode='HTML'
     )
-
+    
     # Add to forest_memory so /clear can delete it
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
@@ -799,7 +778,7 @@ async def handle_profile(chat_id, first_name):
 
 async def handle_stats(chat_id, first_name):
     """Updated Stats with individual inventory tracking"""
-
+    
     profile = await get_user_profile(chat_id)
     if not profile:
         await tg_app.bot.send_message(
@@ -830,9 +809,9 @@ async def handle_stats(chat_id, first_name):
             dt = datetime.fromisoformat(profile['last_active'].replace('Z', '+00:00'))
             dt = dt.astimezone(pytz.timezone('Asia/Manila'))
             now_manila = datetime.now(pytz.timezone('Asia/Manila'))
-
+            
             diff_minutes = int((now_manila - dt).total_seconds() / 60)
-
+            
             if diff_minutes < 2:
                 last_active = "Just now"
             elif diff_minutes < 60:
@@ -853,26 +832,26 @@ async def handle_stats(chat_id, first_name):
     profile_views = profile.get('profile_views', 0)
 
     caption = (
-        f"🌲 <b>{html.escape(first_name)}'s Statistics</b>\n"
+        f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
         f"⭐ <b>Level:</b> {level}\n\n"
-        f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
+        f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
         f"{progress_bar}\n\n"
-        "📊 <b>Activity:</b>\n"
+        "📊 <b>Detailed Stats:</b>\n"
         f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
-        f"• Profile Views: <b>{profile_views}</b>\n"
-        f"• Windows Keys Viewed: <b>{windows_views}</b>\n"
-        f"• Office Keys Viewed: <b>{office_views}</b>\n"
-        f"• Netflix Keys Viewed: <b>{netflix_views}</b>\n"
-        f"• Netflix Cookies Revealed: <b>{netflix_reveals}</b>\n"
-        f"• Chat Cleared: <b>{times_cleared}</b>\n"
-        f"• Guidance Opened: <b>{guidance_reads}</b>\n"
-        f"• Lore Read: <b>{lore_reads}</b>\n\n"
+        f"• Profile Views: <b>{profile_views}</b> times\n"
+        f"• Windows Keys Viewed: <b>{windows_views}</b> times\n"
+        f"• Office Keys Viewed: <b>{office_views}</b> times\n"
+        f"• Netflix Keys Viewed: <b>{netflix_views}</b> times\n"
+        f"• Netflix Cookies Revealed: <b>{netflix_reveals}</b> times\n"
+        f"• Times Cleared the Forest: <b>{times_cleared}</b>\n"
+        f"• Guidance Read: <b>{guidance_reads}</b> times\n"
+        f"• Lore Read: <b>{lore_reads}</b> times\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"🌱 Joined: {joined_date}\n"
-        f"🌲 Last Active: {last_active}\n\n"
-        "<i>Keep exploring the hub to grow your stats.</i> 🍃"
+        f"🌱 <b>Joined:</b> {joined_date}\n"
+        f"🌲 <b>Last Active:</b> {last_active}\n\n"
+        "<i>The trees remember every step you've taken...</i> 🍃"
     )
 
     msg = await tg_app.bot.send_message(
@@ -880,11 +859,12 @@ async def handle_stats(chat_id, first_name):
         text=caption,
         parse_mode='HTML'
     )
-
+    
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
-
+    
+# ==================== LEADERBOARD COMMAND ======================
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
     headers = {
@@ -908,10 +888,12 @@ async def handle_leaderboard(chat_id):
                     current_level = user.get('level', 1) if user else 1
                     await tg_app.bot.send_message(
                         chat_id=chat_id,
-                        text=f"🏆 <b>Top Users</b>\n\n"
-                            f"You need to reach <b>Level {MIN_LEVEL_TO_UNLOCK}</b> to see the leaderboard.\n\n"
-                            f"You are currently <b>Level {current_level}</b>.\n\n"
-                            "Keep using the hub to level up.",
+                        text=f"🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
+                             f"🌲 The ancient trees guard the leaderboard.\n\n"
+                             f"You need to reach <b>Level {MIN_LEVEL_TO_UNLOCK}</b> to see the guardians.\n\n"
+                             f"You are currently <b>Level {current_level}</b>.\n\n"
+                             "Keep exploring, gaining XP, and the trees will reveal the rankings to you.\n\n"
+                             "🌱 Every step brings you closer.",
                         parse_mode='HTML'
                     )
                     return
@@ -928,14 +910,15 @@ async def handle_leaderboard(chat_id):
             if not top_data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    text="🏆 <b>Top Users</b>\n\n"
-                        "No one has earned XP yet.\n"
-                        "Be the first to start exploring the hub! 🌱",
+                    text="🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
+                         "🌲 The ancient trees are still waiting in peaceful silence...\n\n"
+                         "No one has earned any XP yet.\n"
+                         "Be the first to explore the clearing and leave your mark! 🌱✨",
                     parse_mode='HTML'
                 )
                 return
 
-            text = "🏆 <b>Top Users</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+            text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
             for rank, u in enumerate(top_data, 1):
                 name = html.escape(u.get('first_name', 'Unknown Wanderer'))
@@ -954,7 +937,7 @@ async def handle_leaderboard(chat_id):
             # Clean rank display for owner
             if user and user.get('xp', 0) > 0:
                 text += "━━━━━━━━━━━━━━━━━━\n"
-
+                
                 rank_resp = await client.get(
                     f"{SUPABASE_URL}/rest/v1/user_leaderboard"
                     f"?chat_id=eq.{chat_id}&select=rank",
@@ -972,7 +955,7 @@ async def handle_leaderboard(chat_id):
                     text += f"   {get_level_title(user.get('level', 1))} • Level {user.get('level', 1)}\n"
                     text += f"   ✨ {user.get('xp', 0):,} XP\n"
 
-            text += "\n<i>Keep exploring the hub.</i> 🍃"
+            text += "\n<i>May your roots grow deep and your light shine through the canopy.</i> 🍃✨"
 
             await tg_app.bot.send_message(
                 chat_id=chat_id,
@@ -1015,7 +998,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
                 headers=headers,
                 json=payload
             )
-
+            
             if response.status_code in (200, 201):
                 print(f"✅ Feedback saved to Supabase | User: {chat_id}")
                 saved = True
@@ -1026,12 +1009,14 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 
     # === Thank you message to user (timestamp at bottom) ===
     thank_you = (
-        "🕊️ <b>Feedback Received</b>\n"
+        "🕊️ <b>A Message Carried by the Wind</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"Thanks, <b>{html.escape(str(first_name))}</b>!\n\n"
-        "Your message has been sent to the owner.\n"
-        "We really appreciate your feedback.\n\n"
-        f"🕒 Sent: {timestamp}"
+        f"Dear <b>{html.escape(str(first_name))}</b>,\n\n"
+        "The gentle breeze has carried your words through the ancient trees...\n"
+        "They have reached the caretaker of the Enchanted Clearing.\n\n"
+        "Thank you for sharing your thoughts with this small, magical corner of the forest.\n\n"
+        "<i>May your voice help the clearing bloom even brighter.</i> 🍃✨\n\n"
+        f"🕒 <b>Sent:</b> {timestamp}"
     )
 
     await tg_app.bot.send_animation(
@@ -1088,7 +1073,7 @@ async def handle_view_feedback(chat_id, user_id):
                 f"{SUPABASE_URL}/rest/v1/feedback?select=*&order=created_at.desc&limit=15",
                 headers=headers
             )
-
+            
             if response.status_code != 200:
                 await tg_app.bot.send_message(chat_id=chat_id, text="❌ Failed to fetch feedback from the database.")
                 return
@@ -1142,7 +1127,8 @@ async def handle_view_feedback(chat_id, user_id):
 
 # ==================== RESET FIRST-TIME EXPERIENCE (Owner Only) ======================
 async def handle_reset_first_time(chat_id):
-    if chat_id != 7399488750:
+    if chat_id != 123456789:
+    # if chat_id != 7399488750:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker can reset the forest memory."
@@ -1192,19 +1178,29 @@ async def handle_clear(chat_id, user_command_id, first_name):
                 await tg_app.bot.delete_message(chat_id, msg_id)
             except:
                 pass  # Message already deleted or doesn't exist
-        del forest_memory[chat_id]  # Remove entirely instead of leaving empty list
+        forest_memory[chat_id] = []
 
     # ====================== MAGICAL CLEARING ANIMATION ======================
     loading_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=CLEAN_GIF,
-        caption="🌿 Cleaning up old messages...",
+        caption="🌫️ <b>The ancient mist begins to thicken...</b>",
         parse_mode="HTML"
     )
 
-    await asyncio.sleep(1.5)
-    await loading_msg.edit_caption("🌿 Loading the main menu...", parse_mode="HTML")
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(1.8)
+    await loading_msg.edit_caption(
+        "🍃 <b>The wind spirit awakens...</b>\nWhispers of old paths are being carried away...", 
+        parse_mode="HTML"
+    )
+
+    await asyncio.sleep(2.0)
+    await loading_msg.edit_caption(
+        "✨ <b>The forest is resetting...</b>\nAll footprints are gently erased by the glowing leaves.", 
+        parse_mode="HTML"
+    )
+
+    await asyncio.sleep(1.2)
 
     # Delete the loading animation
     try:
@@ -1218,7 +1214,7 @@ async def handle_clear(chat_id, user_command_id, first_name):
     # Give XP for using /clear
     await add_xp(chat_id, first_name, "clear")
 
-    print(f"🌿 Chat cleared for user {chat_id}")
+    print(f"🌿 Chat cleared magically for user {chat_id}")
 
 # ==================== BOT INFO / STATUS COMMAND ======================
 async def handle_info(chat_id):
@@ -1250,24 +1246,20 @@ async def handle_info(chat_id):
 
         version = "1.3.1"
         last_updated = "April 7, 2026"
-        uptime_delta = datetime.now(pytz.utc) - BOT_START_TIME
-        total_seconds = int(uptime_delta.total_seconds())
-        days = total_seconds // 86400
-        hours = (total_seconds % 86400) // 3600
-        minutes = (total_seconds % 3600) // 60
-        uptime = f"{days}d {hours}h {minutes}m"
+        uptime = "2 days, 14 hours"
 
         text = (
-            "🌿 <b>Forest Hub Status</b>\n"
+            "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "The hub is running smoothly.\n\n"
+            "🌳 The forest is thriving peacefully.\n\n"
             f"🕒 Uptime: <b>{uptime}</b>\n"
-            f"🌱 Total Users: <b>{total_users:,}</b>\n"
+            f"🌱 Total Wanderers: <b>{total_users:,}</b>\n"
             f"✨ Active Today: <b>{active_today:,}</b>\n\n"
-            f"📜 Version: <b>{version}</b>\n"
+            f"📜 Current Version: <b>{version}</b>\n"
             f"🌲 Last Updated: <b>{last_updated}</b>\n\n"
-            "⚠️ For personal and educational use only.\n\n"
-            "Made with care 🍃"
+            "⚠️ <i>For personal and educational use only.</i>\n"
+            "The developer is not responsible for any misuse.\n\n"
+            "Made with care by the Forest Caretaker 🍃"
         )
 
         await tg_app.bot.send_message(
@@ -1280,9 +1272,9 @@ async def handle_info(chat_id):
         print(f"Info command error: {str(e)}")
         await tg_app.bot.send_message(
             chat_id=chat_id,
-            text="🌿 Something went wrong while fetching the status."
+            text="🌫️ The ancient trees are having trouble sharing the forest status right now..."
         )
-
+    
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
     query = update.callback_query
@@ -1304,15 +1296,15 @@ async def handle_callback(update: Update):
         loading_msg = await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=LOADING_GIF,
-            caption="🌿 <i>Loading the menu...</i>",
+            caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
             parse_mode='HTML'
         )
 
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.3)
+        await loading_msg.edit_caption("✨ <i>You stand again in the heart of the Enchanted Clearing...</i>", parse_mode='HTML')
         await asyncio.sleep(1.0)
-        await loading_msg.edit_caption("🌿 Preparing options...", parse_mode='HTML')
-        await asyncio.sleep(0.8)
-        await loading_msg.edit_caption("🌿 Welcome back!", parse_mode='HTML')
-        await asyncio.sleep(0.6)
 
         # Get or create profile
         profile = await get_user_profile(chat_id)
@@ -1332,7 +1324,7 @@ async def handle_callback(update: Update):
 
         await send_full_menu(chat_id, first_name, is_first_time=is_first_time)
         return   # ← Stop here for main menu
-
+    
     # ====================== ALL OTHER BUTTONS ======================
     # Enforce registration
     profile = await get_user_profile(chat_id)
@@ -1340,15 +1332,16 @@ async def handle_callback(update: Update):
         await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=HELLO_GIF,
-            caption="🌿 <b>Welcome to the Forest Hub</b>\n\n"
-                    "To start using the resources, please tap the button below.",
+            caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
+                "You stand at the edge of a mysterious forest...\n\n"
+                "To step into the Enchanted Clearing, please press the button below.",
             parse_mode='HTML',
             reply_markup=get_start_keyboard()
         )
         return
-
+    
     await update_last_active(chat_id)
-
+    
     # ====================== MAIN INVENTORY MENU ======================
     if query.data == "check_vamt":
         # Delete current message to avoid "no caption" error
@@ -1361,7 +1354,7 @@ async def handle_callback(update: Update):
         await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=INVENTORY_GIF,   # Your original inventory GIF
-            caption="📜 <b>Resource Inventory</b>\n\n"
+            caption="📜 <b>Ancient Library — Resource Scrolls</b>\n\n"
                     "Choose the type of resource you need today:\n\n"
                     "<i>Viewing items will earn you XP and help you level up.</i>",
             parse_mode='HTML',
@@ -1393,17 +1386,23 @@ async def handle_callback(update: Update):
                 msg = (
                     "🎥 <b>PrimeVideo Premium Cookies</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "PrimeVideo premium cookies are currently being prepared.\n\n"
-                    "They will be available soon for higher-level users.\n\n"
-                    "<i>Stay tuned — we’ll notify you when they are ready.</i>"
+                    "Deep within the misty heart of the Enchanted Clearing,\n"
+                    "the rarest Prime Video cookies slumber beneath ancient glowing leaves.\n\n"
+                    "🌫️ <b>The forest spirits are still preparing them...</b>\n\n"
+                    "They are scarce and precious — only wanderers of sufficient level\n"
+                    "will be allowed to behold them.\n\n"
+                    "<i>Patience, dear soul... they will awaken soon.</i> ✨"
                 )
             else:  # steam
                 msg = (
-                    "🎮 <b>Steam Accounts</b>\n"
+                    "🎮 <b>Steam Accounts — Daily 8PM Drop</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "Steam accounts are planned to drop daily at 8:00 PM.\n\n"
-                    "Higher-level users will get early access before the public drop.\n\n"
-                    "<i>Coming soon. Keep leveling up to unlock early access.</i>"
+                    "High above the canopy, the Wind Spirits guard the daily Steam accounts.\n"
+                    "They descend only at 8:00 PM each night for the worthy.\n\n"
+                    "🌟 <b>Coming Soon</b>\n\n"
+                    "When you reach higher levels, the trees will grant you <b>early access</b> —\n"
+                    "allowing you to claim the account before the public drop at 8:00 PM.\n\n"
+                    "<i>The ancient oaks whisper... keep growing, and the gift shall be yours.</i> 🍃"
                 )
 
             await query.message.edit_caption(
@@ -1437,7 +1436,7 @@ async def handle_callback(update: Update):
 
         if not filtered:
             await query.message.edit_caption(
-                caption=f"No {category.upper()} items available right now.",
+                caption=f"🍃 <i>No {category.upper()} scrolls found in the clearing right now.</i>",
                 reply_markup=get_back_to_inventory_keyboard()
             )
             return
@@ -1466,7 +1465,7 @@ async def handle_callback(update: Update):
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 f"📦 <b>{len(filtered)} Cookies Resting in the Glade</b>\n"
                 f"{limit_note}\n\n"
-                "<i>Select a cookie to reveal it.</i>\n\n"
+                "<i>Which one whispers to your spirit?</i>\n\n"
             )
             buttons = []
             for display_idx, item in enumerate(filtered[:limit], 1):
@@ -1478,7 +1477,7 @@ async def handle_callback(update: Update):
                 buttons.append([
                     InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")
                 ])
-            buttons.append([InlineKeyboardButton("⬅️ Back to the Hub", callback_data="check_vamt")])
+            buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
             kb = InlineKeyboardMarkup(buttons)
             await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
             return
@@ -1505,7 +1504,7 @@ async def handle_callback(update: Update):
             await query.message.delete()   # Delete old message
         except:
             page = 0
-
+        
         await handle_history(chat_id, first_name, page=page)
         return
 
@@ -1519,12 +1518,13 @@ async def handle_callback(update: Update):
 
         # Loading
         await query.message.edit_caption(
-            caption="🍿 <i>Searching for the cookie...</i>",
+            caption="🍿 <i>Searching deep within the glowing glade...</i>",
             parse_mode='HTML'
         )
         await asyncio.sleep(1.3)
         await query.message.edit_caption(
-            caption="🌟 <i>Revealing the cookie...</i>\n\n",
+            caption="🌟 <i>The hidden cookie spirit is slowly awakening...</i>\n\n"
+                    "Please wait as the forest carefully reveals its secret...",
             parse_mode='HTML'
         )
         await asyncio.sleep(1.5)
@@ -1558,25 +1558,20 @@ async def handle_callback(update: Update):
 
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
-        try:
-            await query.message.delete()
-        except:
-            pass
-
-        # Use HTML instead of MarkdownV2 — much more forgiving with dynamic text
+        # Document caption
         caption = (
-            f"📄 <b>Netflix_Cookie_{idx}.txt</b>\n\n"
-            f"🍿 <b>{html.escape(display_name)} Revealed</b>\n"
+            f"📄 **Netflix\\_Cookie\\_{idx}\\.txt**\n\n"
+            f"🍿 **{display_name} Revealed**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🌿 Status: <b>{html.escape(status)}</b>\n"
-            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
-            "📥 The forest has wrapped your cookie in an ancient scroll.\n"
-            "<i>Tap the file below to receive its magic.</i> 🍃"
+            f"🌿 Status: **{status}**\n"
+            f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
+            "📥 The forest has wrapped your cookie in an ancient scroll\\.\n"
+            "_Tap the file below to receive its magic\\._ 🍃"
         )
 
-        # Immersive file content (plain text is safest)
+        # Immersive file content
         from io import BytesIO
-        file_content = f"""🌿🍃 Clyde's Forest Hub — Secret Netflix Cookie 🌿🍃
+        file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret Netflix Cookie 🌿🍃
 
 ══════════════════════════════════════════════════════════════
 
@@ -1598,7 +1593,7 @@ Guard it well, wanderer, for its magic fades quickly.
 🍃 May this cookie bring you peaceful streams and hidden stories.
 Use it wisely and with gratitude.
 
-— The Caretaker of the Forest Clear Hub 🌿
+— The Caretaker of the Enchanted Clearing 🌿
 """
 
         file_bytes = BytesIO(file_content.encode('utf-8'))
@@ -1608,46 +1603,45 @@ Use it wisely and with gratitude.
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
         ])
 
-        # Send document with HTML (much safer)
-        doc_msg = await tg_app.bot.send_document(
-            chat_id=chat_id,
-            document=file_bytes,
-            caption=caption,
-            parse_mode='HTML',
-            reply_markup=kb,
-            filename=file_bytes.name
-        )
-
-        # Track BOTH messages for /clear
-        if chat_id not in forest_memory:
-            forest_memory[chat_id] = []
-        forest_memory[chat_id].append(doc_msg.message_id)
-
-        # Success message
-        await asyncio.sleep(0.8)
-        success_msg = (
-            "✨ <b>Cookie successfully delivered!</b>\n\n"
-            "🌿 The ancient scroll has been handed to you.\n"
-            "May its magic serve you well, wanderer."
-        )
-        success_sent = await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=success_msg,
-            parse_mode='HTML'
-        )
-        forest_memory[chat_id].append(success_sent.message_id)
-
-    # ====================== ABOUT (Lore) ======================
-    elif query.data == "about":
-        await add_xp(chat_id, first_name, "lore", query=query)
-
         try:
             await query.message.delete()
         except:
             pass
 
-        loading_msg = await tg_app.bot.send_animation(
+        # Send the document
+        await tg_app.bot.send_document(
             chat_id=chat_id,
+            document=file_bytes,
+            caption=caption,
+            parse_mode='MarkdownV2',
+            reply_markup=kb,
+            filename=file_bytes.name
+        )
+
+        # ← NEW: Small success message after file is sent
+        await asyncio.sleep(0.8)   # Small delay so it appears nicely below
+        success_msg = (
+            "✨ **Cookie successfully delivered!**\n\n"
+            "🌿 The ancient scroll has been handed to you.\n"
+            "May its magic serve you well, wanderer."
+        )
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=success_msg,
+            parse_mode='MarkdownV2'
+        )
+
+    # ====================== ABOUT (Lore) ======================
+    elif query.data == "about":
+        await add_xp(chat_id, first_name, "lore", query=query)
+
+        try: 
+            await query.message.delete()
+        except: 
+            pass
+
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=chat_id,                                   # ← Fixed
             animation=LOADING_GIF,
             caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>",
             parse_mode='HTML'
@@ -1660,16 +1654,16 @@ Use it wisely and with gratitude.
         await asyncio.sleep(1.0)
 
         text = (
-            "<b>🌿 About Clyde's Forest Hub</b>\n\n"
-            "This peaceful sanctuary was created to make useful digital resources easy and stress-free to access all wrapped in a calm, Studio Ghibli-inspired forest theme.\n\n"
+            "<b>🌿 About Clyde's Resource Hub</b>\n\n"
+            "This peaceful sanctuary was created to make useful digital resources easy and stress-free to access — all wrapped in a calm, Studio Ghibli-inspired forest theme.\n\n"
             "You can find:\n"
             "• Windows & Office activation keys\n"
             "• Netflix premium cookies\n"
             "• PrimeVideo premium cookies\n"
             "• Steam accounts\n"
             "• Learning guides\n\n"
-            "A simple leveling system rewards you for using it.\n\n"
-            "<i>Hope you find it helpful and relaxing.</i> 🍃"
+            "The gentle leveling system rewards exploration and gives a relaxing experience while you grow.\n\n"
+            "<i>May this small enchanted clearing bring you both practical resources and a moment of peace.</i> 🍃✨"
         )
 
         final_msg = await tg_app.bot.send_animation(
@@ -1680,12 +1674,12 @@ Use it wisely and with gratitude.
             reply_markup=get_back_keyboard()
         )
 
-        try:
+        try: 
             await tg_app.bot.delete_message(loading_msg.chat_id, loading_msg.message_id)
-        except:
+        except: 
             pass
 
-        if chat_id not in forest_memory:
+        if chat_id not in forest_memory: 
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
@@ -1732,7 +1726,7 @@ Use it wisely and with gratitude.
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"📦 <b>{len(filtered)} Cookies Resting in the Glade</b>\n"
             f"{limit_note}\n\n"
-            "<i>Select a cookie to reveal it.</i>\n\n"
+            "<i>Which one whispers to your spirit?</i>\n\n"
         )
 
         buttons = []
@@ -1742,7 +1736,7 @@ Use it wisely and with gratitude.
             report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n   Remaining: {item.get('remaining', 0)}\n\n"
             buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")])
 
-        buttons.append([InlineKeyboardButton("⬅️ Back to the Hub", callback_data="check_vamt")])
+        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
         kb = InlineKeyboardMarkup(buttons)
 
         # Send with GIF (this brings back the logo)
@@ -1763,9 +1757,9 @@ Use it wisely and with gratitude.
         if query.data == "help":
             await add_xp(chat_id, first_name, "guidance", query=query)
 
-        try:
+        try: 
             await query.message.delete()
-        except:
+        except: 
             pass
 
         page = 1
@@ -1787,36 +1781,36 @@ Use it wisely and with gratitude.
         if page == 1:
             text = (
                 "<b>❓ Guidance - Page 1/2</b>\n\n"
-                "🌿 <b>How to Use the Forest Hub</b>\n"
-                "• Tap any button to explore\n"
-                "• Type <b>/menu</b> to return to the main menu anytime\n"
-                "• Type <b>/clear</b> to refresh the chat and remove old messages\n\n"
-
+                "🌿 <b>How to Navigate the Clearing</b>\n"
+                "• Tap any button to explore the paths\n"
+                "• Use /menu to return here anytime\n"
+                "• Use /clear to renew your path\n\n"
+                
                 "📜 <b>Available Commands</b>\n"
-                "• /start — Restart the bot\n"
-                "• /menu — Open the main menu\n"
-                "• /profile — View your level and XP\n"
-                "• /stats — Detailed statistics\n"
-                "• /leaderboard — See top users\n"
-                "• /myid — Show your user ID\n"
-                "• /clear — Clean the chat\n"
-                "• /feedback — Send message to the owner\n\n"
-
-                "🌲 <b>Resources Available</b>\n"
-                "• Spirit Treasures — Steam accounts\n"
-                "• Ancient Scrolls — Learning guides\n"
-                "• Forest Inventory — Windows, Office & Netflix keys\n"
-                "• Whispering Forest — Main resource hub\n\n"
-
-                "<b>New here?</b>\n"
-                "You start at Level 1 with 0 XP.\n"
-                "Use buttons and commands to earn XP and unlock more items.\n\n"
-
+                "• /start — Begin your journey anew\n"
+                "• /menu — Return to the Enchanted Clearing\n"
+                "• /profile — View your Forest Profile\n"
+                "• /stats — View detailed Forest Statistics\n"
+                "• /leaderboard — See Top Wanderers\n"
+                "• /myid — Reveal your Eternal Forest ID\n"
+                "• /clear — Cleanse and renew the clearing\n"
+                "• /feedback — Send message to the caretaker\n\n"
+                
+                "🌲 <b>Treasures You Can Discover</b>\n"
+                "• 🪄 Spirit Treasures — Steam accounts\n"
+                "• 📜 Ancient Scrolls — Learning guides\n"
+                "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
+                "• 🌲 The Whispering Forest — Main resource hub\n\n"
+                
+                "<b>Note for New Wanderers:</b>\n"
+                "• You start at <b>Level 1 with 0 XP</b>\n"
+                "• Your first actions will help you grow and unlock more items.\n\n"
+                
                 "<i>Tap Next → to learn about the Leveling System</i>"
             )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Next →", callback_data="help_page_2")],
-                [InlineKeyboardButton("⬅️ Back to Hub", callback_data="main_menu")]
+                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
         else:
@@ -1827,34 +1821,34 @@ Use it wisely and with gratitude.
 
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
-                "✨ <b>Leveling System</b>\n"
-                "Earn XP by using the hub. Higher levels unlock more items in the inventory.\n\n"
-
+                "✨ <b>Forest Leveling System</b>\n"
+                "Gain XP as you explore. Higher levels unlock more items.\n\n"
+                
                 "<b>How to Gain XP:</b>\n"
-                "• View Windows or Office keys → <b>+6 XP</b>\n"
-                "• View Netflix keys → <b>+6 XP</b>\n"
-                "• Reveal a Netflix cookie → <b>+10 XP</b>\n"
-                "• Use /profile → <b>+5 XP</b>\n"
-                "• Use /clear → <b>+5 XP</b>\n"
-                "• Open Guidance or Lore → <b>+8 XP</b> (first time only)\n\n"
-
-                "<b>Items Visible in Inventory:</b>\n\n"
-                "<pre>"
-                "Level     Win/Office     Netflix     Prime Video     Steam Accounts\n"
-                "────────────────────────────────────────────────────────────────\n"
-                " 1         1              1           1               Public Drop Only\n"
-                " 2–3       2              2           1–2             Public Drop Only\n"
-                " 4–5       3              2–3         2               Public Drop Only\n"
-                " 6         5              4           3               Public Drop Only\n"
-                " 7         Up to 6        Up to 5     Up to 3         Early Preview\n"
-                " 8         Up to 8        Up to 7     Up to 4         Early Preview\n"
-                " 9         Up to 10       Up to 8     Up to 5         Early Preview + Sunday Double\n"
-                "10+        Up to All      Up to All   Up to All       🌟 Legend Tier\n"
-                "</pre>\n\n"
-
-                f"<b>XP Required:</b>\n{level_req_text}\n\n"
-
-                "<i>The more you use the hub, the higher your level becomes.</i> 🍃"
+                "• View Win/Office Keys → <b>+6 XP</b>\n"
+                "• View Netflix Keys → <b>+6 XP</b>\n"
+                "• Reveal Netflix Cookie → <b>+10 XP</b>\n"
+                "• /profile → <b>+5 XP</b>\n"
+                "• /clear → <b>+5 XP</b>\n"
+                "• Open Guidance → <b>+8 XP</b> (only first time)\n"
+                "• Open Lore (About) → <b>+8 XP</b> (only first time)\n\n"
+                
+                "<b>Items Shown in Inventory:</b>\n"
+                "• Level 1 → 1 item\n"
+                "• Level 2–3 → 2 items\n"
+                "• Level 4–5 → 4 items\n"
+                "• Level 6 → 5 items\n"
+                "• Level 7+ → All items\n\n"
+                
+                f"<b>Level Requirements:</b>\n"
+                f"{level_req_text}\n\n"
+                
+                "<b>Note:</b>\n"
+                "• New users start at Level 1 with 0 XP\n"
+                "• You will see a celebration when you level up\n"
+                "• Level 7 gives full access to all scrolls\n\n"
+                
+                "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
             )
 
             keyboard = InlineKeyboardMarkup([
@@ -1868,7 +1862,7 @@ Use it wisely and with gratitude.
         )
 
         # Save for /clear
-        if chat_id not in forest_memory:
+        if chat_id not in forest_memory: 
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(loading_msg.message_id)
 
@@ -1877,21 +1871,25 @@ Use it wisely and with gratitude.
             profile = await get_user_profile(chat_id)
             if profile and not profile.get('has_seen_menu', False):
                 await update_has_seen_menu(chat_id)
-
-# ==================== START BOT ====================
+        
+# ==================== WEBHOOK ====================
 async def start_tg_app():
     await tg_app.initialize()
     await tg_app.start()
-    print("🌿 Forest Hub Bot started successfully!")
 
+loop.run_until_complete(start_tg_app())
 
-# ==================== PROCESS UPDATE ====================
-async def process_update(update_data: dict):
-    try:
+@app.route('/', methods=['GET', 'POST'])
+def webhook():
+    if request.method == 'GET': return "🌿 Clyde's Enchanted Clearing is awake.", 200
+    update_data = request.get_json(silent=True)
+    if not update_data: return "No data", 400
+
+    async def process_update():
         update = Update.de_json(update_data, tg_app.bot)
 
-        global MAINTENANCE_MODE
-        OWNER_CHAT_ID = 7399488750
+        # ==================== MAINTENANCE MODE ====================
+        OWNER_CHAT_ID = 1234567890
 
         if MAINTENANCE_MODE:
             chat_id = None
@@ -1910,101 +1908,106 @@ async def process_update(update_data: dict):
                     pass
                 return
 
+        # ==================== NORMAL PROCESSING ====================
         if update.message and update.message.text:
-            await handle_text_message(update)
+            text = update.message.text.lower().strip()
+            chat_id = update.effective_chat.id
+            user_msg_id = update.message.message_id
+            name = update.effective_user.first_name if update.effective_user else "Traveler"
+
+            if chat_id not in forest_memory:
+                forest_memory[chat_id] = []
+            forest_memory[chat_id].append(user_msg_id)
+
+            # === STRICT REGISTRATION CHECK ===
+            if not text.startswith("/start"):
+                profile = await get_user_profile(chat_id)
+                if not profile:
+                    await tg_app.bot.send_animation(
+                        chat_id=chat_id,
+                        animation=HELLO_GIF,
+                        caption="<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
+                                "The ancient trees watch you with quiet curiosity.\n\n"
+                                "To step into the Enchanted Clearing...\n",
+                        parse_mode='HTML',
+                        reply_markup=get_start_keyboard()
+                    )
+                    return
+
+            # Update last_active for returning users on any text command
+            await update_last_active(chat_id)
+
+            # Command handlers
+            if text.startswith("/start"):
+                await send_initial_welcome(chat_id, name)
+            elif text.startswith("/forest"):
+                await handle_info(chat_id)
+            elif text.startswith("/history"):
+                await handle_history(chat_id, name)
+            elif text.startswith("/leaderboard"):
+                await handle_leaderboard(chat_id)
+            elif text.startswith("/profile"):
+                await handle_profile(chat_id, name)
+            elif text.startswith("/mystats"):
+                await handle_stats(chat_id, name)
+            elif text.startswith("/menu"):
+                profile = await get_user_profile(chat_id)
+                is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
+                await send_full_menu(chat_id, name, is_first_time=is_first)
+            elif text.startswith("/myid"):
+                await send_myid(chat_id)
+            elif text.startswith("/clear"):
+                await handle_clear(chat_id, user_msg_id, name)
+            elif text.startswith("/feedback"):
+                feedback_text = text.replace("/feedback", "").strip()
+                if feedback_text:
+                    await handle_feedback(chat_id, name, feedback_text)
+                else:
+                    await tg_app.bot.send_message(
+                        chat_id=chat_id,
+                        text="🌿 Please write your feedback after the /feedback command.\n\n"
+                             "Example: `/feedback I really like the immersive captions!`"
+                    )
+            elif text.startswith("/viewfeedback") or text.startswith("/feedbacks"):
+                await handle_view_feedback(
+                    chat_id,
+                    update.effective_user.id if update.effective_user else None
+                )
+            elif text.startswith("/resetfirst") or text.startswith("/reset"):
+                await handle_reset_first_time(chat_id)
+
         elif update.callback_query:
+            query = update.callback_query
+            chat_id = update.effective_chat.id
+            first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
+
+            # === Allow Enter button for unregistered users ===
+            if query.data in ["show_main_menu", "main_menu"]:
+                await handle_callback(update)
+                return
+
+            # === Enforce registration for all other buttons ===
+            profile = await get_user_profile(chat_id)
+            if not profile:
+                await tg_app.bot.send_animation(
+                    chat_id=chat_id,
+                    animation=HELLO_GIF,
+                    caption =
+                        "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
+                        "The ancient trees watch you with quiet curiosity.\n\n"
+                        "To step into the Enchanted Clearing and discover its magic,\n"
+                        "please press the button below.\n\n"
+                        "<i>The forest is ready to welcome you.</i> 🍃✨",
+                    parse_mode='HTML',
+                    reply_markup=get_start_keyboard()
+                )
+                return
+
+            # Registered user → normal handling
             await handle_callback(update)
-
-    except Exception as e:
-        print(f"🔴 ERROR in process_update: {type(e).__name__} - {e}")
-        traceback.print_exc()
-
-
-# ==================== TEXT MESSAGE HANDLER ====================
-async def handle_text_message(update: Update):
-    text = update.message.text.lower().strip()
-    chat_id = update.effective_chat.id
-    user_msg_id = update.message.message_id
-    name = update.effective_user.first_name if update.effective_user else "Traveler"
-
-    if chat_id not in forest_memory:
-        forest_memory[chat_id] = []
-    forest_memory[chat_id].append(user_msg_id)
-
-    if not text.startswith("/start"):
-        profile = await get_user_profile(chat_id)
-        if not profile:
-            await tg_app.bot.send_animation(
-                chat_id=chat_id,
-                animation=HELLO_GIF,
-                caption="🌿 <b>Welcome to the Forest Hub</b>\n\nTo start using the resources, please tap the button below.",
-                parse_mode='HTML',
-                reply_markup=get_start_keyboard()
-            )
-            return
-
-    await update_last_active(chat_id)
-
-    if text.startswith("/start"):
-        await send_initial_welcome(chat_id, name)
-    elif text.startswith("/forest"):
-        await handle_info(chat_id)
-    elif text.startswith("/testerror"):
-        1 / 0
-    elif text.startswith("/history"):
-        await handle_history(chat_id, name)
-    elif text.startswith("/leaderboard"):
-        await handle_leaderboard(chat_id)
-    elif text.startswith("/profile"):
-        await handle_profile(chat_id, name)
-    elif text.startswith("/mystats"):
-        await handle_stats(chat_id, name)
-    elif text.startswith("/menu"):
-        profile = await get_user_profile(chat_id)
-        is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
-        await send_full_menu(chat_id, name, is_first_time=is_first)
-    elif text.startswith("/myid"):
-        await send_myid(chat_id)
-    elif text.startswith("/clear"):
-        await handle_clear(chat_id, user_msg_id, name)
-    elif text.startswith("/feedback"):
-        feedback_text = text.replace("/feedback", "").strip()
-        if feedback_text:
-            await handle_feedback(chat_id, name, feedback_text)
-        else:
-            await tg_app.bot.send_message(chat_id=chat_id, text="🌿 Please write your feedback after the /feedback command.")
-    elif text.startswith(("/viewfeedback", "/feedbacks")):
-        await handle_view_feedback(chat_id, update.effective_user.id if update.effective_user else None)
-    elif text.startswith(("/resetfirst", "/reset")):
-        await handle_reset_first_time(chat_id)
-
-
-# ==================== WEBHOOK ====================
-@app.route('/', methods=['GET', 'POST'])
-def webhook():
-    if request.method == 'GET':
-        return "🌿 Clyde's Enchanted Clearing is awake.", 200
-
-    update_data = request.get_json(silent=True)
-    if not update_data:
-        return "No data", 400
-
-    try:
-        asyncio.run(process_update(update_data))
-    except RuntimeError as e:
-        if "Event loop is closed" in str(e):
-            print("⚠️ Event loop closed error (normal on Vercel) - ignoring")
-        else:
-            print(f"🔴 RuntimeError in webhook: {e}")
-            traceback.print_exc()
-    except Exception as e:
-        print(f"🔴 Unexpected error in webhook: {type(e).__name__} - {e}")
-        traceback.print_exc()
-
+    try: loop.run_until_complete(process_update())
+    except Exception as e: print(f"🔴 Webhook Error: {e}")
     return "OK", 200
 
-
-# ==================== LOCAL TESTING ONLY ====================
 if __name__ == "__main__":
-    asyncio.run(start_tg_app())
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
