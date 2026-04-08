@@ -210,9 +210,9 @@ def get_cumulative_xp_for_level(target_level: int) -> int:
     return sum(200 + (lvl * 100) for lvl in range(1, target_level))
 
 def extract_netflix_number(item):
-    """Extract the number from 'Netflix Cookie 10' → returns 10"""
+    """Sort Netflix cookies correctly: 1, 2, 3, ..., 10, 11..."""
     name = str(item.get('display_name', '')).strip()
-    if 'Netflix Cookie' in name:
+    if name.startswith('Netflix Cookie'):
         try:
             return int(name.split()[-1])
         except:
@@ -1485,7 +1485,7 @@ async def handle_callback(update: Update):
         # NEW (replace with this)
         filtered.sort(key=extract_netflix_number)
 
-        # Netflix handling
+        # ====================== NETFLIX LIST (UPDATED) ======================
         if category == "netflix":
             report = (
                 "<b>🍿 Secret Netflix Cookies of the Forest</b>\n"
@@ -1496,14 +1496,18 @@ async def handle_callback(update: Update):
             )
             buttons = []
             for display_idx, item in enumerate(filtered[:limit], 1):
-                display_name = f"Netflix Cookie {display_idx}"
+                # Use real display_name from Supabase
+                display_name = str(item.get('display_name', f'Netflix Cookie {display_idx}')).strip()
+                
                 status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
                 report += f"✨ <b>{display_name}</b>\n"
                 report += f" Status: {status_text}\n"
                 report += f" Remaining: {item.get('remaining', 0)}\n\n"
+                
                 buttons.append([
                     InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")
                 ])
+            
             buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
             kb = InlineKeyboardMarkup(buttons)
             await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
@@ -1535,7 +1539,7 @@ async def handle_callback(update: Update):
         await handle_history(chat_id, first_name, page=page)
         return
 
-    # ====================== REVEAL NETFLIX ======================
+    # ====================== REVEAL NETFLIX (NOW USES REAL DISPLAY_NAME) ======================
     elif query.data.startswith("reveal_nf|"):
         try:
             idx = int(query.data.split("|", 1)[1])
@@ -1543,7 +1547,7 @@ async def handle_callback(update: Update):
             await query.answer("Invalid selection", show_alert=True)
             return
 
-        # Loading
+        # Loading animation
         await query.message.edit_caption(
             caption="🍿 <i>Searching deep within the glowing glade...</i>",
             parse_mode='HTML'
@@ -1556,10 +1560,9 @@ async def handle_callback(update: Update):
         )
         await asyncio.sleep(1.5)
 
-        # Get data (same as before)
+        # Get data + proper numeric sort
         profile = await get_user_profile(chat_id)
         user_level = profile.get('level', 1)
-
         if user_level == 1: limit = 1
         elif user_level <= 3: limit = 2
         elif user_level <= 6: limit = 4 if user_level <= 5 else 5
@@ -1571,28 +1574,24 @@ async def handle_callback(update: Update):
             return
 
         filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-
-        # OLD (delete this line)
-        filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
-
-        # NEW (replace with this)
-        filtered.sort(key=extract_netflix_number)
+        filtered.sort(key=extract_netflix_number)   # ← Numeric sort by display_name
 
         if idx < 1 or idx > len(filtered[:limit]):
             await query.answer("❌ Cookie not found", show_alert=True)
             return
 
         item = filtered[idx - 1]
-
         cookie = str(item.get('key_id', '')).strip()
-        display_name = str(item.get('display_name') or '').strip() or f"Forest Cookie {idx}"
+        
+        # Use REAL display_name from Supabase
+        display_name = str(item.get('display_name', f'Netflix Cookie {idx}')).strip()
         status = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
 
         await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
         # Document caption
         caption = (
-            f"📄 **Netflix\\_Cookie\\_{idx}\\.txt**\n\n"
+            f"📄 **{display_name.replace(' ', '_')}\\.txt**\n\n"
             f"🍿 **{display_name} Revealed**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🌿 Status: **{status}**\n"
@@ -1601,35 +1600,26 @@ async def handle_callback(update: Update):
             "_Tap the file below to receive its magic\\._ 🍃"
         )
 
-        # Immersive file content
+        # File content + filename based on real display_name
         from io import BytesIO
         file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret Netflix Cookie 🌿🍃
-
 ══════════════════════════════════════════════════════════════
-
 🌳 Cookie Spirit Awakened
-Name        : {display_name}
-Status      : {status}
-Remaining   : {item.get('remaining', 0)} uses
+Name     : {display_name}
+Status   : {status}
+Remaining: {item.get('remaining', 0)} uses
 Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
-
 🌲 The ancient trees have entrusted you with this cookie.
-Guard it well, wanderer, for its magic fades quickly.
-
+Guard it well, wanderer.
 ══════════════════════════════════════════════════════════════
-
 {cookie}
-
 ══════════════════════════════════════════════════════════════
-
 🍃 May this cookie bring you peaceful streams and hidden stories.
-Use it wisely and with gratitude.
-
 — The Caretaker of the Enchanted Clearing 🌿
 """
 
         file_bytes = BytesIO(file_content.encode('utf-8'))
-        file_bytes.name = f"Netflix_Cookie_{idx}.txt"
+        file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Back to Netflix Cookies", callback_data="back_to_netflix_list")]
@@ -1640,7 +1630,6 @@ Use it wisely and with gratitude.
         except:
             pass
 
-        # Send the document
         await tg_app.bot.send_document(
             chat_id=chat_id,
             document=file_bytes,
@@ -1650,16 +1639,10 @@ Use it wisely and with gratitude.
             filename=file_bytes.name
         )
 
-        # ← NEW: Small success message after file is sent
-        await asyncio.sleep(0.8)   # Small delay so it appears nicely below
-        success_msg = (
-            "✨ **Cookie successfully delivered!**\n\n"
-            "🌿 The ancient scroll has been handed to you.\n"
-            "May its magic serve you well, wanderer."
-        )
+        await asyncio.sleep(0.8)
         await tg_app.bot.send_message(
             chat_id=chat_id,
-            text=success_msg,
+            text="✨ **Cookie successfully delivered!**\n\n🌿 The ancient scroll has been handed to you.",
             parse_mode='MarkdownV2'
         )
 
@@ -1716,7 +1699,7 @@ Use it wisely and with gratitude.
         forest_memory[chat_id].append(final_msg.message_id)
 
 
-    # ====================== BACK TO NETFLIX LIST ======================
+    # ====================== BACK TO NETFLIX LIST (NOW USES REAL DISPLAY_NAME) ======================
     elif query.data == "back_to_netflix_list":
         # Delete the .txt file message
         try:
@@ -1727,7 +1710,6 @@ Use it wisely and with gratitude.
         # Show fresh Netflix list WITH GIF
         profile = await get_user_profile(chat_id)
         user_level = profile.get('level', 1)
-
         data = await get_vamt_data()
         if not data:
             await tg_app.bot.send_message(
@@ -1738,12 +1720,7 @@ Use it wisely and with gratitude.
             return
 
         filtered = [item for item in data if "netflix" in str(item.get('service_type', '')).lower()]
-
-        # OLD (delete this line)
-        # filtered.sort(key=lambda x: (str(x.get('display_name') or ''), str(x.get('last_updated') or '')))
-
-        # NEW (replace with this)
-        filtered.sort(key=extract_netflix_number)
+        filtered.sort(key=extract_netflix_number)   # ← Numeric sort by real display_name
 
         if user_level == 1:
             limit = 1
@@ -1765,21 +1742,27 @@ Use it wisely and with gratitude.
             f"{limit_note}\n\n"
             "<i>Which one whispers to your spirit?</i>\n\n"
         )
-
         buttons = []
         for display_idx, item in enumerate(filtered[:limit], 1):
-            display_name = f"Netflix Cookie {display_idx}"
+            # Use real display_name from Supabase
+            display_name = str(item.get('display_name', f'Netflix Cookie {display_idx}')).strip()
+            
             status_text = "✅ Awakened" if str(item.get('status', '')).lower() == "active" else "⚠️ Resting"
-            report += f"✨ <b>{display_name}</b>\n   Status: {status_text}\n   Remaining: {item.get('remaining', 0)}\n\n"
-            buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")])
+            report += f"✨ <b>{display_name}</b>\n"
+            report += f" Status: {status_text}\n"
+            report += f" Remaining: {item.get('remaining', 0)}\n\n"
+            
+            buttons.append([
+                InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_nf|{display_idx}")
+            ])
 
         buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
         kb = InlineKeyboardMarkup(buttons)
 
-        # Send with GIF (this brings back the logo)
+        # Send with GIF
         await tg_app.bot.send_animation(
             chat_id=chat_id,
-            animation=INVENTORY_GIF,           # ← Your logo GIF
+            animation=INVENTORY_GIF,
             caption=report,
             parse_mode='HTML',
             reply_markup=kb
