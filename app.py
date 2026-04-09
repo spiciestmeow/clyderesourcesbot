@@ -1955,8 +1955,10 @@ async def handle_callback(update: Update):
                 "<i>Tap Next → for Steam & XP Rewards</i>"
             )
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("↼ Previous", callback_data="guidance_page_1")],
-                [InlineKeyboardButton("Next ⇀", callback_data="guidance_page_3")],
+                [
+                    InlineKeyboardButton("↼ Previous", callback_data="guidance_page_1"),
+                    InlineKeyboardButton("Next ⇀", callback_data="guidance_page_3")
+                ],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
@@ -1976,7 +1978,7 @@ async def handle_callback(update: Update):
                 "<b>XP Rewards:</b>\n"
                 "• Viewing any list → <b>+8 XP</b>\n"
                 "• Revealing a cookie → <b>+14 XP</b>\n"
-                "• Profile or /clear → <b>+6 XP</b>\n"
+                "• /profile or /clear → <b>+6 XP</b>\n"
                 "• First Guidance / Lore → <b>+10 XP</b> (one-time only)\n\n"
                 
                 f"<b>Cumulative XP Requirements:</b>\n{level_req_text}\n\n"
