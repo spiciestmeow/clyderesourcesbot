@@ -280,14 +280,13 @@ def get_max_items(category: str, level: int) -> int:
     return 0
 
 async def show_paginated_cookie_list(service_type: str, chat_id: int, query, page: int = 0):
-    """FINAL FIXED VERSION - Low levels now ALWAYS get older cookies"""
+    """FIXED - Levels 1-5 now reliably get OLDER cookies"""
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
     max_by_level = get_max_items(service_type, user_level)
-    
+   
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿" if service_type == "netflix" else "🎥"
-
     data = await get_vamt_data()
     if not data:
         await query.message.edit_caption("🌫️ Database connection failed.", reply_markup=get_back_to_inventory_keyboard())
@@ -295,46 +294,31 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
     # Only active + working cookies
     filtered = [
-        item for item in data 
+        item for item in data
         if service_type in str(item.get('service_type', '')).lower()
         and str(item.get('status', '')).lower() == "active"
         and int(item.get('remaining', 0)) > 0
     ]
 
-    # Sort newest first (fresh uploads at the top)
-    filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=True)
+    # === FIXED LOGIC: Sort oldest first (much more reliable) ===
+    filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=False)
 
-    available_active = len(filtered)
-
-    if available_active == 0:
-        await query.message.edit_caption(
-            caption=f"<b>{emoji} Secret {title} Premium Cookies</b>\n\n"
-                    "🌫️ No working cookies available in the forest right now...\n"
-                    "Please try again later or check other resources.",
-            parse_mode='HTML',
-            reply_markup=get_back_to_inventory_keyboard()
-        )
-        return
-
-    # === FIXED SMART DISTRIBUTION ===
-    if user_level >= 5:
-        # High level → freshest cookies
-        filtered = filtered[:max_by_level]
+    if user_level >= 6:  # Levels 1-5 = older cookies (as you requested)
+        filtered = filtered[-max_by_level:]   # newest (from the end)
         priority_text = "✨ You get the freshest cookies first!"
     else:
-        # Low level → older working cookies (this is the key fix)
-        filtered = filtered[-max_by_level:]   # Take from the end of the list
+        filtered = filtered[:max_by_level]    # oldest (from the start)
         priority_text = "🌱 You get older but still working cookies."
 
-    # Pagination
+    # Pagination (unchanged)
     start = page * NETFLIX_ITEMS_PER_PAGE
     end = start + NETFLIX_ITEMS_PER_PAGE
     page_items = filtered[start:end]
     total_pages = (len(filtered) + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
 
     limit_note = f"🌿 Level {user_level} → Up to {max_by_level} {title} items\n{priority_text}"
-    if available_active < max_by_level:
-        limit_note += f"\n✅ Currently {available_active} working {title} cookies in the forest."
+    if len([item for item in data if service_type in str(item.get('service_type', '')).lower() and str(item.get('status', '')).lower() == "active" and int(item.get('remaining', 0)) > 0]) < max_by_level:
+        limit_note += f"\n✅ Currently only {len(filtered)} working {title} cookies in the forest."
 
     expire_note = "\n⚠️ Cookies can stop working without notice. Test quickly after revealing."
 
@@ -349,13 +333,9 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
     buttons = []
     for idx, item in enumerate(page_items, start=start + 1):
-        display_name = str(item.get('display_name') or '').strip()
-        if not display_name:
-            display_name = f"{title} Cookie"
-
+        display_name = str(item.get('display_name') or '').strip() or f"{title} Cookie"
         report += f"✨ <b>{display_name}</b>\n Status: ✅ Working\n Remaining: {item.get('remaining', 0)}\n\n"
-        
-        buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", 
+        buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}",
                                            callback_data=f"reveal_{service_type}|{idx}|{page}")])
 
     nav_buttons = []
@@ -371,34 +351,50 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
-    """Fixed + Robust version - Follow-up message always shows"""
+    """FIXED - Now uses the EXACT same logic as the list view"""
     emoji = "🍿" if service_type == "netflix" else "🎥"
-    
+   
     await query.message.edit_caption(
-        caption=f"{emoji} <i>Searching deep within the glowing glade...</i>", 
+        caption=f"{emoji} <i>Searching deep within the glowing glade...</i>",
         parse_mode='HTML'
     )
     await asyncio.sleep(1.3)
-
     await query.message.edit_caption(
-        caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...", 
+        caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
         parse_mode='HTML'
     )
     await asyncio.sleep(1.5)
 
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
-    limit = get_max_items(service_type, user_level)
+    max_by_level = get_max_items(service_type, user_level)
 
     data = await get_vamt_data()
-    filtered = [item for item in data if service_type in str(item.get('service_type', '')).lower()]
-    filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=True)
-
-    if idx < 1 or idx > len(filtered[:limit]):
-        await query.answer("❌ Cookie not found", show_alert=True)
+    if not data:
+        await query.answer("Database error", show_alert=True)
         return
 
-    item = filtered[idx - 1]
+    # === EXACT SAME FILTER + SORT + SLICE as show_paginated_cookie_list ===
+    filtered = [
+        item for item in data
+        if service_type in str(item.get('service_type', '')).lower()
+        and str(item.get('status', '')).lower() == "active"
+        and int(item.get('remaining', 0)) > 0
+    ]
+    
+    filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=False)  # oldest first
+
+    if user_level >= 6:
+        filtered = filtered[-max_by_level:]   # high level = newest
+    else:
+        filtered = filtered[:max_by_level]    # levels 1-5 = oldest
+
+    if idx < 1 or idx > len(filtered):
+        await query.answer("❌ Cookie no longer available", show_alert=True)
+        await show_paginated_cookie_list(service_type, chat_id, query, page)
+        return
+
+    item = filtered[idx - 1]   # Now correctly matches what the user saw
 
     # Safety check
     if str(item.get('status', '')).lower() != "active" or int(item.get('remaining', 0)) <= 0:
@@ -407,11 +403,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         return
 
     cookie = str(item.get('key_id', '')).strip()
-    display_name = str(item.get('display_name') or '').strip()
-    if not display_name:
-        display_name = f"{service_type.title()} Cookie"
-
-    status = "✅ Awakened"
+    display_name = str(item.get('display_name') or '').strip() or f"{service_type.title()} Cookie"
 
     await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
@@ -419,7 +411,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
         f"{emoji} <b>{display_name} Revealed</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🌿 Status: <b>{status}</b>\n"
+        f"🌿 Status: <b>✅ Awakened</b>\n"
         f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
         "📥 The forest has wrapped your cookie in an ancient scroll.\n"
         "<i>Tap the file below to receive its magic.</i> 🍃"
@@ -429,7 +421,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 ══════════════════════════════════════════════════════════════
 🌳 Cookie Spirit Awakened
 Name : {display_name}
-Status : {status}
+Status : ✅ Working
 Remaining: {item.get('remaining', 0)} uses
 Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
 🌲 Guard it well, wanderer.
@@ -452,7 +444,6 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     except:
         pass
 
-    # Send the document
     await tg_app.bot.send_document(
         chat_id=chat_id,
         document=file_bytes,
@@ -461,25 +452,12 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
         reply_markup=kb,
         filename=file_bytes.name
     )
-
     await asyncio.sleep(0.8)
-
-    # Robust success message - always try to send it
-    try:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=f"✨ **{display_name} successfully delivered!**",
-            parse_mode='MarkdownV2'
-        )
-    except:
-        # If for any reason the success message fails, still show something
-        try:
-            await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text="✨ Cookie successfully delivered!"
-            )
-        except:
-            pass   # Last resort - silent fail
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=f"✨ **{display_name} successfully delivered!**",
+        parse_mode='MarkdownV2'
+    )
 
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
