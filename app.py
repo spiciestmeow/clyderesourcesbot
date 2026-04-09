@@ -1898,7 +1898,7 @@ async def handle_callback(update: Update):
                 "• Tap any button to explore the paths\n"
                 "• Use /menu to return here anytime\n"
                 "• Use /clear to renew your path\n\n"
-                
+               
                 "📜 <b>Available Commands</b>\n"
                 "• /start — Begin your journey anew\n"
                 "• /menu — Return to the Enchanted Clearing\n"
@@ -1908,24 +1908,25 @@ async def handle_callback(update: Update):
                 "• /myid — Reveal your Eternal Forest ID\n"
                 "• /clear — Cleanse and renew the clearing\n"
                 "• /feedback — Send message to the caretaker\n\n"
-                
+               
                 "🌲 <b>Treasures You Can Discover</b>\n"
                 "• 🪄 Spirit Treasures — Steam accounts\n"
                 "• 📜 Ancient Scrolls — Learning guides\n"
                 "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
                 "• 🌲 The Whispering Forest — Main resource hub\n\n"
-                
+               
                 "<b>Note for New Wanderers:</b>\n"
                 "• You start at <b>Level 1 with 0 XP</b>\n"
                 "• Your first actions will help you grow and unlock more items.\n\n"
-                
+               
                 "<i>Tap Next → to learn about the Leveling System</i>"
             )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Next →", callback_data="guidance_page_2")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
-        else:
+
+        else:  # ==================== PAGE 2 (UPDATED & ACCURATE) ====================
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
                 for lvl in range(2, 11)
@@ -1934,39 +1935,42 @@ async def handle_callback(update: Update):
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
-                "Gain XP to unlock more items in Inventory.\n\n"
+                "Gain XP through exploration to unlock more resources.\n\n"
                 
                 "<b>📊 Item Limits by Level</b>\n\n"
                 
-                "🪟 <b>Windows & Office</b>\n"
+                "🪟 <b>Windows & Office Keys</b>\n"
                 "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 4\n"
                 "• Lv6: 6 • Lv7: 8 • Lv8: 10\n"
-                "• Lv9: 13 • Lv10+: Unlimited\n\n"
+                "• Lv9: 13 • Lv10+: <b>Unlimited</b>\n\n"
                 
-                "🍿 <b>Netflix Cookies</b>\n"
+                "🍿 <b>Netflix Premium Cookies</b>\n"
                 "• Lv1: 1 • Lv2-3: 3 • Lv4-5: 5\n"
                 "• Lv6: 7 • Lv7: 9 • Lv8: 12\n"
-                "• Lv9: 15 • Lv10+: Unlimited\n\n"
+                "• Lv9: 15 • Lv10+: <b>Unlimited</b>\n\n"
                 
-                "🎥 <b>PrimeVideo Cookies</b>\n"
+                "🎥 <b>PrimeVideo Premium Cookies</b>\n"
                 "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
                 "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
-                "• Lv9: 9 • Lv10+: Unlimited\n\n"
+                "• Lv9: 9 • Lv10+: <b>Unlimited</b>\n\n"
                 
                 "🎮 <b>Steam Accounts</b>\n"
-                "• Lv1-6: Public Drop Only\n"
+                "• Lv1-6: Public Drop Only (Website)\n"
                 "• Lv7-8: Early Preview\n"
                 "• Lv9: Early Preview + Sunday Double\n"
                 "• Lv10+: 👑 Legend Tier (Full Access)\n\n"
                 
-                "<b>XP Gains:</b>\n"
-                "• View keys → +6 XP • Reveal Netflix → +10 XP\n"
-                "• Profile / Clear → +5 XP • First Guidance or Lore → +8 XP\n\n"
+                "<b>XP Rewards:</b>\n"
+                "• Viewing any list → <b>+8 XP</b>\n"
+                "• Revealing a cookie → <b>+14 XP</b>\n"
+                "• Profile or /clear → <b>+6 XP</b>\n"
+                "• First Guidance / Lore → <b>+10 XP</b> (one-time only)\n\n"
                 
-                f"<b>Level Requirements:</b>\n{level_req_text}\n\n"
+                f"<b>Cumulative XP Requirements:</b>\n{level_req_text}\n\n"
                 
-                "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
+                "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨"
             )
+            
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="guidance_page_1")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
