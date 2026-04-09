@@ -11,7 +11,7 @@ import time
 from collections import Counter
 from io import BytesIO
 
-
+patch_notes = []
 forest_memory = {}
 app = Flask(__name__)
 
@@ -599,6 +599,83 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             )
 
     return True
+
+
+
+async def add_new_update(title: str, content: str, owner_chat_id: int):
+    """Add new patch note to Supabase"""
+    from datetime import datetime
+    manila_tz = pytz.timezone('Asia/Manila')
+    current_date = datetime.now(manila_tz).strftime("%B %d, %Y")
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+
+    payload = {
+        "date": current_date,
+        "title": title.strip(),
+        "content": content.strip()
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                f"{SUPABASE_URL}/rest/v1/patch_notes",
+                headers=headers,
+                json=payload
+            )
+            
+            if response.status_code in (200, 201):
+                await tg_app.bot.send_message(
+                    owner_chat_id,
+                    f"✅ Patch note saved successfully!\n\n"
+                    f"📅 {current_date}\n"
+                    f"📌 {title}"
+                )
+            else:
+                await tg_app.bot.send_message(owner_chat_id, "❌ Failed to save update.")
+        except Exception as e:
+            await tg_app.bot.send_message(owner_chat_id, f"❌ Error: {str(e)}")
+
+# ==================== ADD PATCH NOTICE ====================
+async def handle_updates(chat_id: int):
+    """Show latest patch notes from Supabase"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/patch_notes?order=created_at.desc&limit=5",
+                headers=headers
+            )
+            updates = response.json() or []
+        except:
+            await tg_app.bot.send_message(chat_id, "⚠️ Could not fetch updates right now.")
+            return
+
+    if not updates:
+        await tg_app.bot.send_message(chat_id, "🌱 No updates yet. The forest is still growing!")
+        return
+
+    text = "📜 <b>Patch Notes - Recent Updates</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+
+    for update in updates:
+        text += f"🕒 <b>{update['date']}</b>\n"
+        text += f"<b>{update['title']}</b>\n\n"
+        text += f"{update['content']}\n\n"
+        text += "━━━━━━━━━━━━━━━━━━\n\n"
+
+    text += "Type <b>/guidance</b> to see the new item limits.\n\n"
+    text += "🍃 Thank you for being part of the Enchanted Clearing!"
+
+    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
 
 # ==================== UPDATE LAST ACTIVE LOGGING ====================
 async def update_last_active(chat_id: int):
@@ -1974,24 +2051,33 @@ def webhook():
             # Command handlers
             if text.startswith("/start"):
                 await send_initial_welcome(chat_id, name)
+
             elif text.startswith("/forest"):
                 await handle_info(chat_id)
+
             elif text.startswith("/history"):
                 await handle_history(chat_id, name)
+
             elif text.startswith("/leaderboard"):
                 await handle_leaderboard(chat_id)
+
             elif text.startswith("/profile"):
                 await handle_profile(chat_id, name)
+
             elif text.startswith("/mystats"):
                 await handle_stats(chat_id, name)
+
             elif text.startswith("/menu"):
                 profile = await get_user_profile(chat_id)
                 is_first = not bool(profile.get('has_seen_menu', False)) if profile else True
                 await send_full_menu(chat_id, name, is_first_time=is_first)
+
             elif text.startswith("/myid"):
                 await send_myid(chat_id)
+
             elif text.startswith("/clear"):
                 await handle_clear(chat_id, user_msg_id, name)
+
             elif text.startswith("/feedback"):
                 feedback_text = text.replace("/feedback", "").strip()
                 if feedback_text:
@@ -2002,11 +2088,34 @@ def webhook():
                         text="🌿 Please write your feedback after the /feedback command.\n\n"
                              "Example: `/feedback I really like the immersive captions!`"
                     )
+
+            elif text.startswith("/addupdate"):
+                if chat_id != 7399488750:
+                    await tg_app.bot.send_message(chat_id, "❌ Only the caretaker can add updates.")
+                    return
+                
+                parts = text.replace("/addupdate", "").strip().split("|", 1)
+                if len(parts) < 2:
+                    await tg_app.bot.send_message(chat_id, 
+                        "Usage:\n`/addupdate | Title | Content here`")
+                    return
+                
+                title = parts[0].strip()
+                content = parts[1].strip()
+                await add_new_update(title, content, chat_id)
+
+            elif text.startswith("/updates") or text.startswith("/update"):
+                await handle_updates(chat_id)
+
+            elif text.startswith("/updates") or text.startswith("/update"):
+                await handle_updates(chat_id)
+
             elif text.startswith("/viewfeedback") or text.startswith("/feedbacks"):
                 await handle_view_feedback(
                     chat_id,
                     update.effective_user.id if update.effective_user else None
                 )
+
             elif text.startswith("/resetfirst") or text.startswith("/reset"):
                 await handle_reset_first_time(chat_id)
 
