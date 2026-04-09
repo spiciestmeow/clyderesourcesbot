@@ -913,28 +913,27 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
             headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
             streak = await calculate_streak(chat_id, client, headers)
 
-    streak_text = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Welcome back!"
+    streak_text = f"🔥 {streak} day streak!" if streak >= 2 else ""
 
     if is_first_time:
+        # ← THIS IS THE ULTRA-SHORT VERSION (guaranteed safe)
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
-            f"{level_info} • {streak_text}\n\n"
-            "🌱 <b>New wanderer?</b> Start with <b>Guidance</b> first!\n\n"
-            "<i>Every view = +8 XP • Every reveal = +14 XP</i>\n\n"
-            "<i>May gentle forest magic guide your first steps.</i> 🍃✨"
+            f"{level_info} {streak_text}\n\n"
+            "🌱 <b>New here?</b> Tap <b>❓ Start Here → Guidance</b> first!\n\n"
+            "<i>View = +8 XP • Reveal = +14 XP</i> 🍃✨"
         )
         keyboard = get_first_time_menu_keyboard()
     else:
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-            "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
-            f"{level_info} • {streak_text}\n\n"
-            "<i>Every view = +8 XP • Every reveal = +14 XP</i>\n\n"
-            "<i>The forest welcomes you once more.</i> 🍃✨"
+            "🌿 <b>Welcome back to the Clearing</b>\n\n"
+            f"{level_info} {streak_text}\n\n"
+            "<i>View = +8 XP • Reveal = +14 XP</i> 🍃✨"
         )
         keyboard = get_full_menu_keyboard()
-
+        
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MENU_GIF,
