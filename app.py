@@ -2092,10 +2092,11 @@ def webhook():
                     await tg_app.bot.send_message(chat_id, "❌ Only the caretaker can add updates.")
                     return
                 
-                # Improved parsing - more forgiving
-                text = text.replace("/addupdate", "").strip()
+                # Clean the text and handle different formats
+                raw = text.replace("/addupdate", "").strip()
                 
-                if "|" not in text:
+                # Support both " | " and " |" formats
+                if "|" not in raw:
                     await tg_app.bot.send_message(
                         chat_id, 
                         "❌ Wrong format.\n\n"
@@ -2104,17 +2105,18 @@ def webhook():
                     )
                     return
                 
-                # Split only on the FIRST pipe symbol
-                parts = text.split("|", 1)
+                # Split on the first pipe only
+                parts = raw.split("|", 1)
                 
                 title = parts[0].strip()
                 content = parts[1].strip() if len(parts) > 1 else ""
                 
-                if not title or not content:
-                    await tg_app.bot.send_message(
-                        chat_id, 
-                        "❌ Both Title and Content are required."
-                    )
+                if not title:
+                    await tg_app.bot.send_message(chat_id, "❌ Title cannot be empty.")
+                    return
+                
+                if not content:
+                    await tg_app.bot.send_message(chat_id, "❌ Content cannot be empty.")
                     return
                 
                 await add_new_update(title, content, chat_id)
