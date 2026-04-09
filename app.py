@@ -2116,7 +2116,7 @@ def webhook():
                 if not raw:
                     await tg_app.bot.send_message(
                         chat_id,
-                        "📌 **How to add a patch note:**\n\n"
+                        "📌 <b>How to add a patch note:</b>\n\n"
                         "• Short version:\n"
                         "`/addupdate | Title | Content`\n\n"
                         "• Long description version (recommended):\n"
