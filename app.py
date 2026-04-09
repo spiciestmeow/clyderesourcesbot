@@ -2106,38 +2106,48 @@ def webhook():
                 if chat_id != 7399488750:
                     await tg_app.bot.send_message(chat_id, "❌ Only the caretaker can add updates.")
                     return
-                
-                # Clean and robust parsing
-                raw_text = text.replace("/addupdate", "").strip()
-                
-                if "|" not in raw_text:
+
+                # Use ORIGINAL text (not lowered) to preserve case
+                original_text = update.message.text.strip()
+                raw = original_text.replace("/addupdate", "").strip()
+
+                if not raw:
                     await tg_app.bot.send_message(
                         chat_id,
-                        "❌ Wrong format.\n\n"
-                        "Correct usage:\n"
-                        "`/addupdate | Title Here | Your content here`"
+                        "📌 **Correct Usage:**\n\n"
+                        "`/addupdate | Title | Content`\n\n"
+                        "Example:\n"
+                        "`/addupdate | Bug Fix | Improved addupdate command parsing`"
                     )
                     return
-                
-                # Split only on the FIRST pipe symbol
-                parts = raw_text.split("|", 1)
-                
+
+                if "|" not in raw:
+                    await tg_app.bot.send_message(
+                        chat_id,
+                        "📌 **Correct Usage:**\n\n"
+                        "`/addupdate | Title | Content`\n\n"
+                        "Example:\n"
+                        "`/addupdate | Bug Fix | Improved addupdate command parsing`"
+                    )
+                    return
+
+                parts = raw.split("|", 1)  # Split only on first |
                 title = parts[0].strip()
                 content = parts[1].strip() if len(parts) > 1 else ""
 
                 if not title:
                     await tg_app.bot.send_message(chat_id, "❌ Title cannot be empty.")
                     return
-                
                 if not content:
                     await tg_app.bot.send_message(chat_id, "❌ Content cannot be empty.")
                     return
-                
+
+                # Extra cleaning
+                title = title.strip(" |")
+                content = content.strip(" |")
+
                 await add_new_update(title, content, chat_id)
             
-            elif text.startswith("/updates") or text.startswith("/update"):
-                await handle_updates(chat_id)
-
             elif text.startswith("/updates") or text.startswith("/update"):
                 await handle_updates(chat_id)
 
