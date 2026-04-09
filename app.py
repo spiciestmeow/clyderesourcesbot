@@ -99,16 +99,11 @@ async def get_vamt_data():
             return vamt_cache if vamt_cache is not None else None
         
 # ==================== DYNAMIC UPTIME & LAST UPDATED ====================
-def get_uptime():
-    """Live uptime since last deployment"""
-    try:
-        app_path = os.path.abspath(__file__)
-        last_deploy_timestamp = os.path.getmtime(app_path)
-        deployment_time = datetime.fromtimestamp(last_deploy_timestamp, tz=pytz.utc)
-    except:
-        deployment_time = datetime.now(pytz.utc)
+BOT_START_TIME = datetime.now(pytz.utc)
 
-    delta = datetime.now(pytz.utc) - deployment_time
+def get_uptime():
+    """Live uptime since last restart"""
+    delta = datetime.now(pytz.utc) - BOT_START_TIME
     days = delta.days
     hours = delta.seconds // 3600
     minutes = (delta.seconds % 3600) // 60
@@ -121,16 +116,9 @@ def get_uptime():
         return f"{minutes} minute{'s' if minutes != 1 else ''}"
 
 def get_last_updated():
-    """Shows when you last deployed (Manila time)"""
-    try:
-        app_path = os.path.abspath(__file__)
-        last_deploy_timestamp = os.path.getmtime(app_path)
-        last_deploy = datetime.fromtimestamp(last_deploy_timestamp, tz=pytz.utc)
-    except:
-        last_deploy = datetime.now(pytz.utc)
-
+    """Shows when the bot was last restarted (Manila time)"""
     manila_tz = pytz.timezone('Asia/Manila')
-    local_time = last_deploy.astimezone(manila_tz)
+    local_time = BOT_START_TIME.astimezone(manila_tz)
     return local_time.strftime("%B %d, %Y • %I:%M %p")
 
 # ==================== KEYBOARDS ====================
