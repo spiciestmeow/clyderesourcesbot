@@ -601,7 +601,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     return True
 
 
-
+# ==================== ADD PATCH NOTICE ====================
 async def add_new_update(title: str, content: str, owner_chat_id: int):
     """Add new patch note to Supabase"""
     from datetime import datetime
@@ -632,16 +632,16 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
             if response.status_code in (200, 201):
                 await tg_app.bot.send_message(
                     owner_chat_id,
-                    f"✅ Patch note saved successfully!\n\n"
+                    f"✅ Patch note added successfully!\n\n"
                     f"📅 {current_date}\n"
-                    f"📌 {title}"
+                    f"📌 {title.strip()}"
                 )
             else:
                 await tg_app.bot.send_message(owner_chat_id, "❌ Failed to save update.")
         except Exception as e:
             await tg_app.bot.send_message(owner_chat_id, f"❌ Error: {str(e)}")
 
-# ==================== ADD PATCH NOTICE ====================
+# ==================== VIEW PATCH NOTICE ====================
 async def handle_updates(chat_id: int):
     """Show latest patch notes from Supabase"""
     headers = {
@@ -672,7 +672,6 @@ async def handle_updates(chat_id: int):
         text += f"{update['content']}\n\n"
         text += "━━━━━━━━━━━━━━━━━━\n\n"
 
-    text += "Type <b>/guidance</b> to see the new item limits.\n\n"
     text += "🍃 Thank you for being part of the Enchanted Clearing!"
 
     await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
