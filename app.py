@@ -100,15 +100,16 @@ async def get_vamt_data():
             return vamt_cache if vamt_cache is not None else None
         
 # ==================== DYNAMIC UPTIME & LAST UPDATED ====================
-BOT_START_TIME = datetime.now(pytz.utc)
+BOT_START_TIME = datetime.now(pytz.utc)   # ← Remove this line
 
 def get_uptime():
-    """Live uptime since last restart"""
-    delta = datetime.now(pytz.utc) - BOT_START_TIME
+    """Show time since last deployment (more useful on Vercel)"""
+    # You can manually update this time whenever you deploy
+    deployment_time = datetime(2026, 4, 9, 10, 0, 0, tzinfo=pytz.utc)  # ← Change to your last deployment time
+    delta = datetime.now(pytz.utc) - deployment_time
     days = delta.days
     hours = delta.seconds // 3600
     minutes = (delta.seconds % 3600) // 60
-
     if days > 0:
         return f"{days} day{'s' if days > 1 else ''}, {hours} hour{'s' if hours > 1 else ''}"
     elif hours > 0:
@@ -117,9 +118,11 @@ def get_uptime():
         return f"{minutes} minute{'s' if minutes != 1 else ''}"
 
 def get_last_updated():
-    """Shows when the bot was last restarted (Manila time)"""
+    """Shows when you last deployed (Manila time)"""
     manila_tz = pytz.timezone('Asia/Manila')
-    local_time = BOT_START_TIME.astimezone(manila_tz)
+    # Update this date/time whenever you deploy a new version
+    last_deploy = datetime(2026, 4, 9, 10, 0, 0, tzinfo=pytz.utc)
+    local_time = last_deploy.astimezone(manila_tz)
     return local_time.strftime("%B %d, %Y • %I:%M %p")
 
 # ==================== KEYBOARDS ====================
