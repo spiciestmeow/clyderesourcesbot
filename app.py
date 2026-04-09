@@ -1696,7 +1696,6 @@ async def handle_callback(update: Update):
             reply_markup=get_inventory_categories()
         )
 
-
     # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "").lower()
@@ -1794,24 +1793,161 @@ async def handle_callback(update: Update):
         
         await handle_history(chat_id, first_name, page=page)
         return
-    
+
+    # ====================== HELP (Guidance) - 2 Pages ======================
+    elif query.data == "help" or query.data.startswith("guidance_page_"):
+        chat_id = update.effective_chat.id
+        first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
+
+        # Give XP only on the very first time opening Guidance
+        if query.data == "help":
+            await add_xp(chat_id, first_name, "guidance", query=query)
+
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        page = 1
+        if query.data.startswith("help_page_"):
+            try:
+                page = int(query.data.split("_")[2])
+            except:
+                page = 1
+
+        # Loading animation
+        loading_msg = await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=LOADING_GIF,
+            caption="🪶 <i>The wind carries soft voices from the depths of the forest...</i>",
+            parse_mode='HTML'
+        )
+        await asyncio.sleep(1.2)
+        await loading_msg.edit_caption("🌟 <i>The forest guides are preparing wisdom for you...</i>", parse_mode='HTML')
+        await asyncio.sleep(1.0)
+
+        if page == 1:
+            text = (
+                "<b>❓ Guidance - Page 1/2</b>\n\n"
+                "🌿 <b>How to Navigate the Clearing</b>\n"
+                "• Tap any button to explore the paths\n"
+                "• Use /menu to return here anytime\n"
+                "• Use /clear to renew your path\n\n"
+               
+                "📜 <b>Available Commands</b>\n"
+                "• /start — Begin your journey anew\n"
+                "• /menu — Return to the Enchanted Clearing\n"
+                "• /profile — View your Forest Profile\n"
+                "• /stats — View detailed Forest Statistics\n"
+                "• /leaderboard — See Top Wanderers\n"
+                "• /myid — Reveal your Eternal Forest ID\n"
+                "• /clear — Cleanse and renew the clearing\n"
+                "• /feedback — Send message to the caretaker\n\n"
+               
+                "🌲 <b>Treasures You Can Discover</b>\n"
+                "• 🪄 Spirit Treasures — Steam accounts\n"
+                "• 📜 Ancient Scrolls — Learning guides\n"
+                "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
+                "• 🌲 The Whispering Forest — Main resource hub\n\n"
+               
+                "<b>Note for New Wanderers:</b>\n"
+                "• You start at <b>Level 1 with 0 XP</b>\n"
+                "• Your first actions will help you grow and unlock more items.\n\n"
+               
+                "<i>Tap Next → to learn about the Leveling System</i>"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Next →", callback_data="guidance_page_2")],
+                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+            ])
+        else:  # page == 2
+            level_req_text = "\n".join(
+                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
+                for lvl in range(2, 11)
+            )
+          
+            text = (
+                "<b>❓ Guidance - Page 2/2</b>\n\n"
+                "✨ <b>Forest Leveling System</b>\n"
+                "Gain XP to unlock more items in Inventory.\n\n"
+              
+                "<b>📊 Item Limits by Level</b>\n\n"
+              
+                "🪟 <b>Windows & Office</b>\n"
+                "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 4\n"
+                "• Lv6: 6 • Lv7: 8 • Lv8: 10\n"
+                "• Lv9: 13 • Lv10+: Unlimited\n\n"
+              
+                "🍿 <b>Netflix Cookies</b>\n"
+                "• Lv1: 1 • Lv2-3: 3 • Lv4-5: 5\n"
+                "• Lv6: 7 • Lv7: 9 • Lv8: 12\n"
+                "• Lv9: 15 • Lv10+: Unlimited\n\n"
+              
+                "🎥 <b>PrimeVideo Cookies</b>\n"
+                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
+                "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
+                "• Lv9: 9 • Lv10+: Unlimited\n\n"
+              
+                "🎮 <b>Steam Accounts</b>\n"
+                "• Lv1-6: Public Drop Only\n"
+                "• Lv7-8: Early Preview\n"
+                "• Lv9: Early Preview + Sunday Double\n"
+                "• Lv10+: 👑 Legend Tier (Full Access)\n\n"
+              
+                "<b>XP Gains:</b>\n"
+                "• View keys → +6 XP • Reveal Netflix → +10 XP\n"
+                "• Profile / Clear → +5 XP • First Guidance or Lore → +8 XP\n\n"
+              
+                f"<b>Level Requirements:</b>\n{level_req_text}\n\n"
+              
+                "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("← Previous", callback_data="guidance_page_1")],
+                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+            ])
+
+        await loading_msg.edit_caption(
+            caption=text,
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+
+        # Save for /clear
+        if chat_id not in forest_memory:
+            forest_memory[chat_id] = []
+        forest_memory[chat_id].append(loading_msg.message_id)
+
+        # Mark as seen
+        if query.data == "help":
+            profile = await get_user_profile(chat_id)
+            if profile and not profile.get('has_seen_menu', False):
+                await update_has_seen_menu(chat_id)
+   
     # ====================== PAGINATION FOR NETFLIX & PRIME ======================
-    elif query.data.endswith("_page_") or "_page_" in query.data:
+    elif ("_page_" in query.data and 
+        query.data.split("_page_")[0] in ["netflix", "prime"]):
+        
         try:
             service_type = query.data.split("_page_")[0]
             new_page = int(query.data.split("_page_")[1])
+            
             loading_msg = await tg_app.bot.send_animation(
                 chat_id=chat_id,
                 animation=INVENTORY_GIF,
-                caption=f"{ '🍿' if service_type == 'netflix' else '🎥' } <i>Loading {service_type.title()}...</i>",
+                caption=f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Loading {service_type.title()}...</i>",
                 parse_mode='HTML'
             )
+            
             class FakeQuery:
                 message = loading_msg
+            
             await show_paginated_cookie_list(service_type, chat_id, FakeQuery(), page=new_page)
             await query.message.delete()
-        except:
-            await query.answer("Pagination error", show_alert=True)
+            
+        except Exception as e:
+            print(f"Pagination error: {e}")
+            await query.answer("❌ Pagination error", show_alert=True)
     
 # ====================== REVEAL COOKIE (Reusable for both) ======================
     elif query.data.startswith("reveal_netflix|") or query.data.startswith("reveal_prime|"):
@@ -1896,136 +2032,7 @@ async def handle_callback(update: Update):
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
-    # ====================== HELP (Guidance) - 2 Pages ======================
-    elif query.data == "help" or query.data.startswith("help_page_"):
-        chat_id = update.effective_chat.id
-        first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
-
-        # Give XP only on the very first time opening Guidance
-        if query.data == "help":
-            await add_xp(chat_id, first_name, "guidance", query=query)
-
-        try:
-            await query.message.delete()
-        except:
-            pass
-
-        page = 1
-        if query.data.startswith("help_page_"):
-            try:
-                page = int(query.data.split("_")[2])
-            except:
-                page = 1
-
-        # Loading animation
-        loading_msg = await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=LOADING_GIF,
-            caption="🪶 <i>The wind carries soft voices from the depths of the forest...</i>",
-            parse_mode='HTML'
-        )
-        await asyncio.sleep(1.2)
-        await loading_msg.edit_caption("🌟 <i>The forest guides are preparing wisdom for you...</i>", parse_mode='HTML')
-        await asyncio.sleep(1.0)
-
-        if page == 1:
-            text = (
-                "<b>❓ Guidance - Page 1/2</b>\n\n"
-                "🌿 <b>How to Navigate the Clearing</b>\n"
-                "• Tap any button to explore the paths\n"
-                "• Use /menu to return here anytime\n"
-                "• Use /clear to renew your path\n\n"
-               
-                "📜 <b>Available Commands</b>\n"
-                "• /start — Begin your journey anew\n"
-                "• /menu — Return to the Enchanted Clearing\n"
-                "• /profile — View your Forest Profile\n"
-                "• /stats — View detailed Forest Statistics\n"
-                "• /leaderboard — See Top Wanderers\n"
-                "• /myid — Reveal your Eternal Forest ID\n"
-                "• /clear — Cleanse and renew the clearing\n"
-                "• /feedback — Send message to the caretaker\n\n"
-               
-                "🌲 <b>Treasures You Can Discover</b>\n"
-                "• 🪄 Spirit Treasures — Steam accounts\n"
-                "• 📜 Ancient Scrolls — Learning guides\n"
-                "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
-                "• 🌲 The Whispering Forest — Main resource hub\n\n"
-               
-                "<b>Note for New Wanderers:</b>\n"
-                "• You start at <b>Level 1 with 0 XP</b>\n"
-                "• Your first actions will help you grow and unlock more items.\n\n"
-               
-                "<i>Tap Next → to learn about the Leveling System</i>"
-            )
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Next →", callback_data="help_page_2")],
-                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
-            ])
-        else:  # page == 2
-            level_req_text = "\n".join(
-                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
-                for lvl in range(2, 11)
-            )
-          
-            text = (
-                "<b>❓ Guidance - Page 2/2</b>\n\n"
-                "✨ <b>Forest Leveling System</b>\n"
-                "Gain XP to unlock more items in Inventory.\n\n"
-              
-                "<b>📊 Item Limits by Level</b>\n\n"
-              
-                "🪟 <b>Windows & Office</b>\n"
-                "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 4\n"
-                "• Lv6: 6 • Lv7: 8 • Lv8: 10\n"
-                "• Lv9: 13 • Lv10+: Unlimited\n\n"
-              
-                "🍿 <b>Netflix Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 3 • Lv4-5: 5\n"
-                "• Lv6: 7 • Lv7: 9 • Lv8: 12\n"
-                "• Lv9: 15 • Lv10+: Unlimited\n\n"
-              
-                "🎥 <b>PrimeVideo Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
-                "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
-                "• Lv9: 9 • Lv10+: Unlimited\n\n"
-              
-                "🎮 <b>Steam Accounts</b>\n"
-                "• Lv1-6: Public Drop Only\n"
-                "• Lv7-8: Early Preview\n"
-                "• Lv9: Early Preview + Sunday Double\n"
-                "• Lv10+: 👑 Legend Tier (Full Access)\n\n"
-              
-                "<b>XP Gains:</b>\n"
-                "• View keys → +6 XP • Reveal Netflix → +10 XP\n"
-                "• Profile / Clear → +5 XP • First Guidance or Lore → +8 XP\n\n"
-              
-                f"<b>Level Requirements:</b>\n{level_req_text}\n\n"
-              
-                "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
-            )
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
-                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
-            ])
-
-        await loading_msg.edit_caption(
-            caption=text,
-            parse_mode='HTML',
-            reply_markup=keyboard
-        )
-
-        # Save for /clear
-        if chat_id not in forest_memory:
-            forest_memory[chat_id] = []
-        forest_memory[chat_id].append(loading_msg.message_id)
-
-        # Mark as seen
-        if query.data == "help":
-            profile = await get_user_profile(chat_id)
-            if profile and not profile.get('has_seen_menu', False):
-                await update_has_seen_menu(chat_id)
-        
+     
 # ==================== WEBHOOK ====================
 async def start_tg_app():
     await tg_app.initialize()
