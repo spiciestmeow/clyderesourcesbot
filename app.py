@@ -891,49 +891,35 @@ async def send_level_up_message(chat_id, first_name, old_level, new_level):
         pass
 
 async def send_full_menu(chat_id, first_name, is_first_time=False):
-    user_tz = pytz.timezone('Asia/Manila')
-    current_hour = datetime.now(user_tz).hour
-    time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
-    greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
+    """ULTRA-SHORT VERSION - Guaranteed under 1024 characters"""
     
-    # Get user profile to show current level and title
+    # Get profile
     profile = await get_user_profile(chat_id)
-    
+    level_info = "🌱 Level 1"
     if profile:
         level = profile.get('level', 1)
-        title = get_level_title(level)
-        level_info = f"🏷️ {title} • ⭐ Level {level}"
-    else:
-        level_info = "🌱 New Wanderer • ⭐ Level 1"
+        level_info = f"Level {level}"
 
-    # Calculate streak for the menu
-    streak = 0
-    if profile:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-            streak = await calculate_streak(chat_id, client, headers)
-
-    streak_text = f"🔥 {streak} day streak!" if streak >= 2 else ""
+    # DEBUG LINE - check exact length in your server logs
+    print(f"DEBUG: send_full_menu caption length = {len(level_info + first_name)} characters (first_time={is_first_time})")
 
     if is_first_time:
-        # ← THIS IS THE ULTRA-SHORT VERSION (guaranteed safe)
         caption = (
-            f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-            "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
-            f"{level_info} {streak_text}\n\n"
-            "🌱 <b>New here?</b> Tap <b>❓ Start Here → Guidance</b> first!\n\n"
-            "<i>View = +8 XP • Reveal = +14 XP</i> 🍃✨"
+            f"🌿 Welcome, {html.escape(str(first_name))}!\n\n"
+            f"{level_info}\n\n"
+            "🌱 New here?\n"
+            "Tap ❓ Start Here → Guidance first!\n\n"
+            "View = +8 XP • Reveal = +14 XP 🍃"
         )
         keyboard = get_first_time_menu_keyboard()
     else:
         caption = (
-            f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
-            "🌿 <b>Welcome back to the Clearing</b>\n\n"
-            f"{level_info} {streak_text}\n\n"
-            "<i>View = +8 XP • Reveal = +14 XP</i> 🍃✨"
+            f"🌿 Welcome back, {html.escape(str(first_name))}!\n\n"
+            f"{level_info}\n\n"
+            "View = +8 XP • Reveal = +14 XP 🍃"
         )
         keyboard = get_full_menu_keyboard()
-        
+
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MENU_GIF,
