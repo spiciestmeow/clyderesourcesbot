@@ -226,11 +226,14 @@ async def update_has_seen_menu(chat_id):
             print(f"Failed to force set has_seen_menu: {e}")
 
 def get_cumulative_xp_for_level(target_level: int) -> int:
-    """Returns total XP needed to reach this level (new balanced formula)"""
+    """Win-Win Balanced Formula - Users progress fast enough not to get bored, 
+       but your fresh cookies stay protected until Level 6+"""
     if target_level <= 1:
         return 0
-    # 200 base + 100 increasing per level (feels good for a Telegram bot)
-    return sum(200 + (lvl * 100) for lvl in range(1, target_level))
+    
+    # Faster early game, still meaningful long-term
+    levels = [0, 0, 240, 560, 980, 1520, 2180, 2980, 3950, 5050, 6300]
+    return levels[target_level] if target_level < len(levels) else levels[-1] + (target_level - 10) * 1300
 
 def extract_netflix_number(item):
     """Sort Netflix cookies correctly: 1, 2, 3, ..., 10, 11..."""
@@ -519,31 +522,26 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     xp_cooldowns[chat_id][action] = current_time
     user_action_history[chat_id].append(current_time)
 
-    # ====================== XP AMOUNT LOGIC ======================
+    # ====================== XP AMOUNT LOGIC (Win-Win Balanced) ======================
     profile = await get_user_profile(chat_id)
     
-    xp_amount = 0   # Default is now 0 (no accidental XP)
-
+    xp_amount = 0
     if action == "guidance":
         current_reads = profile.get('guidance_reads', 0) if profile else 0
-        if current_reads == 0:           # First time only
-            xp_amount = 8
+        if current_reads == 0:
+            xp_amount = 10
     elif action == "lore":
         current_reads = profile.get('lore_reads', 0) if profile else 0
-        if current_reads == 0:           # First time only
-            xp_amount = 8
-    elif action == "view_windows":
-        xp_amount = 6
-    elif action == "view_office":
-        xp_amount = 6
-    elif action == "view_netflix":
-        xp_amount = 6
+        if current_reads == 0:
+            xp_amount = 10
+    elif action == "view_windows" or action == "view_office" or action == "view_netflix":
+        xp_amount = 8
     elif action == "reveal_netflix":
-        xp_amount = 10
+        xp_amount = 14
     elif action == "profile":
-        xp_amount = 5
+        xp_amount = 6
     elif action == "clear":
-        xp_amount = 5
+        xp_amount = 6
 
     # ====================== Database Update ======================
     headers = {
@@ -903,6 +901,7 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
             f"{level_info}\n\n"
             "Beneath the whispering ancient trees, many paths lie before you...\n\n"
             "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
+            "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
             "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
         )
         keyboard = get_first_time_menu_keyboard()
@@ -912,6 +911,7 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
             "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
             f"{level_info}\n\n"
             "The clearing welcomes you back, wanderer.\n\n"
+            "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
             "<i>May the forest welcome you once more.</i> 🍃✨"
         )
         keyboard = get_full_menu_keyboard()
@@ -1140,22 +1140,20 @@ async def calculate_streak(chat_id: int, client, headers):
         print(f"Streak calculation error: {e}")
         return 0
 
-# ==================== PROFILE COMMAND ======================
 async def handle_profile(chat_id, first_name):
     await add_xp(chat_id, first_name, "profile")
-    
+   
     profile = await get_user_profile(chat_id)
     if not profile:
         return
-
     level = profile['level']
     xp = profile['xp']
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     xp_to_next = max(0, xp_required_next - xp)
-
+    
     # Create green progress bar
     progress_bar = create_progress_bar(xp, xp_required_next, length=10)
-
+    
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1164,16 +1162,20 @@ async def handle_profile(chat_id, first_name):
         f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
         f"{progress_bar}\n\n"
         f"📈 <b>To Next Level:</b> {xp_to_next:,} XP\n\n"
+        "🌱 <b>Quick Rewards:</b>\n"
+        "• View any list → <b>+8 XP</b>\n"
+        "• Reveal Netflix Cookie → <b>+14 XP</b>\n"
+        "• Profile / Clear → <b>+6 XP</b>\n\n"
         "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
-
+    
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
         caption=caption,
         parse_mode='HTML'
     )
-    
+   
     # Add to forest_memory so /clear can delete it
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
@@ -1182,7 +1184,7 @@ async def handle_profile(chat_id, first_name):
 
 async def handle_stats(chat_id, first_name):
     """Updated Stats with individual inventory tracking"""
-    
+   
     profile = await get_user_profile(chat_id)
     if not profile:
         await tg_app.bot.send_message(
@@ -1190,13 +1192,11 @@ async def handle_stats(chat_id, first_name):
             text="🌿 You haven't started your journey yet. Use /profile to begin!"
         )
         return
-
     level = profile.get('level', 1)
     xp = profile.get('xp', 0)
     xp_required_next = get_cumulative_xp_for_level(level + 1)
-
     progress_bar = create_progress_bar(xp, xp_required_next, length=10)
-
+    
     # Date formatting
     joined_date = "Unknown"
     if profile.get('created_at'):
@@ -1205,17 +1205,15 @@ async def handle_stats(chat_id, first_name):
             joined_date = dt.strftime("%B %d, %Y")
         except:
             joined_date = str(profile['created_at'])[:10]
-
-    # Improved Last Active display (minimal change)
+    
+    # Improved Last Active display
     last_active = "Just now"
     if profile.get('last_active'):
         try:
             dt = datetime.fromisoformat(profile['last_active'].replace('Z', '+00:00'))
             dt = dt.astimezone(pytz.timezone('Asia/Manila'))
             now_manila = datetime.now(pytz.timezone('Asia/Manila'))
-            
             diff_minutes = int((now_manila - dt).total_seconds() / 60)
-            
             if diff_minutes < 2:
                 last_active = "Just now"
             elif diff_minutes < 60:
@@ -1252,22 +1250,27 @@ async def handle_stats(chat_id, first_name):
         f"• Times Cleared the Forest: <b>{times_cleared}</b>\n"
         f"• Guidance Read: <b>{guidance_reads}</b> times\n"
         f"• Lore Read: <b>{lore_reads}</b> times\n\n"
+        "🌱 <b>Quick Rewards:</b>\n"
+        "• View any list → <b>+8 XP</b>\n"
+        "• Reveal Netflix Cookie → <b>+14 XP</b>\n"
+        "• Profile / Clear → <b>+6 XP</b>\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🌱 <b>Joined:</b> {joined_date}\n"
         f"🌲 <b>Last Active:</b> {last_active}\n\n"
         "<i>The trees remember every step you've taken...</i> 🍃"
     )
-
+    
     msg = await tg_app.bot.send_message(
         chat_id=chat_id,
         text=caption,
         parse_mode='HTML'
     )
-    
+   
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
-    
+
+
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
     headers = {
@@ -1867,31 +1870,33 @@ async def handle_callback(update: Update):
         if page == 1:
             text = (
                 "<b>❓ Guidance - Page 1/2</b>\n\n"
-                "🌿 <b>How to Navigate the Clearing</b>\n"
-                "• Tap any button to explore the paths\n"
+                "🌿 <b>How to Navigate the Enchanted Clearing</b>\n"
+                "• Tap any button to explore\n"
                 "• Use /menu to return here anytime\n"
-                "• Use /clear to renew your path\n\n"
-                
-                "📜 <b>Available Commands</b>\n"
-                "• /start — Begin your journey anew\n"
-                "• /menu — Return to the Enchanted Clearing\n"
-                "• /profile — View your Forest Profile\n"
-                "• /stats — View detailed Forest Statistics\n"
-                "• /leaderboard — See Top Wanderers\n"
-                "• /myid — Reveal your Eternal Forest ID\n"
-                "• /clear — Cleanse and renew the clearing\n"
-                "• /feedback — Send message to the caretaker\n\n"
-                
+                "• Use /clear to refresh the entire chat\n\n"
+               
+                "📜 <b>All Available Commands</b>\n"
+                "• /start — Begin your journey or return to welcome\n"
+                "• /menu — Open the main Enchanted Clearing menu\n"
+                "• /profile — View your current level, XP, and title\n"
+                "• /mystats — View detailed Forest Statistics\n"
+                "• /leaderboard — View top wanderers in the forest\n"
+                "• /myid — Reveal your unique Eternal Forest ID\n"
+                "• /clear — Clean the chat and start fresh\n"
+                "• /feedback — Send a message to the caretaker\n"
+                "• /history — View your full XP journey and streak\n"
+                "• /updates — View recent patch notes and updates\n\n"
+               
                 "🌲 <b>Treasures You Can Discover</b>\n"
                 "• 🪄 Spirit Treasures — Steam accounts\n"
                 "• 📜 Ancient Scrolls — Learning guides\n"
-                "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
+                "• 🌿 Forest Inventory — Windows, Office, Netflix & Prime\n"
                 "• 🌲 The Whispering Forest — Main resource hub\n\n"
-                
+               
                 "<b>Note for New Wanderers:</b>\n"
                 "• You start at <b>Level 1 with 0 XP</b>\n"
-                "• Your first actions will help you grow and unlock more items.\n\n"
-                
+                "• Every action helps you grow and unlock better rewards.\n\n"
+               
                 "<i>Tap Next → to learn about the Leveling System</i>"
             )
             keyboard = InlineKeyboardMarkup([
@@ -1900,53 +1905,56 @@ async def handle_callback(update: Update):
             ])
 
         # ==================== PAGE 2 ====================
-        else:  # page == 2
+        else: # page == 2
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
                 for lvl in range(2, 11)
             )
-            
+           
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
-                "Gain XP to unlock more items in Inventory.\n\n"
-                
+                "Gain XP to unlock more items and fresher cookies.\n\n"
+               
                 "<b>📊 Item Limits by Level</b>\n\n"
-                
+               
                 "🪟 <b>Windows & Office</b>\n"
                 "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 4\n"
                 "• Lv6: 6 • Lv7: 8 • Lv8: 10\n"
                 "• Lv9: 13 • Lv10+: Unlimited\n\n"
-                
+               
                 "🍿 <b>Netflix Cookies</b>\n"
                 "• Lv1: 1 • Lv2-3: 3 • Lv4-5: 5\n"
                 "• Lv6: 7 • Lv7: 9 • Lv8: 12\n"
                 "• Lv9: 15 • Lv10+: Unlimited\n\n"
-                
+               
                 "🎥 <b>PrimeVideo Cookies</b>\n"
                 "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
                 "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
                 "• Lv9: 9 • Lv10+: Unlimited\n\n"
-                
+               
                 "🎮 <b>Steam Accounts</b>\n"
                 "• Lv1-6: Public Drop Only\n"
                 "• Lv7-8: Early Preview\n"
                 "• Lv9: Early Preview + Sunday Double\n"
                 "• Lv10+: 👑 Legend Tier (Full Access)\n\n"
-                
+               
                 "<b>XP Gains:</b>\n"
-                "• View keys → +6 XP • Reveal Netflix → +10 XP\n"
-                "• Profile / Clear → +5 XP • First Guidance or Lore → +8 XP\n\n"
-                
+                "• View any list → <b>+8 XP</b>\n"
+                "• Reveal Netflix Cookie → <b>+14 XP</b>\n"
+                "• Profile or /clear → <b>+6 XP</b>\n"
+                "• First Guidance or Lore → <b>+10 XP</b> (once only)\n\n"
+               
                 f"<b>Level Requirements:</b>\n{level_req_text}\n\n"
-                
-                "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
+               
+                "<i>The more you wander, the stronger your spirit grows.\n"
+                "Level 6+ gets the freshest cookies first!</i> 🍃✨"
             )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="guidance_page_1")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
-
+        
         try:
             await query.message.edit_caption(
                 caption=text,
