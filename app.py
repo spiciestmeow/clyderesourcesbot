@@ -13,6 +13,9 @@ from io import BytesIO
 
 patch_notes = []
 forest_memory = {}
+forest_memory = {}
+last_reveal_messages = {}   # ← NEW: tracks the last document + success message to clean them
+
 app = Flask(__name__)
 
 # ==================== GLOBAL CACHE FOR VAMT DATA ====================
@@ -350,8 +353,9 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     kb = InlineKeyboardMarkup(buttons)
     await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
+#REVEAL COOKIES
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
-    """FIXED - Now uses the EXACT same logic as the list view"""
+    """CLEAN CHAT VERSION - No remaining decrease + messages will be deleted on Back"""
     emoji = "🍿" if service_type == "netflix" else "🎥"
    
     await query.message.edit_caption(
@@ -374,31 +378,28 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         await query.answer("Database error", show_alert=True)
         return
 
-    # === EXACT SAME FILTER + SORT + SLICE as show_paginated_cookie_list ===
     filtered = [
         item for item in data
         if service_type in str(item.get('service_type', '')).lower()
         and str(item.get('status', '')).lower() == "active"
         and int(item.get('remaining', 0)) > 0
     ]
-    
-    filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=False)  # oldest first
-
+   
+    filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=False)
     if user_level >= 6:
-        filtered = filtered[-max_by_level:]   # high level = newest
+        filtered = filtered[-max_by_level:]
     else:
-        filtered = filtered[:max_by_level]    # levels 1-5 = oldest
+        filtered = filtered[:max_by_level]
 
     if idx < 1 or idx > len(filtered):
         await query.answer("❌ Cookie no longer available", show_alert=True)
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
 
-    item = filtered[idx - 1]   # Now correctly matches what the user saw
+    item = filtered[idx - 1]
 
-    # Safety check
     if str(item.get('status', '')).lower() != "active" or int(item.get('remaining', 0)) <= 0:
-        await query.answer("⚠️ This cookie has expired. The forest has removed it.", show_alert=True)
+        await query.answer("⚠️ This cookie has expired.", show_alert=True)
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
 
@@ -444,7 +445,8 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     except:
         pass
 
-    await tg_app.bot.send_document(
+    # Send document and remember its ID
+    doc_msg = await tg_app.bot.send_document(
         chat_id=chat_id,
         document=file_bytes,
         caption=caption,
@@ -452,12 +454,22 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
         reply_markup=kb,
         filename=file_bytes.name
     )
+
+    # Reliable success message
     await asyncio.sleep(0.8)
-    await tg_app.bot.send_message(
+    success_msg = await tg_app.bot.send_message(
         chat_id=chat_id,
-        text=f"✨ **{display_name} successfully delivered!**",
-        parse_mode='MarkdownV2'
+        text=f"✨ <b>{display_name} successfully delivered!</b>",
+        parse_mode='HTML'
     )
+
+    # Store message IDs so we can delete them when user goes back
+    if chat_id not in last_reveal_messages:
+        last_reveal_messages[chat_id] = {}
+    last_reveal_messages[chat_id][service_type] = {
+        "doc": doc_msg.message_id,
+        "success": success_msg.message_id
+    }
 
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
@@ -1995,6 +2007,20 @@ async def handle_callback(update: Update):
             page = int(query.data.split("|")[1]) if "|" in query.data else 0
         except:
             page = 0
+
+        # === CLEAN PREVIOUS REVEAL MESSAGES ===
+        if chat_id in last_reveal_messages and service_type in last_reveal_messages[chat_id]:
+            try:
+                await tg_app.bot.delete_message(chat_id, last_reveal_messages[chat_id][service_type]["doc"])
+                await tg_app.bot.delete_message(chat_id, last_reveal_messages[chat_id][service_type]["success"])
+            except:
+                pass  # message already deleted
+            # Clear the record
+            del last_reveal_messages[chat_id][service_type]
+            if not last_reveal_messages[chat_id]:
+                del last_reveal_messages[chat_id]
+
+        # Now show fresh list
         loading_msg = await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=INVENTORY_GIF,
