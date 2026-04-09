@@ -183,7 +183,8 @@ async def get_user_profile(chat_id):
                 f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}"
                 "&select=*,has_seen_menu,created_at,total_xp_earned,"
                 "windows_views,office_views,netflix_views,netflix_reveals,"
-                "times_cleared,guidance_reads,lore_reads,profile_views",   # ← Added profile_views
+                "prime_views,prime_reveals,"
+                "times_cleared,guidance_reads,lore_reads,profile_views",
                 headers=headers
             )
             data = response.json()
@@ -388,8 +389,8 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
     max_by_level = get_max_items(service_type, user_level)
-
     data = await get_vamt_data()
+
     if not data:
         await query.answer("Database error", show_alert=True)
         return
@@ -422,7 +423,16 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
     cookie = str(item.get('key_id', '')).strip()
     display_name = str(item.get('display_name') or '').strip() or f"{service_type.title()} Cookie"
 
-    await add_xp(chat_id, first_name, "reveal_netflix", query=query)
+    # FIXED: Use correct action for Prime or Netflix
+    action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
+    await add_xp(chat_id, first_name, action_name, query=query)
+
+    # Instant XP feedback for reveal
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text="✨ <b>+14 XP</b> earned!",
+        parse_mode='HTML'
+    )
 
     caption = (
         f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
@@ -522,9 +532,9 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     xp_cooldowns[chat_id][action] = current_time
     user_action_history[chat_id].append(current_time)
 
-    # ====================== XP AMOUNT LOGIC (Win-Win Balanced) ======================
+# ====================== XP AMOUNT LOGIC (Win-Win Balanced) ======================
     profile = await get_user_profile(chat_id)
-    
+   
     xp_amount = 0
     if action == "guidance":
         current_reads = profile.get('guidance_reads', 0) if profile else 0
@@ -534,9 +544,9 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         current_reads = profile.get('lore_reads', 0) if profile else 0
         if current_reads == 0:
             xp_amount = 10
-    elif action == "view_windows" or action == "view_office" or action == "view_netflix":
+    elif action in ["view_windows", "view_office", "view_netflix", "view_prime"]:
         xp_amount = 8
-    elif action == "reveal_netflix":
+    elif action in ["reveal_netflix", "reveal_prime"]:
         xp_amount = 14
     elif action == "profile":
         xp_amount = 6
@@ -553,15 +563,18 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     if profile:
         stats_update = {}
-
         if action == "view_windows":
             stats_update["windows_views"] = (profile.get('windows_views') or 0) + 1
         elif action == "view_office":
             stats_update["office_views"] = (profile.get('office_views') or 0) + 1
         elif action == "view_netflix":
             stats_update["netflix_views"] = (profile.get('netflix_views') or 0) + 1
+        elif action == "view_prime":
+            stats_update["prime_views"] = (profile.get('prime_views') or 0) + 1
         elif action == "reveal_netflix":
             stats_update["netflix_reveals"] = (profile.get('netflix_reveals') or 0) + 1
+        elif action == "reveal_prime":
+            stats_update["prime_reveals"] = (profile.get('prime_reveals') or 0) + 1
         elif action == "clear":
             stats_update["times_cleared"] = (profile.get('times_cleared') or 0) + 1
         elif action == "guidance":
@@ -569,11 +582,10 @@ async def add_xp(chat_id, first_name, action="general", query=None):
         elif action == "lore":
             stats_update["lore_reads"] = (profile.get('lore_reads') or 0) + 1
         elif action == "profile":
-            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1   # New tracking
+            stats_update["profile_views"] = (profile.get('profile_views') or 0) + 1
 
         current_total = profile.get('total_xp_earned') or 0
         stats_update["total_xp_earned"] = current_total + xp_amount
-
         new_xp = (profile.get('xp') or 0) + xp_amount
         old_level = profile.get('level') or 1
         new_level = old_level
@@ -583,7 +595,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             if new_xp < xp_required_for_next:
                 break
             new_level += 1
-
         leveled_up = new_level > old_level
 
         payload = {
@@ -602,7 +613,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             )
 
         # ====================== XP HISTORY LOGGING (NEW FEATURE) ======================
-        # Only log when the user actually earned XP (this keeps history clean)
         if xp_amount > 0:
             await log_xp_history(
                 chat_id=chat_id,
@@ -619,7 +629,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             await send_level_up_message(chat_id, first_name, old_level, new_level)
 
     else:
-        # New user
+        # New user (no change needed)
         payload = {
             "chat_id": chat_id,
             "first_name": first_name,
@@ -633,6 +643,8 @@ async def add_xp(chat_id, first_name, action="general", query=None):
             "office_views": 0,
             "netflix_views": 0,
             "netflix_reveals": 0,
+            "prime_views": 0,
+            "prime_reveals": 0,
             "times_cleared": 0,
             "guidance_reads": 0,
             "lore_reads": 0,
@@ -886,19 +898,28 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
     
     # Get user profile to show current level and title
     profile = await get_user_profile(chat_id)
-
+    
     if profile:
         level = profile.get('level', 1)
         title = get_level_title(level)
-        level_info = f"🏷️ {title}  •  ⭐ Level {level}"
+        level_info = f"🏷️ {title} • ⭐ Level {level}"
     else:
-        level_info = "🌱 New Wanderer  •  ⭐ Level 1"
+        level_info = "🌱 New Wanderer • ⭐ Level 1"
+
+    # Calculate streak for the menu
+    streak = 0
+    if profile:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+            streak = await calculate_streak(chat_id, client, headers)
+
+    streak_text = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Welcome back!"
 
     if is_first_time:
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
-            f"{level_info}\n\n"
+            f"{level_info}  •  {streak_text}\n\n"
             "Beneath the whispering ancient trees, many paths lie before you...\n\n"
             "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
             "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
@@ -909,7 +930,7 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
         caption = (
             f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
-            f"{level_info}\n\n"
+            f"{level_info}  •  {streak_text}\n\n"
             "The clearing welcomes you back, wanderer.\n\n"
             "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
             "<i>May the forest welcome you once more.</i> 🍃✨"
@@ -923,37 +944,10 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
         parse_mode='HTML',
         reply_markup=keyboard
     )
-    
+   
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
-
-async def send_myid(chat_id):
-    caption_text = (
-        "🌿 <b>Forest Spirit Identification</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "✨ <i>The ancient mist slowly parts before you...</i>\n\n"
-        "Deep within the heart of the Enchanted Clearing,\n"
-        "the oldest trees awaken to reveal your true essence.\n\n"
-        "🪄 <b>The Forest Spirit Whispers:</b>\n"
-        f"🌳 <b>Your Eternal ID:</b> <code>{chat_id}</code>\n\n"
-        "This number is your unique bond with the forest —\n"
-        "a mark carried by only you among all wanderers.\n\n"
-        "<i>May this knowledge guide and protect you on your journey.</i>\n\n"
-        "🍃 <b>The trees shall remember you always.</b>"
-    )
-    
-    msg = await tg_app.bot.send_animation(
-        chat_id=chat_id,
-        animation=MYID_GIF,
-        caption=caption_text,
-        parse_mode="HTML"
-    )
-    
-    if chat_id not in forest_memory: 
-        forest_memory[chat_id] = []
-    forest_memory[chat_id].append(msg.message_id)
-
 
 # ==================== HISTORY LOGS ====================
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
@@ -1183,8 +1177,7 @@ async def handle_profile(chat_id, first_name):
 
 
 async def handle_stats(chat_id, first_name):
-    """Updated Stats with individual inventory tracking"""
-   
+    """Updated Stats with full Prime + Netflix tracking"""
     profile = await get_user_profile(chat_id)
     if not profile:
         await tg_app.bot.send_message(
@@ -1192,11 +1185,12 @@ async def handle_stats(chat_id, first_name):
             text="🌿 You haven't started your journey yet. Use /profile to begin!"
         )
         return
+
     level = profile.get('level', 1)
     xp = profile.get('xp', 0)
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     progress_bar = create_progress_bar(xp, xp_required_next, length=10)
-    
+
     # Date formatting
     joined_date = "Unknown"
     if profile.get('created_at'):
@@ -1205,8 +1199,8 @@ async def handle_stats(chat_id, first_name):
             joined_date = dt.strftime("%B %d, %Y")
         except:
             joined_date = str(profile['created_at'])[:10]
-    
-    # Improved Last Active display
+
+    # Last Active
     last_active = "Just now"
     if profile.get('last_active'):
         try:
@@ -1223,11 +1217,13 @@ async def handle_stats(chat_id, first_name):
         except:
             last_active = "Just now"
 
-    # New individual stats
+    # All stats (including Prime)
     windows_views = profile.get('windows_views', 0)
     office_views = profile.get('office_views', 0)
     netflix_views = profile.get('netflix_views', 0)
     netflix_reveals = profile.get('netflix_reveals', 0)
+    prime_views = profile.get('prime_views', 0)
+    prime_reveals = profile.get('prime_reveals', 0)
     times_cleared = profile.get('times_cleared', 0)
     guidance_reads = profile.get('guidance_reads', 0)
     lore_reads = profile.get('lore_reads', 0)
@@ -1246,30 +1242,51 @@ async def handle_stats(chat_id, first_name):
         f"• Windows Keys Viewed: <b>{windows_views}</b> times\n"
         f"• Office Keys Viewed: <b>{office_views}</b> times\n"
         f"• Netflix Keys Viewed: <b>{netflix_views}</b> times\n"
+        f"• PrimeVideo Keys Viewed: <b>{prime_views}</b> times\n"
         f"• Netflix Cookies Revealed: <b>{netflix_reveals}</b> times\n"
+        f"• PrimeVideo Cookies Revealed: <b>{prime_reveals}</b> times\n"
         f"• Times Cleared the Forest: <b>{times_cleared}</b>\n"
         f"• Guidance Read: <b>{guidance_reads}</b> times\n"
         f"• Lore Read: <b>{lore_reads}</b> times\n\n"
         "🌱 <b>Quick Rewards:</b>\n"
         "• View any list → <b>+8 XP</b>\n"
-        "• Reveal Netflix Cookie → <b>+14 XP</b>\n"
+        "• Reveal Cookie → <b>+14 XP</b>\n"
         "• Profile / Clear → <b>+6 XP</b>\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🌱 <b>Joined:</b> {joined_date}\n"
         f"🌲 <b>Last Active:</b> {last_active}\n\n"
         "<i>The trees remember every step you've taken...</i> 🍃"
     )
-    
+
     msg = await tg_app.bot.send_message(
         chat_id=chat_id,
         text=caption,
         parse_mode='HTML'
     )
-   
+
     if chat_id not in forest_memory:
         forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
+# ==================== MY ID COMMAND ======================
+async def send_myid(chat_id):
+    """Shows the user's Telegram ID in a nice forest style"""
+    caption = (
+        "🌿 <b>Your Eternal Forest ID</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🪪 <code>{chat_id}</code>\n\n"
+        "Keep this ID safe — the caretaker may ask for it if you ever need help with the forest.\n\n"
+        "<i>May your roots stay strong in the Enchanted Clearing.</i> 🍃"
+    )
+    msg = await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=MYID_GIF,
+        caption=caption,
+        parse_mode='HTML'
+    )
+    if chat_id not in forest_memory:
+        forest_memory[chat_id] = []
+    forest_memory[chat_id].append(msg.message_id)
 
 # ==================== LEADERBOARD COMMAND ======================
 async def handle_leaderboard(chat_id):
@@ -1754,15 +1771,21 @@ async def handle_callback(update: Update):
     # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_"):
         category = query.data.replace("vamt_filter_", "").lower()
-
-        # Give XP
+       
+        # FIXED: Use correct action name + instant XP feedback
         if category in ["win", "windows"]:
             await add_xp(chat_id, first_name, "view_windows", query=query)
+            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
         elif category == "office":
             await add_xp(chat_id, first_name, "view_office", query=query)
+            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
         elif category == "netflix":
             await add_xp(chat_id, first_name, "view_netflix", query=query)
-
+            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
+        elif category == "prime":
+            await add_xp(chat_id, first_name, "view_prime", query=query)
+            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
+        
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>",
             parse_mode='HTML'
@@ -1853,7 +1876,7 @@ async def handle_callback(update: Update):
     elif query.data == "help" or query.data.startswith("guidance_page_"):
         chat_id = update.effective_chat.id
         first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
-
+        
         # Give XP only the very first time the user opens Guidance
         if query.data == "help":
             await add_xp(chat_id, first_name, "guidance", query=query)
@@ -1904,8 +1927,17 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
+            # Send with GIF (restored)
+            msg = await tg_app.bot.send_animation(
+                chat_id=chat_id,
+                animation=GUIDANCE_GIF,
+                caption=text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+
         # ==================== PAGE 2 ====================
-        else: # page == 2
+        else:  # page == 2
             level_req_text = "\n".join(
                 f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
                 for lvl in range(2, 11)
@@ -1954,20 +1986,12 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("← Previous", callback_data="guidance_page_1")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
-        
-        try:
-            await query.message.edit_caption(
-                caption=text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-        except Exception as e:
-            print(f"Guidance edit error: {e}")
-            # Fallback (rare)
-            await query.message.delete()
-            await tg_app.bot.send_message(
+
+            # Send with GIF (restored)
+            msg = await tg_app.bot.send_animation(
                 chat_id=chat_id,
-                text=text,
+                animation=GUIDANCE_GIF,
+                caption=text,
                 parse_mode='HTML',
                 reply_markup=keyboard
             )
@@ -1975,7 +1999,7 @@ async def handle_callback(update: Update):
         # Save message ID for /clear command
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
-        forest_memory[chat_id].append(query.message.message_id)
+        forest_memory[chat_id].append(msg.message_id)
 
         # Mark has_seen_menu only on first open
         if query.data == "help":
@@ -2084,6 +2108,7 @@ async def handle_callback(update: Update):
             "• PrimeVideo premium cookies\n"
             "• Steam accounts\n"
             "• Learning guides\n\n"
+            "<b>Current Rewards:</b> View lists = +8 XP | Reveal Netflix = +14 XP\n\n"
             "The gentle leveling system rewards exploration and gives a relaxing experience while you grow.\n\n"
             "<i>May this small enchanted clearing bring you both practical resources and a moment of peace.</i> 🍃✨"
         )
