@@ -280,7 +280,7 @@ def get_max_items(category: str, level: int) -> int:
     return 0
 
 async def show_paginated_cookie_list(service_type: str, chat_id: int, query, page: int = 0):
-    """FINAL FIXED VERSION - Low levels now reliably get older cookies"""
+    """FINAL FIXED VERSION - Low levels now ALWAYS get older cookies"""
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
     max_by_level = get_max_items(service_type, user_level)
@@ -316,14 +316,14 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         )
         return
 
-    # === SMART DISTRIBUTION - FIXED ===
+    # === FIXED SMART DISTRIBUTION ===
     if user_level >= 5:
         # High level → freshest cookies
         filtered = filtered[:max_by_level]
         priority_text = "✨ You get the freshest cookies first!"
     else:
-        # Low level → older working cookies (this was the bug)
-        filtered = filtered[-max_by_level:]          # ← This is the fix
+        # Low level → older working cookies (this is the key fix)
+        filtered = filtered[-max_by_level:]   # Take from the end of the list
         priority_text = "🌱 You get older but still working cookies."
 
     # Pagination
