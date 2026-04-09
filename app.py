@@ -288,13 +288,10 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿" if service_type == "netflix" else "🎥"
-
+    
     data = await get_vamt_data()
     if not data:
-        await query.message.edit_caption(
-            caption="🌫️ The mist is too thick... Database connection failed.",
-            reply_markup=get_back_to_inventory_keyboard()
-        )
+        await query.message.edit_caption("🌫️ Database connection failed.", reply_markup=get_back_to_inventory_keyboard())
         return
     
     filtered = [item for item in data if service_type in str(item.get('service_type', '')).lower()]
@@ -341,6 +338,7 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         report += f"✨ <b>{display_name}</b>\n Status: {status_text}\n Remaining: {item.get('remaining', 0)}\n\n"
         buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", callback_data=f"reveal_{service_type}|{idx}|{page}")])
 
+    # === FIXED NAVIGATION BUTTONS ===
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"{service_type}_page_{page-1}"))
@@ -1768,6 +1766,24 @@ async def handle_callback(update: Update):
         
         await handle_history(chat_id, first_name, page=page)
         return
+    
+    # ====================== PAGINATION FOR NETFLIX & PRIME ======================
+    elif query.data.endswith("_page_") or "_page_" in query.data:
+        try:
+            service_type = query.data.split("_page_")[0]
+            new_page = int(query.data.split("_page_")[1])
+            loading_msg = await tg_app.bot.send_animation(
+                chat_id=chat_id,
+                animation=INVENTORY_GIF,
+                caption=f"{ '🍿' if service_type == 'netflix' else '🎥' } <i>Loading {service_type.title()}...</i>",
+                parse_mode='HTML'
+            )
+            class FakeQuery:
+                message = loading_msg
+            await show_paginated_cookie_list(service_type, chat_id, FakeQuery(), page=new_page)
+            await query.message.delete()
+        except:
+            await query.answer("Pagination error", show_alert=True)
     
 # ====================== REVEAL COOKIE (Reusable for both) ======================
     elif query.data.startswith("reveal_netflix|") or query.data.startswith("reveal_prime|"):
