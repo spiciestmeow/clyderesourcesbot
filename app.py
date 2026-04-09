@@ -239,39 +239,42 @@ def extract_netflix_number(item):
             pass
     return 9999
 
-# ==================== ITEM DISTRIBUTION SYSTEM (EXACT TABLE) ====================
+# ==================== ITEM DISTRIBUTION SYSTEM (UPDATED) ====================
 def get_max_items(category: str, level: int) -> int:
-    """Exact distribution from your table"""
+    """Smart distribution: Protective for scarce items (Win/Office/Prime), generous for Netflix"""
     level = int(level)
 
+    # Scarce categories: Windows, Office
     if category in ["win", "windows", "office"]:
-        if level == 1: return 1
-        if 2 <= level <= 3: return 2
-        if 4 <= level <= 5: return 3
-        if level == 6: return 5
-        if level == 7: return 6
-        if level == 8: return 8
-        if level == 9: return 10
+        if level == 1: return 2
+        if 2 <= level <= 3: return 3
+        if 4 <= level <= 5: return 4
+        if level == 6: return 6
+        if level == 7: return 8
+        if level == 8: return 10
+        if level == 9: return 13
         return 999
 
-    elif category == "netflix":
+    # Scarce category: PrimeVideo
+    elif category == "prime":
         if level == 1: return 1
         if 2 <= level <= 3: return 2
         if 4 <= level <= 5: return 3
         if level == 6: return 4
         if level == 7: return 5
         if level == 8: return 7
-        if level == 9: return 8
+        if level == 9: return 9
         return 999
 
-    elif category == "prime":
+    # Abundant category: Netflix
+    elif category == "netflix":
         if level == 1: return 1
-        if 2 <= level <= 3: return 2
-        if 4 <= level <= 5: return 2
-        if level == 6: return 3
-        if level == 7: return 3
-        if level == 8: return 4
-        if level == 9: return 5
+        if 2 <= level <= 3: return 3
+        if 4 <= level <= 5: return 5
+        if level == 6: return 7
+        if level == 7: return 9
+        if level == 8: return 12
+        if level == 9: return 15
         return 999
 
     return 0
@@ -281,28 +284,10 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     """Reusable paginated list for any cookie type"""
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
-    max_items = get_max_items(service_type, user_level)
+    max_by_level = get_max_items(service_type, user_level)
 
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿" if service_type == "netflix" else "🎥"
-
-    # Beautiful limit note
-    if user_level == 1:
-        limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
-    elif user_level <= 3:
-        limit_note = f"🌿 Level {user_level} → Up to {max_items} {title} cookies"
-    elif user_level <= 5:
-        limit_note = f"🌿 Level {user_level} → Up to {max_items} {title} cookies"
-    elif user_level == 6:
-        limit_note = f"🌲 Level 6 → Up to {max_items} {title} cookies"
-    elif user_level == 7:
-        limit_note = f"🌟 Level 7 → Early Preview (Up to {max_items} cookies)"
-    elif user_level == 8:
-        limit_note = f"🌟 Level 8 → Early Preview (Up to {max_items} cookies)"
-    elif user_level == 9:
-        limit_note = f"🌟 Level 9 → Early Preview + Sunday Double (Up to {max_items} cookies)"
-    else:
-        limit_note = f"👑 Legend Tier → Full access to all {title} cookies"
 
     data = await get_vamt_data()
     if not data:
@@ -311,23 +296,37 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
             reply_markup=get_back_to_inventory_keyboard()
         )
         return
-
+    
     filtered = [item for item in data if service_type in str(item.get('service_type', '')).lower()]
     filtered.sort(key=extract_netflix_number if service_type == "netflix" else lambda x: str(x.get('display_name', '')))
 
-    total_items = min(len(filtered), max_items)
-    filtered = filtered[:max_items]
+    # === Respect both user's level AND actual stock ===
+    available = len(filtered)
+    display_limit = min(available, max_by_level)
+
+    # Apply the limit
+    total_items = display_limit
+    filtered = filtered[:display_limit]
 
     start = page * NETFLIX_ITEMS_PER_PAGE
     end = start + NETFLIX_ITEMS_PER_PAGE
     page_items = filtered[start:end]
-
     total_pages = (total_items + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
+    
+    # Smart limit note with stock awareness
+    if user_level == 1:
+        limit_note = "🌱 As a new wanderer, you can only see 1 item for now..."
+    else:
+        limit_note = f"🌿 Level {user_level} → Up to {max_by_level} {title} items"
+
+    if available < max_by_level:
+        limit_note += f"\n⚠️ Only {available} items currently available in the forest right now."
+
 
     report = (
         f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"📦 <b>{total_items} Cookies Resting in the Glade</b>\n"
+        f"📦 <b>{total_items} {title} Resting in the Glade</b>\n"
         f"{limit_note}\n"
         f"📄 Page {page + 1} of {total_pages}\n\n"
         "<i>Which one whispers to your spirit?</i>\n\n"
@@ -1658,19 +1657,26 @@ async def handle_callback(update: Update):
             await query.message.edit_caption(caption=f"🍃 No {category.upper()} scrolls found.", reply_markup=get_back_to_inventory_keyboard())
             return
 
-        limit = get_max_items(category, user_level)
+        max_by_level = get_max_items(category, user_level)
+        available = len(filtered)
+        display_limit = min(available, max_by_level)
+    
         filtered.sort(key=lambda x: (str(x.get('service_type', '')), str(x.get('key_id', ''))))
 
         report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        for item in filtered[:limit]:
+
+        for item in filtered[:display_limit]:
             product = item.get('service_type', 'Unknown')
             key = item.get('key_id', 'HIDDEN')
             raw_val = int(item.get('remaining') or 0)
             stock_text = f"{raw_val}" if raw_val > 0 else "Out of stock"
             report += f"✨ <b>{product}</b>\n└ 🔑 <code>{key}</code>\n└ 📦 Stock: <b>{stock_text}</b>\n\n"
 
-        if limit < len(filtered):
-            report += f"━━━━━━━━━━━━━━━━━━\n<i>Level up to see more scrolls hidden in the shadows...</i>"
+        # Level info + low stock warning
+        report += f"\n🌿 Level {user_level} → Up to {max_by_level} {category.upper()} items"
+
+        if available < max_by_level:
+            report += f"\n⚠️ Only {available} items currently available in the forest right now."
 
         kb = get_back_to_inventory_keyboard()
         await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
