@@ -599,7 +599,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
     return True
 
 
-# ==================== ADD PATCH NOTICE ====================
 async def add_new_update(title: str, content: str, owner_chat_id: int):
     from datetime import datetime
     manila_tz = pytz.timezone('Asia/Manila')
@@ -636,7 +635,7 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
             else:
                 await tg_app.bot.send_message(owner_chat_id, "❌ Failed to save to database.")
         except Exception as e:
-            await tg_app.bot.send_message(owner_chat_id, f"❌ Error saving update: {str(e)}")
+            await tg_app.bot.send_message(owner_chat_id, f"❌ Error: {str(e)}")
 
 # ==================== VIEW PATCH NOTICE ====================
 async def handle_updates(chat_id: int):
@@ -2108,25 +2107,24 @@ def webhook():
                     await tg_app.bot.send_message(chat_id, "❌ Only the caretaker can add updates.")
                     return
                 
-                # Clean the text and handle different formats
-                raw = text.replace("/addupdate", "").strip()
+                # Clean and robust parsing
+                raw_text = text.replace("/addupdate", "").strip()
                 
-                # Support both " | " and " |" formats
-                if "|" not in raw:
+                if "|" not in raw_text:
                     await tg_app.bot.send_message(
-                        chat_id, 
+                        chat_id,
                         "❌ Wrong format.\n\n"
                         "Correct usage:\n"
-                        "`/addupdate | Title Here | Content here`"
+                        "`/addupdate | Title Here | Your content here`"
                     )
                     return
                 
-                # Split on the first pipe only
-                parts = raw.split("|", 1)
+                # Split only on the FIRST pipe symbol
+                parts = raw_text.split("|", 1)
                 
                 title = parts[0].strip()
                 content = parts[1].strip() if len(parts) > 1 else ""
-                
+
                 if not title:
                     await tg_app.bot.send_message(chat_id, "❌ Title cannot be empty.")
                     return
