@@ -598,7 +598,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
     return True
 
-
+# ==================== SAVE PATCH NOTICE IN DB ====================
 async def add_new_update(title: str, content: str, owner_chat_id: int):
     from datetime import datetime
     manila_tz = pytz.timezone('Asia/Manila')
@@ -637,9 +637,9 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
         except Exception as e:
             await tg_app.bot.send_message(owner_chat_id, f"❌ Error: {str(e)}")
 
-# ==================== VIEW PATCH NOTICE ====================
+# ==================== VIEW PATCH NOTES ====================
 async def handle_updates(chat_id: int):
-    """Show patch notes cleanly"""
+    """Show patch notes in a beautiful, clean forest-style format"""
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
@@ -652,25 +652,54 @@ async def handle_updates(chat_id: int):
                 headers=headers
             )
             updates = response.json() or []
-        except:
-            await tg_app.bot.send_message(chat_id, "⚠️ Could not load updates.")
+        except Exception as e:
+            print(f"Patch notes fetch error: {e}")
+            await tg_app.bot.send_message(chat_id, "⚠️ The ancient trees are having trouble recalling the recent updates...")
             return
 
     if not updates:
-        await tg_app.bot.send_message(chat_id, "🌱 No updates yet.")
+        await tg_app.bot.send_message(
+            chat_id, 
+            "🌱 No patch notes yet.\n\nThe forest is still young and full of potential."
+        )
         return
 
-    text = "📜 <b>Patch Notes - Recent Updates</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    text = "🌿 <b>Patch Notes — Recent Updates</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    for update in updates:
-        text += f"🕒 <b>{update.get('date', 'Unknown')}</b>\n"
-        text += f"<b>{update.get('title', 'Untitled')}</b>\n\n"
-        text += f"{update.get('content', '')}\n\n"
-        text += "━━━━━━━━━━━━━━━━━━\n\n"
+    for i, update in enumerate(updates, 1):
+        date = update.get('date', 'Unknown Date')
+        title = update.get('title', 'Untitled Update')
+        content = update.get('content', '').strip()
 
-    text += "🍃 Thank you for being part of the Enchanted Clearing!"
+        # Add subtle numbering for multiple updates
+        if len(updates) > 1:
+            text += f"✨ <b>{i}. {date}</b>\n"
+        else:
+            text += f"✨ <b>{date}</b>\n"
+        
+        text += f"<b>{title}</b>\n\n"
 
-    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+        if content:
+            # Preserve line breaks in content
+            formatted_content = content.replace('\n', '\n')
+            text += f"{formatted_content}\n\n"
+
+        # Cool separator
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    text += "🍃 <i>May these updates bring more magic to your journey.</i> ✨"
+
+    try:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML',
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        print(f"Error sending updates: {e}")
+        await tg_app.bot.send_message(chat_id, "🌫️ The mist is too thick to show the scrolls right now.")
 
 # ==================== UPDATE LAST ACTIVE LOGGING ====================
 async def update_last_active(chat_id: int):
