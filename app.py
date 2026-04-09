@@ -603,7 +603,6 @@ async def add_xp(chat_id, first_name, action="general", query=None):
 
 # ==================== ADD PATCH NOTICE ====================
 async def add_new_update(title: str, content: str, owner_chat_id: int):
-    """Add new patch note to Supabase"""
     from datetime import datetime
     manila_tz = pytz.timezone('Asia/Manila')
     current_date = datetime.now(manila_tz).strftime("%B %d, %Y")
@@ -617,8 +616,8 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
 
     payload = {
         "date": current_date,
-        "title": title.strip(),
-        "content": content.strip()
+        "title": title,
+        "content": content
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -634,16 +633,16 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
                     owner_chat_id,
                     f"✅ Patch note added successfully!\n\n"
                     f"📅 {current_date}\n"
-                    f"📌 {title.strip()}"
+                    f"📌 {title}"
                 )
             else:
-                await tg_app.bot.send_message(owner_chat_id, "❌ Failed to save update.")
+                await tg_app.bot.send_message(owner_chat_id, "❌ Failed to save to database.")
         except Exception as e:
-            await tg_app.bot.send_message(owner_chat_id, f"❌ Error: {str(e)}")
+            await tg_app.bot.send_message(owner_chat_id, f"❌ Error saving update: {str(e)}")
 
 # ==================== VIEW PATCH NOTICE ====================
 async def handle_updates(chat_id: int):
-    """Show latest patch notes from Supabase"""
+    """Show patch notes cleanly"""
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
@@ -657,19 +656,19 @@ async def handle_updates(chat_id: int):
             )
             updates = response.json() or []
         except:
-            await tg_app.bot.send_message(chat_id, "⚠️ Could not fetch updates right now.")
+            await tg_app.bot.send_message(chat_id, "⚠️ Could not load updates.")
             return
 
     if not updates:
-        await tg_app.bot.send_message(chat_id, "🌱 No updates yet. The forest is still growing!")
+        await tg_app.bot.send_message(chat_id, "🌱 No updates yet.")
         return
 
     text = "📜 <b>Patch Notes - Recent Updates</b>\n━━━━━━━━━━━━━━━━━━\n\n"
 
     for update in updates:
-        text += f"🕒 <b>{update['date']}</b>\n"
-        text += f"<b>{update['title']}</b>\n\n"
-        text += f"{update['content']}\n\n"
+        text += f"🕒 <b>{update.get('date', 'Unknown')}</b>\n"
+        text += f"<b>{update.get('title', 'Untitled')}</b>\n\n"
+        text += f"{update.get('content', '')}\n\n"
         text += "━━━━━━━━━━━━━━━━━━\n\n"
 
     text += "🍃 Thank you for being part of the Enchanted Clearing!"
@@ -2093,16 +2092,33 @@ def webhook():
                     await tg_app.bot.send_message(chat_id, "❌ Only the caretaker can add updates.")
                     return
                 
-                parts = text.replace("/addupdate", "").strip().split("|", 1)
-                if len(parts) < 2:
-                    await tg_app.bot.send_message(chat_id, 
-                        "Usage:\n`/addupdate | Title | Content here`")
+                # Improved parsing - more forgiving
+                text = text.replace("/addupdate", "").strip()
+                
+                if "|" not in text:
+                    await tg_app.bot.send_message(
+                        chat_id, 
+                        "❌ Wrong format.\n\n"
+                        "Correct usage:\n"
+                        "`/addupdate | Title Here | Content here`"
+                    )
                     return
                 
+                # Split only on the FIRST pipe symbol
+                parts = text.split("|", 1)
+                
                 title = parts[0].strip()
-                content = parts[1].strip()
+                content = parts[1].strip() if len(parts) > 1 else ""
+                
+                if not title or not content:
+                    await tg_app.bot.send_message(
+                        chat_id, 
+                        "❌ Both Title and Content are required."
+                    )
+                    return
+                
                 await add_new_update(title, content, chat_id)
-
+            
             elif text.startswith("/updates") or text.startswith("/update"):
                 await handle_updates(chat_id)
 
