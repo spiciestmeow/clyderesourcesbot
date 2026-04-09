@@ -283,7 +283,7 @@ def get_max_items(category: str, level: int) -> int:
     return 0
 
 async def show_paginated_cookie_list(service_type: str, chat_id: int, query, page: int = 0):
-    """FIXED - Levels 1-5 now reliably get OLDER cookies"""
+    """UPDATED - Polite 0 cookies message + accurate limited stock message"""
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
     max_by_level = get_max_items(service_type, user_level)
@@ -303,25 +303,38 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         and int(item.get('remaining', 0)) > 0
     ]
 
-    # === FIXED LOGIC: Sort oldest first (much more reliable) ===
+    # === POLITE MESSAGE WHEN ZERO COOKIES ===
+    if len(filtered) == 0:
+        await query.message.edit_caption(
+            caption=f"<b>{emoji} Secret {title} Premium Cookies</b>\n\n"
+                    "🌫️ No working cookies available in the forest right now...\n\n"
+                    "The trees are resting. Please check back later or explore other scrolls 🍃",
+            parse_mode='HTML',
+            reply_markup=get_back_to_inventory_keyboard()
+        )
+        return
+
+    # Sort oldest first
     filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=False)
 
-    if user_level >= 6:  # Levels 1-5 = older cookies (as you requested)
-        filtered = filtered[-max_by_level:]   # newest (from the end)
+    if user_level >= 6:
+        filtered = filtered[-max_by_level:]
         priority_text = "✨ You get the freshest cookies first!"
     else:
-        filtered = filtered[:max_by_level]    # oldest (from the start)
+        filtered = filtered[:max_by_level]
         priority_text = "🌱 You get older but still working cookies."
 
-    # Pagination (unchanged)
+    # Pagination
     start = page * NETFLIX_ITEMS_PER_PAGE
     end = start + NETFLIX_ITEMS_PER_PAGE
     page_items = filtered[start:end]
     total_pages = (len(filtered) + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
 
+    # === IMPROVED LIMIT NOTE ===
     limit_note = f"🌿 Level {user_level} → Up to {max_by_level} {title} items\n{priority_text}"
-    if len([item for item in data if service_type in str(item.get('service_type', '')).lower() and str(item.get('status', '')).lower() == "active" and int(item.get('remaining', 0)) > 0]) < max_by_level:
-        limit_note += f"\n✅ Currently only {len(filtered)} working {title} cookies in the forest."
+
+    if len(filtered) < max_by_level:
+        limit_note += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest."
 
     expire_note = "\n⚠️ Cookies can stop working without notice. Test quickly after revealing."
 
@@ -459,7 +472,7 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     await asyncio.sleep(0.8)
     success_msg = await tg_app.bot.send_message(
         chat_id=chat_id,
-        text=f"✨ <b>{display_name} successfully delivered!</b>",
+        text=f"✨ <i>{display_name} successfully delivered!</i>",
         parse_mode='HTML'
     )
 
@@ -2205,7 +2218,7 @@ def webhook():
                 if not raw:
                     await tg_app.bot.send_message(
                         chat_id,
-                        "📌 <b>How to add a patch note:</b>\n\n"
+                        "📌 How to add a patch note:\n\n"
                         "• Short version:\n"
                         "`/addupdate | Title | Content`\n\n"
                         "• Long description version (recommended):\n"
