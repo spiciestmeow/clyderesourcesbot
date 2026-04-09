@@ -2107,34 +2107,46 @@ def webhook():
                     await tg_app.bot.send_message(chat_id, "❌ Only the caretaker can add updates.")
                     return
 
-                # Use ORIGINAL text (not lowered) to preserve case
+                # Use original message text (preserve case and newlines)
                 original_text = update.message.text.strip()
+
+                # Remove the command "/addupdate"
                 raw = original_text.replace("/addupdate", "").strip()
 
                 if not raw:
                     await tg_app.bot.send_message(
                         chat_id,
-                        "📌 **Correct Usage:**\n\n"
+                        "📌 **How to add a patch note:**\n\n"
+                        "• Short version:\n"
                         "`/addupdate | Title | Content`\n\n"
-                        "Example:\n"
-                        "`/addupdate | Bug Fix | Improved addupdate command parsing`"
+                        "• Long description version (recommended):\n"
+                        "`/addupdate`\n"
+                        "`Title Here`\n"
+                        "`Your long description...`\n"
+                        "`Can have multiple lines`"
                     )
                     return
 
-                if "|" not in raw:
+                # === NEWLINE FORMAT (Best for long descriptions) ===
+                if "\n" in raw:
+                    lines = raw.split("\n", 1)   # Split only on first newline
+                    title = lines[0].strip()
+                    content = lines[1].strip() if len(lines) > 1 else ""
+                
+                # === PIPE FORMAT (for short updates) ===
+                elif "|" in raw:
+                    parts = raw.split("|", 1)
+                    title = parts[0].strip()
+                    content = parts[1].strip() if len(parts) > 1 else ""
+                
+                else:
                     await tg_app.bot.send_message(
                         chat_id,
-                        "📌 **Correct Usage:**\n\n"
-                        "`/addupdate | Title | Content`\n\n"
-                        "Example:\n"
-                        "`/addupdate | Bug Fix | Improved addupdate command parsing`"
+                        "❌ Please use either `|` or new line to separate title and content."
                     )
                     return
 
-                parts = raw.split("|", 1)  # Split only on first |
-                title = parts[0].strip()
-                content = parts[1].strip() if len(parts) > 1 else ""
-
+                # Final checks
                 if not title:
                     await tg_app.bot.send_message(chat_id, "❌ Title cannot be empty.")
                     return
@@ -2142,7 +2154,7 @@ def webhook():
                     await tg_app.bot.send_message(chat_id, "❌ Content cannot be empty.")
                     return
 
-                # Extra cleaning
+                # Clean up extra spaces/pipes
                 title = title.strip(" |")
                 content = content.strip(" |")
 
