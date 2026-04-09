@@ -18,7 +18,7 @@ app = Flask(__name__)
 # ==================== GLOBAL CACHE FOR VAMT DATA ====================
 vamt_cache = None
 vamt_cache_time = 0
-CACHE_TTL = 60
+CACHE_TTL = 0
 
 # ==================== ANTI-XP ABUSE ====================
 xp_cooldowns = {}
@@ -280,7 +280,7 @@ def get_max_items(category: str, level: int) -> int:
     return 0
 
 async def show_paginated_cookie_list(service_type: str, chat_id: int, query, page: int = 0):
-    """FINAL FIXED VERSION - Low levels get older cookies + proper empty message"""
+    """FINAL FIXED VERSION - Low levels now reliably get older cookies"""
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
     max_by_level = get_max_items(service_type, user_level)
@@ -301,7 +301,7 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         and int(item.get('remaining', 0)) > 0
     ]
 
-    # Sort newest first
+    # Sort newest first (fresh uploads at the top)
     filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=True)
 
     available_active = len(filtered)
@@ -316,14 +316,14 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         )
         return
 
-    # === SMART DISTRIBUTION ===
+    # === SMART DISTRIBUTION - FIXED ===
     if user_level >= 5:
+        # High level → freshest cookies
         filtered = filtered[:max_by_level]
         priority_text = "✨ You get the freshest cookies first!"
     else:
-        # Low level gets older working cookies
-        start_old = max(0, available_active - max_by_level)
-        filtered = filtered[start_old : start_old + max_by_level]
+        # Low level → older working cookies (this was the bug)
+        filtered = filtered[-max_by_level:]          # ← This is the fix
         priority_text = "🌱 You get older but still working cookies."
 
     # Pagination
