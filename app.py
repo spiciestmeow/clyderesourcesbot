@@ -371,12 +371,19 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
-    """Fixed - Correct service type + better expired handling"""
+    """Fixed + Robust version - Follow-up message always shows"""
     emoji = "🍿" if service_type == "netflix" else "🎥"
     
-    await query.message.edit_caption(caption=f"{emoji} <i>Searching deep within the glowing glade...</i>", parse_mode='HTML')
+    await query.message.edit_caption(
+        caption=f"{emoji} <i>Searching deep within the glowing glade...</i>", 
+        parse_mode='HTML'
+    )
     await asyncio.sleep(1.3)
-    await query.message.edit_caption(caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...", parse_mode='HTML')
+
+    await query.message.edit_caption(
+        caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...", 
+        parse_mode='HTML'
+    )
     await asyncio.sleep(1.5)
 
     profile = await get_user_profile(chat_id)
@@ -445,6 +452,7 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     except:
         pass
 
+    # Send the document
     await tg_app.bot.send_document(
         chat_id=chat_id,
         document=file_bytes,
@@ -455,11 +463,23 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     )
 
     await asyncio.sleep(0.8)
-    await tg_app.bot.send_message(
-        chat_id=chat_id,
-        text=f"✨ **{display_name} successfully delivered!**",
-        parse_mode='MarkdownV2'
-    )
+
+    # Robust success message - always try to send it
+    try:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=f"✨ **{display_name} successfully delivered!**",
+            parse_mode='MarkdownV2'
+        )
+    except:
+        # If for any reason the success message fails, still show something
+        try:
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="✨ Cookie successfully delivered!"
+            )
+        except:
+            pass   # Last resort - silent fail
 
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
