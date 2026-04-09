@@ -322,12 +322,14 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     if available < max_by_level:
         limit_note += f"\n⚠️ Only {available} items currently available in the forest right now."
 
+    # === Your requested note about sudden expiration ===
+    expire_note = "\n⚠️ Cookies can stop working without notice. Test quickly after revealing."
 
     report = (
         f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"📦 <b>{total_items} {title} Resting in the Glade</b>\n"
-        f"{limit_note}\n"
+        f"{limit_note}{expire_note}\n"
         f"📄 Page {page + 1} of {total_pages}\n\n"
         "<i>Which one whispers to your spirit?</i>\n\n"
     )
@@ -1882,7 +1884,7 @@ async def handle_callback(update: Update):
                
                 "<i>The more you wander, the stronger your spirit grows.</i> 🍃✨"
             )
-            
+
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="help_page_1")],
             ])
