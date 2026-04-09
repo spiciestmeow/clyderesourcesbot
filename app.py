@@ -44,7 +44,6 @@ TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-
 # ==================== GIFS ====================
 WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
 MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
@@ -100,16 +99,20 @@ async def get_vamt_data():
             return vamt_cache if vamt_cache is not None else None
         
 # ==================== DYNAMIC UPTIME & LAST UPDATED ====================
-BOT_START_TIME = datetime.now(pytz.utc)   # ← Remove this line
-
 def get_uptime():
-    """Show time since last deployment (more useful on Vercel)"""
-    # You can manually update this time whenever you deploy
-    deployment_time = datetime(2026, 4, 9, 10, 0, 0, tzinfo=pytz.utc)  # ← Change to your last deployment time
+    """Live uptime since last deployment"""
+    try:
+        app_path = os.path.abspath(__file__)
+        last_deploy_timestamp = os.path.getmtime(app_path)
+        deployment_time = datetime.fromtimestamp(last_deploy_timestamp, tz=pytz.utc)
+    except:
+        deployment_time = datetime.now(pytz.utc)
+
     delta = datetime.now(pytz.utc) - deployment_time
     days = delta.days
     hours = delta.seconds // 3600
     minutes = (delta.seconds % 3600) // 60
+
     if days > 0:
         return f"{days} day{'s' if days > 1 else ''}, {hours} hour{'s' if hours > 1 else ''}"
     elif hours > 0:
@@ -119,9 +122,14 @@ def get_uptime():
 
 def get_last_updated():
     """Shows when you last deployed (Manila time)"""
+    try:
+        app_path = os.path.abspath(__file__)
+        last_deploy_timestamp = os.path.getmtime(app_path)
+        last_deploy = datetime.fromtimestamp(last_deploy_timestamp, tz=pytz.utc)
+    except:
+        last_deploy = datetime.now(pytz.utc)
+
     manila_tz = pytz.timezone('Asia/Manila')
-    # Update this date/time whenever you deploy a new version
-    last_deploy = datetime(2026, 4, 9, 10, 0, 0, tzinfo=pytz.utc)
     local_time = last_deploy.astimezone(manila_tz)
     return local_time.strftime("%B %d, %Y • %I:%M %p")
 
