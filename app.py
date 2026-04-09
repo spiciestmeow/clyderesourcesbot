@@ -891,34 +891,54 @@ async def send_level_up_message(chat_id, first_name, old_level, new_level):
         pass
 
 async def send_full_menu(chat_id, first_name, is_first_time=False):
-    """ULTRA-SHORT VERSION - Guaranteed under 1024 characters"""
-    
-    # Get profile
+    """Restored beautiful long captions (safe now that Guidance is shortened)"""
+    user_tz = pytz.timezone('Asia/Manila')
+    current_hour = datetime.now(user_tz).hour
+    time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
+    greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
+   
+    # Get user profile to show current level and title
     profile = await get_user_profile(chat_id)
-    level_info = "🌱 Level 1"
+   
     if profile:
         level = profile.get('level', 1)
-        level_info = f"Level {level}"
+        title = get_level_title(level)
+        level_info = f"🏷️ {title} • ⭐ Level {level}"
+    else:
+        level_info = "🌱 New Wanderer • ⭐ Level 1"
 
-    # DEBUG LINE - check exact length in your server logs
-    print(f"DEBUG: send_full_menu caption length = {len(level_info + first_name)} characters (first_time={is_first_time})")
+    # Calculate streak for the menu
+    streak = 0
+    if profile:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+            streak = await calculate_streak(chat_id, client, headers)
+    streak_text = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Welcome back!"
 
     if is_first_time:
         caption = (
-            f"🌿 Welcome, {html.escape(str(first_name))}!\n\n"
-            f"{level_info}\n\n"
-            "🌱 New here?\n"
-            "Tap ❓ Start Here → Guidance first!\n\n"
-            "View = +8 XP • Reveal = +14 XP 🍃"
+            f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+            "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
+            f"{level_info} • {streak_text}\n\n"
+            "Beneath the whispering ancient trees, many paths lie before you...\n\n"
+            "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
+            "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
+            "<i>May your steps be guided by gentle forest magic.</i> 🍃✨"
         )
         keyboard = get_first_time_menu_keyboard()
     else:
         caption = (
-            f"🌿 Welcome back, {html.escape(str(first_name))}!\n\n"
-            f"{level_info}\n\n"
-            "View = +8 XP • Reveal = +14 XP 🍃"
+            f"{time_icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+            "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
+            f"{level_info} • {streak_text}\n\n"
+            "The clearing welcomes you back, wanderer.\n\n"
+            "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
+            "<i>May the forest welcome you once more.</i> 🍃✨"
         )
         keyboard = get_full_menu_keyboard()
+
+    # DEBUG - check length in logs
+    print(f"DEBUG: send_full_menu caption length = {len(caption)} characters (first_time={is_first_time})")
 
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
@@ -1859,12 +1879,11 @@ async def handle_callback(update: Update):
     elif query.data == "help" or query.data.startswith("guidance_page_"):
         chat_id = update.effective_chat.id
         first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
-        
-        # Give XP only the very first time the user opens Guidance
+       
+        # Give XP only the very first time
         if query.data == "help":
             await add_xp(chat_id, first_name, "guidance", query=query)
 
-        # Determine which page to show
         page = 1
         if query.data.startswith("guidance_page_"):
             try:
@@ -1872,119 +1891,63 @@ async def handle_callback(update: Update):
             except:
                 page = 1
 
-        # ==================== PAGE 1 ====================
         if page == 1:
             text = (
                 "<b>❓ Guidance - Page 1/2</b>\n\n"
-                "🌿 <b>How to Navigate the Enchanted Clearing</b>\n"
+                "🌿 <b>How to use the Clearing</b>\n"
                 "• Tap any button to explore\n"
-                "• Use /menu to return here anytime\n"
-                "• Use /clear to refresh the entire chat\n\n"
-               
-                "📜 <b>All Available Commands</b>\n"
-                "• /start — Begin your journey or return to welcome\n"
-                "• /menu — Open the main Enchanted Clearing menu\n"
-                "• /profile — View your current level, XP, and title\n"
-                "• /mystats — View detailed Forest Statistics\n"
-                "• /leaderboard — View top wanderers in the forest\n"
-                "• /myid — Reveal your unique Eternal Forest ID\n"
-                "• /clear — Clean the chat and start fresh\n"
-                "• /feedback — Send a message to the caretaker\n"
-                "• /history — View your full XP journey and streak\n"
-                "• /updates — View recent patch notes and updates\n\n"
-               
-                "🌲 <b>Treasures You Can Discover</b>\n"
-                "• 🪄 Spirit Treasures — Steam accounts\n"
-                "• 📜 Ancient Scrolls — Learning guides\n"
-                "• 🌿 Forest Inventory — Windows, Office, Netflix & Prime\n"
-                "• 🌲 The Whispering Forest — Main resource hub\n\n"
-               
-                "<b>Note for New Wanderers:</b>\n"
-                "• You start at <b>Level 1 with 0 XP</b>\n"
-                "• Every action helps you grow and unlock better rewards.\n\n"
-               
-                "<i>Tap Next → to learn about the Leveling System</i>"
+                "• /menu → return here\n"
+                "• /clear → refresh chat\n\n"
+                "📜 <b>Commands</b>\n"
+                "• /start • /profile • /mystats\n"
+                "• /history • /leaderboard • /myid\n"
+                "• /clear • /feedback • /updates\n\n"
+                "🌲 <b>Treasures</b>\n"
+                "• Spirit Treasures (Steam)\n"
+                "• Ancient Scrolls (Guides)\n"
+                "• Forest Inventory (Keys & Cookies)\n\n"
+                "<b>New wanderer?</b> Start with Guidance!\n\n"
+                "<i>Tap Next → for Level System</i>"
             )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Next →", callback_data="guidance_page_2")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
-
-            # Send with GIF (restored)
-            msg = await tg_app.bot.send_animation(
-                chat_id=chat_id,
-                animation=GUIDANCE_GIF,
-                caption=text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-
-        # ==================== PAGE 2 ====================
-        else:  # page == 2
-            level_req_text = "\n".join(
-                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
-                for lvl in range(2, 11)
-            )
-           
+        else:  # Page 2
             text = (
                 "<b>❓ Guidance - Page 2/2</b>\n\n"
-                "✨ <b>Forest Leveling System</b>\n"
-                "Gain XP to unlock more items and fresher cookies.\n\n"
-               
-                "<b>📊 Item Limits by Level</b>\n\n"
-               
-                "🪟 <b>Windows & Office</b>\n"
-                "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 4\n"
-                "• Lv6: 6 • Lv7: 8 • Lv8: 10\n"
-                "• Lv9: 13 • Lv10+: Unlimited\n\n"
-               
-                "🍿 <b>Netflix Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 3 • Lv4-5: 5\n"
-                "• Lv6: 7 • Lv7: 9 • Lv8: 12\n"
-                "• Lv9: 15 • Lv10+: Unlimited\n\n"
-               
-                "🎥 <b>PrimeVideo Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
-                "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
-                "• Lv9: 9 • Lv10+: Unlimited\n\n"
-               
-                "🎮 <b>Steam Accounts</b>\n"
-                "• Lv1-6: Public Drop Only\n"
-                "• Lv7-8: Early Preview\n"
-                "• Lv9: Early Preview + Sunday Double\n"
-                "• Lv10+: 👑 Legend Tier (Full Access)\n\n"
-               
-                "<b>XP Gains:</b>\n"
-                "• View any list → <b>+8 XP</b>\n"
-                "• Reveal Netflix Cookie → <b>+14 XP</b>\n"
-                "• Profile or /clear → <b>+6 XP</b>\n"
-                "• First Guidance or Lore → <b>+10 XP</b> (once only)\n\n"
-               
-                f"<b>Level Requirements:</b>\n{level_req_text}\n\n"
-               
-                "<i>The more you wander, the stronger your spirit grows.\n"
-                "Level 6+ gets the freshest cookies first!</i> 🍃✨"
+                "✨ <b>Leveling System</b>\n"
+                "Gain XP to unlock more items.\n\n"
+                "<b>XP Gains</b>\n"
+                "• View list → +8 XP\n"
+                "• Reveal Cookie → +14 XP\n"
+                "• Profile / Clear → +6 XP\n"
+                "• First Guidance / Lore → +10 XP (once)\n\n"
+                "<b>Level 6+</b> gets the freshest cookies!\n\n"
+                "<i>The more you wander, the stronger you grow 🍃</i>"
             )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("← Previous", callback_data="guidance_page_1")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
-            # Send with GIF (restored)
-            msg = await tg_app.bot.send_animation(
-                chat_id=chat_id,
-                animation=GUIDANCE_GIF,
-                caption=text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
+        # DEBUG - check length
+        print(f"DEBUG: Guidance Page {page} caption length = {len(text)} characters")
 
-        # Save message ID for /clear command
+        msg = await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=GUIDANCE_GIF,
+            caption=text,
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+
+        # Save for /clear
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(msg.message_id)
 
-        # Mark has_seen_menu only on first open
+        # Mark has_seen_menu only once
         if query.data == "help":
             profile = await get_user_profile(chat_id)
             if profile and not profile.get('has_seen_menu', False):
