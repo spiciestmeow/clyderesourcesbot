@@ -370,19 +370,12 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
-    """Updated with safety check - never sends expired cookies"""
+    """Fixed version - correctly handles both Netflix and PrimeVideo"""
     emoji = "🍿" if service_type == "netflix" else "🎥"
     
-    await query.message.edit_caption(
-        caption=f"{emoji} <i>Searching deep within the glowing glade...</i>", 
-        parse_mode='HTML'
-    )
+    await query.message.edit_caption(caption=f"{emoji} <i>Searching deep within the glowing glade...</i>", parse_mode='HTML')
     await asyncio.sleep(1.3)
-    
-    await query.message.edit_caption(
-        caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...", 
-        parse_mode='HTML'
-    )
+    await query.message.edit_caption(caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...", parse_mode='HTML')
     await asyncio.sleep(1.5)
 
     profile = await get_user_profile(chat_id)
@@ -391,8 +384,6 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 
     data = await get_vamt_data()
     filtered = [item for item in data if service_type in str(item.get('service_type', '')).lower()]
-    
-    # Sort same way as the list (newest first)
     filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=True)
 
     if idx < 1 or idx > len(filtered[:limit]):
@@ -401,32 +392,34 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 
     item = filtered[idx - 1]
 
-    # ==================== SAFETY CHECK ====================
-    if (str(item.get('status', '')).lower() != "active" or 
-        int(item.get('remaining', 0)) <= 0):
+    # Safety check
+    if str(item.get('status', '')).lower() != "active" or int(item.get('remaining', 0)) <= 0:
         await query.answer("⚠️ This cookie has expired. The forest has removed it.", show_alert=True)
-        # Refresh the list automatically
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
-    # ======================================================
 
     cookie = str(item.get('key_id', '')).strip()
+    
+    # Clean display name - FIXED for PrimeVideo
     display_name = str(item.get('display_name') or '').strip()
     if not display_name:
-        display_name = f"{service_type.title()} Cookie"
+        if service_type == "netflix":
+            display_name = "Netflix Cookie"
+        else:
+            display_name = "PrimeVideo Cookie"
 
     status = "✅ Awakened"
 
     await add_xp(chat_id, first_name, "reveal_netflix", query=query)
 
     caption = (
-        f"📄 **{display_name.replace(' ', '_')}\\.txt**\n\n"
-        f"{emoji} **{display_name} Revealed**\n"
+        f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
+        f"{emoji} <b>{display_name} Revealed</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🌿 Status: **{status}**\n"
-        f"📦 Remaining: **{item.get('remaining', 0)}**\n\n"
-        "📥 The forest has wrapped your cookie in an ancient scroll\\.\n"
-        "_Tap the file below to receive its magic\\._ 🍃"
+        f"🌿 Status: <b>{status}</b>\n"
+        f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
+        "📥 The forest has wrapped your cookie in an ancient scroll.\n"
+        "<i>Tap the file below to receive its magic.</i> 🍃"
     )
 
     file_content = f"""🌿🍃 Clyde's Enchanted Clearing — Secret {service_type.title()} Cookie 🌿🍃
@@ -448,8 +441,7 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"⬅️ Back to {service_type.title()} Cookies", 
-        callback_data=f"back_to_{service_type}_list|{page}")]
+        [InlineKeyboardButton(f"⬅️ Back to {service_type.title()} Cookies", callback_data=f"back_to_{service_type}_list|{page}")]
     ])
 
     try:
@@ -461,7 +453,7 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
         chat_id=chat_id,
         document=file_bytes,
         caption=caption,
-        parse_mode='MarkdownV2',
+        parse_mode='HTML',
         reply_markup=kb,
         filename=file_bytes.name
     )
@@ -469,7 +461,7 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     await asyncio.sleep(0.8)
     await tg_app.bot.send_message(
         chat_id=chat_id,
-        text=f"✨ **{service_type.title()} cookie successfully delivered!**",
+        text=f"✨ **{display_name} successfully delivered!**",
         parse_mode='MarkdownV2'
     )
 
