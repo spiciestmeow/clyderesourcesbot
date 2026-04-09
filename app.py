@@ -21,19 +21,21 @@ app = Flask(__name__)
 # ==================== GLOBAL CACHE FOR VAMT DATA ====================
 vamt_cache = None
 vamt_cache_time = 0
-CACHE_TTL = 0
+CACHE_TTL = 300
 
 # ==================== ANTI-XP ABUSE ====================
 xp_cooldowns = {}
 user_action_history = {}
 
 COOLDOWN_SECONDS = {
-    "view_windows": 12,
-    "view_office": 12,
-    "view_netflix": 12,
+    "view_windows": 10,
+    "view_office": 10,
+    "view_netflix": 10,
+    "view_prime": 10,
     "reveal_netflix": 18,
+    "reveal_prime": 18,
     "profile": 12,
-    "clear": 25,
+    "clear": 20,
     "guidance": 20,
     "lore": 20,
     "general": 5,
@@ -360,9 +362,9 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"{service_type}_page_{page-1}"))
+        nav_buttons.append(InlineKeyboardButton("↼ Previous", callback_data=f"{service_type}_page_{page-1}"))
     if end < len(filtered):
-        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"{service_type}_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton("Next ⇀", callback_data=f"{service_type}_page_{page+1}"))
     if nav_buttons:
         buttons.append(nav_buttons)
     buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
@@ -1083,9 +1085,9 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     # Pagination
     buttons = []
     if page > 0:
-        buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"history_page_{page-1}"))
+        buttons.append(InlineKeyboardButton("↼ Previous", callback_data=f"history_page_{page-1}"))
     if (page + 1) * limit < total_entries:
-        buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"history_page_{page+1}"))
+        buttons.append(InlineKeyboardButton("Next ⇀", callback_data=f"history_page_{page+1}"))
 
     keyboard = InlineKeyboardMarkup([buttons]) if buttons else None
 
@@ -1875,15 +1877,15 @@ async def handle_callback(update: Update):
         await handle_history(chat_id, first_name, page=page)
         return
 
-    # ====================== HELP (Guidance) - 2 Pages ======================
+    # ====================== HELP (Guidance) - 3 Pages ======================
     elif query.data == "help" or query.data.startswith("guidance_page_"):
         chat_id = update.effective_chat.id
         first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
-       
+      
         # Give XP only the very first time
         if query.data == "help":
             await add_xp(chat_id, first_name, "guidance", query=query)
-
+        
         page = 1
         if query.data.startswith("guidance_page_"):
             try:
@@ -1893,12 +1895,12 @@ async def handle_callback(update: Update):
 
         if page == 1:
             text = (
-                "<b>❓ Guidance - Page 1/2</b>\n\n"
+                "<b>❓ Guidance - Page 1/3</b>\n\n"
                 "🌿 <b>How to Navigate the Clearing</b>\n"
                 "• Tap any button to explore the paths\n"
                 "• Use /menu to return here anytime\n"
                 "• Use /clear to renew your path\n\n"
-               
+                
                 "📜 <b>Available Commands</b>\n"
                 "• /start — Begin your journey anew\n"
                 "• /menu — Return to the Enchanted Clearing\n"
@@ -1907,33 +1909,29 @@ async def handle_callback(update: Update):
                 "• /leaderboard — See Top Wanderers\n"
                 "• /myid — Reveal your Eternal Forest ID\n"
                 "• /clear — Cleanse and renew the clearing\n"
-                "• /feedback — Send message to the caretaker\n\n"
-               
+                "• /feedback — Send message to the caretaker\n"
+                "• /update — View all patch notes\n\n"
+                
                 "🌲 <b>Treasures You Can Discover</b>\n"
                 "• 🪄 Spirit Treasures — Steam accounts\n"
                 "• 📜 Ancient Scrolls — Learning guides\n"
                 "• 🌿 Forest Inventory — Windows, Office & Netflix keys\n"
                 "• 🌲 The Whispering Forest — Main resource hub\n\n"
-               
+                
                 "<b>Note for New Wanderers:</b>\n"
                 "• You start at <b>Level 1 with 0 XP</b>\n"
                 "• Your first actions will help you grow and unlock more items.\n\n"
-               
+                
                 "<i>Tap Next → to learn about the Leveling System</i>"
             )
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Next →", callback_data="guidance_page_2")],
+                [InlineKeyboardButton("Next ⇀", callback_data="guidance_page_2")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
-        else:  # ==================== PAGE 2 (UPDATED & ACCURATE) ====================
-            level_req_text = "\n".join(
-                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
-                for lvl in range(2, 11)
-            )
-
+        elif page == 2:
             text = (
-                "<b>❓ Guidance - Page 2/2</b>\n\n"
+                "<b>❓ Guidance - Page 2/3</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n"
                 "Gain XP through exploration to unlock more resources.\n\n"
                 
@@ -1954,6 +1952,21 @@ async def handle_callback(update: Update):
                 "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
                 "• Lv9: 9 • Lv10+: <b>Unlimited</b>\n\n"
                 
+                "<i>Tap Next → for Steam & XP Rewards</i>"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("↼ Previous", callback_data="guidance_page_1")],
+                [InlineKeyboardButton("Next ⇀", callback_data="guidance_page_3")],
+                [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+            ])
+
+        else:  # Page 3
+            level_req_text = "\n".join(
+                f"• Level {lvl} → {get_cumulative_xp_for_level(lvl):,} XP"
+                for lvl in range(2, 11)
+            )
+            text = (
+                "<b>❓ Guidance - Page 3/3</b>\n\n"
                 "🎮 <b>Steam Accounts</b>\n"
                 "• Lv1-6: Public Drop Only (Website)\n"
                 "• Lv7-8: Early Preview\n"
@@ -1970,14 +1983,10 @@ async def handle_callback(update: Update):
                 
                 "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨"
             )
-            
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("← Previous", callback_data="guidance_page_1")],
+                [InlineKeyboardButton("↼ Previous", callback_data="guidance_page_2")],
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
-
-        # DEBUG - check length
-        print(f"DEBUG: Guidance Page {page} caption length = {len(text)} characters")
 
         msg = await tg_app.bot.send_animation(
             chat_id=chat_id,
@@ -1986,8 +1995,7 @@ async def handle_callback(update: Update):
             parse_mode='HTML',
             reply_markup=keyboard
         )
-
-        # Save for /clear
+        
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(msg.message_id)
