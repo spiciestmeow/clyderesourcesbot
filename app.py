@@ -279,12 +279,8 @@ def get_max_items(category: str, level: int) -> int:
 
     return 0
 
-# ==================== REUSABLE COOKIE SYSTEM (Netflix + PrimeVideo) ====================
 async def show_paginated_cookie_list(service_type: str, chat_id: int, query, page: int = 0):
-    """UPDATED - Smart fresh/old system + clean names
-    Higher levels get newest cookies first
-    Lower levels get older but still working cookies"""
-    
+    """FINAL FIXED VERSION - Low levels get older cookies + proper empty message"""
     profile = await get_user_profile(chat_id)
     user_level = profile.get('level', 1) if profile else 1
     max_by_level = get_max_items(service_type, user_level)
@@ -297,7 +293,7 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         await query.message.edit_caption("🌫️ Database connection failed.", reply_markup=get_back_to_inventory_keyboard())
         return
 
-    # === ONLY ACTIVE + WORKING COOKIES ===
+    # Only active + working cookies
     filtered = [
         item for item in data 
         if service_type in str(item.get('service_type', '')).lower()
@@ -305,18 +301,27 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         and int(item.get('remaining', 0)) > 0
     ]
 
-    # Sort newest first (fresh uploads at the top of the list)
+    # Sort newest first
     filtered.sort(key=lambda x: x.get('last_updated', ''), reverse=True)
 
     available_active = len(filtered)
 
+    if available_active == 0:
+        await query.message.edit_caption(
+            caption=f"<b>{emoji} Secret {title} Premium Cookies</b>\n\n"
+                    "🌫️ No working cookies available in the forest right now...\n"
+                    "Please try again later or check other resources.",
+            parse_mode='HTML',
+            reply_markup=get_back_to_inventory_keyboard()
+        )
+        return
+
     # === SMART DISTRIBUTION ===
     if user_level >= 5:
-        # High level → gets the freshest cookies
         filtered = filtered[:max_by_level]
         priority_text = "✨ You get the freshest cookies first!"
     else:
-        # Low level → gets older but still working cookies
+        # Low level gets older working cookies
         start_old = max(0, available_active - max_by_level)
         filtered = filtered[start_old : start_old + max_by_level]
         priority_text = "🌱 You get older but still working cookies."
@@ -327,7 +332,6 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     page_items = filtered[start:end]
     total_pages = (len(filtered) + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
 
-    # Messages
     limit_note = f"🌿 Level {user_level} → Up to {max_by_level} {title} items\n{priority_text}"
     if available_active < max_by_level:
         limit_note += f"\n✅ Currently {available_active} working {title} cookies in the forest."
@@ -345,7 +349,6 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
     buttons = []
     for idx, item in enumerate(page_items, start=start + 1):
-        # Clean name (no more "Netflix Cookie 23")
         display_name = str(item.get('display_name') or '').strip()
         if not display_name:
             display_name = f"{title} Cookie"
@@ -353,9 +356,8 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         report += f"✨ <b>{display_name}</b>\n Status: ✅ Working\n Remaining: {item.get('remaining', 0)}\n\n"
         
         buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}", 
-        callback_data=f"reveal_{service_type}|{idx}|{page}")])
+                                           callback_data=f"reveal_{service_type}|{idx}|{page}")])
 
-    # Navigation buttons
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"{service_type}_page_{page-1}"))
@@ -368,9 +370,8 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     kb = InlineKeyboardMarkup(buttons)
     await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
 
-
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
-    """Fixed version - correctly handles both Netflix and PrimeVideo"""
+    """Fixed - Correct service type + better expired handling"""
     emoji = "🍿" if service_type == "netflix" else "🎥"
     
     await query.message.edit_caption(caption=f"{emoji} <i>Searching deep within the glowing glade...</i>", parse_mode='HTML')
@@ -399,14 +400,9 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         return
 
     cookie = str(item.get('key_id', '')).strip()
-    
-    # Clean display name - FIXED for PrimeVideo
     display_name = str(item.get('display_name') or '').strip()
     if not display_name:
-        if service_type == "netflix":
-            display_name = "Netflix Cookie"
-        else:
-            display_name = "PrimeVideo Cookie"
+        display_name = f"{service_type.title()} Cookie"
 
     status = "✅ Awakened"
 
