@@ -1040,7 +1040,7 @@ async def send_initial_welcome(chat_id, first_name):
 async def send_level_up_message(chat_id, first_name, old_level, new_level):
     """Send a beautiful level up celebration message"""
     title = get_level_title(new_level)
-    
+   
     caption = (
         f"🌟 <b>Congratulations, {html.escape(first_name)}!</b>\n\n"
         f"You have grown stronger!\n\n"
@@ -1050,16 +1050,12 @@ async def send_level_up_message(chat_id, first_name, old_level, new_level):
         "More scrolls and wonders are now within your reach.\n\n"
         "<i>May your bond with the Enchanted Clearing continue to deepen.</i> 🍃✨"
     )
-
-    try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=LOADING_GIF,
-            caption=caption,
-            parse_mode='HTML'
-        )
-    except:
-        pass
+    
+    await safe_send_animation(
+        chat_id=chat_id,
+        animation=LOADING_GIF,
+        caption=caption
+    )
 
 async def send_full_menu(chat_id, first_name, is_first_time=False):
     """Restored beautiful long captions (safe now that Guidance is shortened)"""
@@ -1067,23 +1063,24 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
-   
+  
     # Get user profile to show current level and title
     profile = await get_user_profile(chat_id)
-   
+  
     if profile:
         level = profile.get('level', 1)
         title = get_level_title(level)
         level_info = f"🏷️ {title} • ⭐ Level {level}"
     else:
         level_info = "🌱 New Wanderer • ⭐ Level 1"
-
+    
     # Calculate streak for the menu
     streak = 0
     if profile:
         async with httpx.AsyncClient(timeout=10.0) as client:
             headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
             streak = await calculate_streak(chat_id, client, headers)
+    
     streak_text = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Welcome back!"
 
     if is_first_time:
@@ -1108,17 +1105,14 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
         )
         keyboard = get_full_menu_keyboard()
 
-    # DEBUG - check length in logs
-    print(f"DEBUG: send_full_menu caption length = {len(caption)} characters (first_time={is_first_time})")
-
-    msg = await tg_app.bot.send_animation(
+    # Use our safe helper
+    msg = await safe_send_animation(
         chat_id=chat_id,
         animation=MENU_GIF,
         caption=caption,
-        parse_mode='HTML',
         reply_markup=keyboard
     )
-  
+ 
     ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
@@ -1309,19 +1303,19 @@ async def calculate_streak(chat_id: int, client, headers):
 
 async def handle_profile(chat_id, first_name):
     success = await add_xp(chat_id, first_name, "profile")
-   
+  
     profile = await get_user_profile(chat_id)
     if not profile:
         return
-    
+   
     level = profile['level']
     xp = profile['xp']
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     xp_to_next = max(0, xp_required_next - xp)
-    
+   
     # Create green progress bar
     progress_bar = create_progress_bar(xp, xp_required_next, length=10)
-    
+   
     caption = (
         f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1336,19 +1330,18 @@ async def handle_profile(chat_id, first_name):
         "• Profile / Clear → <b>+6 XP</b>\n\n"
         "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
     )
-    
-    msg = await tg_app.bot.send_animation(
+   
+    msg = await safe_send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
-        caption=caption,
-        parse_mode='HTML'
+        caption=caption
     )
-
+    
     # Add reusable XP feedback
     if success:
         await send_xp_feedback(chat_id, 6)
-   
-    # Add to forest_memory so /clear can delete it
+  
+    # Add to forest_memory
     ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
