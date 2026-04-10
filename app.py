@@ -353,7 +353,7 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     # ==================== BEST CLEAN DESIGN ====================
     report = (
         f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
         f"📦 <b>{len(filtered)} {title} available</b>\n"
         f"📄 Page {page + 1} of {total_pages}\n\n"
         "<i>Which one whispers to your spirit?</i>\n\n"
@@ -381,13 +381,13 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
     # ==================== INFO AT BOTTOM ====================
     report += (
-        f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
         f"🌿 Level {user_level} → Up to {max_by_level} items\n"
         f"{priority}\n"
     )
 
     if len(filtered) < max_by_level:
-        report += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest."
+        report += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest.\n\n"
 
     report += "⚠️ Cookies can stop working without notice. Test quickly after revealing."
 
