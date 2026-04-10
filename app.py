@@ -104,11 +104,74 @@ async def get_vamt_data():
             print(f"🔴 Supabase Error: {e}")
             return vamt_cache if vamt_cache is not None else None
         
-# ==================== DYNAMIC UPTIME & LAST UPDATED ====================
+# ==================== BOT CONFIG (Manual Version + Manual Date/Time + OWNER ONLY) ====================
+async def get_bot_config():
+    """Fetch current version and last updated from Supabase"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/bot_info?select=*&limit=1",
+                headers=headers
+            )
+            data = response.json()
+            if data and len(data) > 0:
+                return data[0]
+            return {"current_version": "1.3.2", "last_updated": get_last_updated()}
+        except Exception as e:
+            print(f"[Bot Config] Error: {e}")
+            return {"current_version": "1.3.2", "last_updated": get_last_updated()}
+
+
+async def set_bot_info(new_version: str, custom_datetime: str, chat_id: int):
+    """OWNER ONLY - Manually set version AND exact Last Updated date/time"""
+    if chat_id != 7399488750:   # ← ONLY YOU CAN USE THIS
+        await tg_app.bot.send_message(
+            chat_id, 
+            "🌿 Sorry, only the Forest Caretaker is allowed to change forest info."
+        )
+        return
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+
+    payload = {
+        "id": 1,
+        "current_version": new_version.strip(),
+        "last_updated": custom_datetime.strip()
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/bot_info",
+                headers=headers,
+                json=[payload]
+            )
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ <b>Forest info updated successfully!</b>\n\n"
+                f"📜 New Version: <b>{new_version}</b>\n"
+                f"🔄 Last Updated: <b>{custom_datetime}</b>\n\n"
+                "The trees have recorded this change 🌿✨",
+                parse_mode='HTML'
+            )
+            print(f"🌿 Forest info manually set by owner → v{new_version} | {custom_datetime}")
+        except Exception as e:
+            await tg_app.bot.send_message(chat_id, f"❌ Failed to save: {e}")
+        
+# ==================== LIVE UPTIME ====================
 BOT_START_TIME = datetime.now(pytz.utc)
 
 def get_uptime():
-    """Live uptime since last restart"""
+    """Live uptime since last restart (shown in /forest)"""
     delta = datetime.now(pytz.utc) - BOT_START_TIME
     days = delta.days
     hours = delta.seconds // 3600
@@ -121,14 +184,7 @@ def get_uptime():
     else:
         return f"{minutes} minute{'s' if minutes != 1 else ''}"
 
-def get_last_updated():
-    """Shows when the bot was last restarted (Manila time)"""
-    manila_tz = pytz.timezone('Asia/Manila')
-    local_time = BOT_START_TIME.astimezone(manila_tz)
-    return local_time.strftime("%B %d, %Y • %I:%M %p")
-
 # ==================== KEYBOARDS ====================
-
 def get_caretaker_keyboard():
     return InlineKeyboardMarkup([
         [
@@ -711,6 +767,8 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
                 await tg_app.bot.send_message(owner_chat_id, "❌ Failed to save to database.")
         except Exception as e:
             await tg_app.bot.send_message(owner_chat_id, f"❌ Error: {str(e)}")
+
+
 
 
 # ==================== CARETAKER ADMIN MENU (Owner Only) ====================
@@ -1713,9 +1771,12 @@ async def handle_clear(chat_id, user_command_id, first_name):
 
     print(f"🌿 Chat cleared magically for user {chat_id}")
 
-# ==================== BOT INFO / STATUS COMMAND ======================
 async def handle_info(chat_id):
     try:
+        config = await get_bot_config()
+        version = config.get("current_version", "1.3.2")
+        last_updated = config.get("last_updated", "Not set yet")
+
         headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
@@ -1730,14 +1791,12 @@ async def handle_info(chat_id):
             manila_tz = pytz.timezone('Asia/Manila')
             today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
             today_utc = today_start.astimezone(pytz.utc).isoformat()
+
             active_res = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
-                headers=headers,
-                params={"last_active": f"gte.{today_utc}"}
+                f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id&last_active=gte.{today_utc}",
+                headers=headers
             )
             active_today = len(active_res.json()) if active_res.status_code == 200 else 0
-
-        version = "1.3.2"
 
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
@@ -1747,19 +1806,20 @@ async def handle_info(chat_id):
             f"🌱 <b>Total Wanderers:</b> {total_users:,}\n"
             f"✨ <b>Active Today:</b> {active_today:,}\n\n"
             f"📜 <b>Current Version:</b> {version}\n"
-            f"🔄 <b>Last Updated:</b> {get_last_updated()}\n\n"
+            f"🔄 <b>Last Updated:</b> {last_updated}\n\n"
             "⚠️ <i>For personal and educational use only.</i>\n"
             "The developer is not responsible for any misuse.\n\n"
             "Made with care by the Forest Caretaker 🍃"
         )
         await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+        
     except Exception as e:
         print(f"Info command error: {str(e)}")
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌫️ The ancient trees are having trouble sharing the forest status right now..."
         )
-    
+
 # ==================== CALLBACK ====================
 async def handle_callback(update: Update):
     query = update.callback_query
@@ -2449,6 +2509,30 @@ def webhook():
                         text="🌿 Please write your feedback after the /feedback command.\n\n"
                              "Example: `/feedback I really like the immersive captions!`"
                     )
+
+            elif text.startswith("/setforestinfo"):
+                if update.effective_chat.id != 7399488750:
+                    await tg_app.bot.send_message(
+                        chat_id, 
+                        "🌿 Sorry, only the Forest Caretaker is allowed to change forest info."
+                    )
+                    return
+
+                parts = text.replace("/setforestinfo", "").strip().split(maxsplit=1)
+                if len(parts) < 2:
+                    await tg_app.bot.send_message(
+                        chat_id,
+                        "📝 Usage (only for Caretaker):\n"
+                        "`/setforestinfo 1.4.5 April 10, 2026 • 03:58 PM`\n\n"
+                        "• First word = version\n"
+                        "• Everything after = exact date & time you want to show"
+                    )
+                    return
+                
+                new_version = parts[0].strip()
+                custom_datetime = parts[1].strip()
+                
+                await set_bot_info(new_version, custom_datetime, chat_id)
 
             elif text.startswith("/addupdate"):
                 if chat_id != 7399488750:
