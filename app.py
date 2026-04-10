@@ -1630,35 +1630,29 @@ async def handle_view_feedback(chat_id, user_id):
             text="🌿 Sorry, only the caretaker of the forest can view the feedback scrolls."
         )
         return
-
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
-
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
                 f"{SUPABASE_URL}/rest/v1/feedback?select=*&order=created_at.desc&limit=15",
                 headers=headers
             )
-            
+           
             if response.status_code != 200:
                 await tg_app.bot.send_message(chat_id=chat_id, text="❌ Failed to fetch feedback from the database.")
                 return
-
             data = response.json()
-
             if not data:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
                     text="🌿 The feedback scroll is currently empty. No messages yet."
                 )
                 return
-
             # Build beautiful message
             message = "🌿 <b>Recent Feedback from the Forest</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-
             for idx, item in enumerate(data, 1):
                 created_at = item.get('created_at', '')
                 # Convert ISO timestamp to readable format (Philippines time)
@@ -1667,11 +1661,9 @@ async def handle_view_feedback(chat_id, user_id):
                     dt = dt.astimezone(pytz.timezone('Asia/Manila'))
                     time_str = dt.strftime("%b %d, %Y • %I:%M %p")
                 except:
-                    time_str = created_at[:16]  # fallback
-
+                    time_str = created_at[:16] # fallback
                 first_name = html.escape(str(item.get('first_name') or 'Unknown'))
                 feedback = html.escape(str(item.get('feedback_text') or '').strip())
-
                 message += (
                     f"✨ <b>{idx}.</b> From <b>{first_name}</b>\n"
                     f"🆔 <code>{item.get('chat_id')}</code>\n"
@@ -1679,14 +1671,12 @@ async def handle_view_feedback(chat_id, user_id):
                     f"💬 {feedback}\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                 )
-
             # If too long, Telegram has limit (~4096 chars), but 15 feedbacks should be fine
             await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=message,
                 parse_mode='HTML'
             )
-
         except Exception as e:
             print(f"🔴 Error fetching feedbacks: {e}")
             await tg_app.bot.send_message(
@@ -1702,12 +1692,10 @@ async def handle_reset_first_time(chat_id):
             text="🌿 Sorry, only the caretaker can reset the forest memory."
         )
         return
-
     confirm_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✔️ Yes, Reset Everything", callback_data="confirm_full_reset")],
         [InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_reset")]
     ])
-
     await tg_app.bot.send_message(
         chat_id=chat_id,
         text="⚠️ <b>Full Reset Confirmation</b>\n\n"
