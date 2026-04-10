@@ -1957,24 +1957,29 @@ async def handle_callback(update: Update):
         chat_id = update.effective_chat.id
         first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
 
-        try:
-            await query.message.delete()
-        except:
-            pass
+        if query.data == "help":
+            try:
+                await query.message.delete()
+            except:
+                pass
       
-        # FIXED: Only give XP + message on the VERY FIRST time
+        # Give XP only the very first time
         if query.data == "help":
             success = await add_xp(chat_id, first_name, "guidance", query=query)
             if success > 0:
                 await send_xp_feedback(chat_id, success)
 
-        page = 1
+
+        
         if query.data.startswith("guidance_page_"):
             try:
                 page = int(query.data.split("_")[2])
             except:
                 page = 1
+        else:
+            page = 1
 
+        # ====================== PAGE CONTENT ======================
         if page == 1:
             text = (
                 "<b>❓ Guidance - Page 1/3</b>\n\n"
@@ -2063,7 +2068,7 @@ async def handle_callback(update: Update):
                 "• /profile or /clear → <b>+6 XP</b>\n"
                 "• First Guidance / Lore → <b>+10 XP</b> (one-time only)\n\n"
                 
-                f"<b>Cumulative XP Requirements:</b>\n{level_req_text}\n\n"
+                f"<b>Cumulative XP Requirements:</b>\n\n{level_req_text}\n\n"
                 
                 "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨"
             )
@@ -2072,7 +2077,7 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
-
+        # ====================== SEND OR EDIT ======================
         if query.data == 'help':
             # First time opening Guidance → send new animation
             msg = await tg_app.bot.send_animation(
@@ -2082,14 +2087,27 @@ async def handle_callback(update: Update):
                 parse_mode='HTML',
                 reply_markup=keyboard
             )
+            if chat_id not in forest_memory:
+                forest_memory[chat_id] = []
+            forest_memory[chat_id].append(msg.message_id)
         else:
-            # Previous / Next button → EDIT the current message (no new message)
-            await query.message.edit_caption(
-                caption=text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
+            try:
+                await query.message.edit_caption(
+                    caption=text,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                print(f"Guidance pagination error: {e}")
+                # Safe fallback: send new message if edit fails
+                await tg_app.bot.send_animation(
+                    chat_id=chat_id,
+                    animation=GUIDANCE_GIF,
+                    caption=text,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+                return
 
         
         # Save message ID for /clear
