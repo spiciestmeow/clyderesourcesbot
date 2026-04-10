@@ -1355,12 +1355,12 @@ async def handle_stats(chat_id, first_name):
             text="🌿 You haven't started your journey yet. Use /profile to begin!"
         )
         return
-
+    
     level = profile.get('level', 1)
     xp = profile.get('xp', 0)
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     progress_bar = create_progress_bar(xp, xp_required_next, length=10)
-
+    
     # Date formatting
     joined_date = "Unknown"
     if profile.get('created_at'):
@@ -1369,7 +1369,7 @@ async def handle_stats(chat_id, first_name):
             joined_date = dt.strftime("%B %d, %Y")
         except:
             joined_date = str(profile['created_at'])[:10]
-
+    
     # Last Active
     last_active = "Just now"
     if profile.get('last_active'):
@@ -1386,8 +1386,8 @@ async def handle_stats(chat_id, first_name):
                 last_active = dt.strftime("%B %d, %Y • %I:%M %p")
         except:
             last_active = "Just now"
-
-    # All stats (including Prime)
+    
+    # All stats
     windows_views = profile.get('windows_views', 0)
     office_views = profile.get('office_views', 0)
     netflix_views = profile.get('netflix_views', 0)
@@ -1398,7 +1398,7 @@ async def handle_stats(chat_id, first_name):
     guidance_reads = profile.get('guidance_reads', 0)
     lore_reads = profile.get('lore_reads', 0)
     profile_views = profile.get('profile_views', 0)
-
+    
     caption = (
         f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1427,13 +1427,13 @@ async def handle_stats(chat_id, first_name):
         f"🌲 <b>Last Active:</b> {last_active}\n\n"
         "<i>The trees remember every step you've taken...</i> 🍃"
     )
-
+    
     msg = await tg_app.bot.send_message(
         chat_id=chat_id,
         text=caption,
         parse_mode='HTML'
     )
-
+    
     ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
@@ -1803,32 +1803,32 @@ async def handle_info(chat_id):
         config = await get_bot_config()
         version = config.get("current_version", "1.3.2")
         last_updated = config.get("last_updated", "Not set yet")
-        
+       
         headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
-        
+       
         async with httpx.AsyncClient(timeout=12.0) as client:
-            # Total users (unchanged)
+            # Total users
             total_res = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
                 headers=headers
             )
             total_users = len(total_res.json()) if total_res.status_code == 200 else 0
-
-            # === MORE ACCURATE: Active in Last 24 Hours ===
+            
+            # Active in Last 24 Hours
             manila_tz = pytz.timezone('Asia/Manila')
             now_manila = datetime.now(manila_tz)
             twenty_four_hours_ago = now_manila - timedelta(hours=24)
             twenty_four_hours_ago_utc = twenty_four_hours_ago.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
+            
             active_res = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id&last_active=gte.{twenty_four_hours_ago_utc}",
                 headers=headers
             )
             active_count = len(active_res.json()) if active_res.status_code == 200 else 0
-
+        
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1842,9 +1842,9 @@ async def handle_info(chat_id):
             "The developer is not responsible for any misuse.\n\n"
             "Made with care by the Forest Caretaker 🍃"
         )
-        
-        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
        
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+      
     except Exception as e:
         print(f"Info command error: {str(e)}")
         await tg_app.bot.send_message(
