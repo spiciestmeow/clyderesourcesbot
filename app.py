@@ -387,7 +387,7 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     )
 
     if len(filtered) < max_by_level:
-        limit_note += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest."
+        report += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest."
 
     report += "⚠️ Cookies can stop working without notice. Test quickly after revealing."
 
