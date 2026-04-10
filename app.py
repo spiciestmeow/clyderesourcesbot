@@ -427,14 +427,11 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 
     # FIXED: Use correct action for Prime or Netflix
     action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
-    await add_xp(chat_id, first_name, action_name, query=query)
+    success = await add_xp(chat_id, first_name, action_name, query=query)
 
     # Instant XP feedback for reveal
-    await tg_app.bot.send_message(
-        chat_id=chat_id,
-        text="✨ <b>+14 XP</b> earned!",
-        parse_mode='HTML'
-    )
+    if success:
+        await send_xp_feedback(chat_id, 14)
 
     caption = (
         f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
@@ -848,6 +845,27 @@ def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> 
     percent_text = f"{int(percentage * 100)}%"
     
     return f"[{bar}] {percent_text}"
+
+# ==================== REUSABLE XP FEEDBACK ====================
+async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 3):
+    """Reusable helper: Shows "+X XP earned!" message only if XP > 0
+    and automatically deletes it after `duration` seconds (default 3s)"""
+    if xp_amount <= 0:
+        return
+    
+    text = f"✨ <b>+{xp_amount} XP</b> earned!"
+    
+    try:
+        msg = await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML'
+        )
+        # Auto-delete after specified seconds
+        await asyncio.sleep(duration)
+        await msg.delete()
+    except:
+        pass
 
 # ==================== MESSAGES ====================
 async def send_initial_welcome(chat_id, first_name):
@@ -1779,14 +1797,17 @@ async def handle_callback(update: Update):
        
         # FIXED: Use correct action name + instant XP feedback
         if category in ["win", "windows"]:
-            await add_xp(chat_id, first_name, "view_windows", query=query)
-            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
+            success = await add_xp(chat_id, first_name, "view_windows", query=query)
+            if success:
+                await send_xp_feedback(chat_id, 8)
         elif category == "office":
-            await add_xp(chat_id, first_name, "view_office", query=query)
-            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
+            success = await add_xp(chat_id, first_name, "view_office", query=query)
+            if success:
+                await send_xp_feedback(chat_id, 8)
         elif category == "netflix":
-            await add_xp(chat_id, first_name, "view_netflix", query=query)
-            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
+            success = await add_xp(chat_id, first_name, "view_prime", query=query)
+            if success:
+                await send_xp_feedback(chat_id, 8)
         elif category == "prime":
             await add_xp(chat_id, first_name, "view_prime", query=query)
             await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
