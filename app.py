@@ -479,14 +479,6 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
         filename=file_bytes.name
     )
 
-    # Reliable success message
-    await asyncio.sleep(0.8)
-    success_msg = await tg_app.bot.send_message(
-        chat_id=chat_id,
-        text=f"✨ <i>{display_name} successfully delivered!</i>",
-        parse_mode='HTML'
-    )
-
     # Store message IDs so we can delete them when user goes back
     success_text = f"✨ <i>{display_name} successfully delivered!</i>"
     await send_temporary_message(chat_id, success_text, duration=3)
@@ -652,7 +644,7 @@ async def add_xp(chat_id, first_name, action="general", query=None):
                 json=payload
             )
 
-    return True
+    return xp_amount
 
 # ==================== SAVE PATCH NOTICE IN DB ====================
 async def add_new_update(title: str, content: str, owner_chat_id: int):
@@ -1866,12 +1858,13 @@ async def handle_callback(update: Update):
             if success:
                 await send_xp_feedback(chat_id, 8)
         elif category == "netflix":
-            success = await add_xp(chat_id, first_name, "view_prime", query=query)
+            success = await add_xp(chat_id, first_name, "view_netflix", query=query)
             if success:
                 await send_xp_feedback(chat_id, 8)
         elif category == "prime":
-            await add_xp(chat_id, first_name, "view_prime", query=query)
-            await tg_app.bot.send_message(chat_id, "✨ <b>+8 XP</b> earned!", parse_mode='HTML')
+            success = await add_xp(chat_id, first_name, "view_prime", query=query)
+            if success:
+                await send_xp_feedback(chat_id, 8)
         
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>",
@@ -1967,8 +1960,8 @@ async def handle_callback(update: Update):
         # FIXED: Only give XP + message on the VERY FIRST time
         if query.data == "help":
             success = await add_xp(chat_id, first_name, "guidance", query=query)
-            if success:
-                await send_xp_feedback(chat_id, 10)
+            if success > 0:
+                await send_xp_feedback(chat_id, success)
 
         page = 1
         if query.data.startswith("guidance_page_"):
@@ -2179,8 +2172,8 @@ async def handle_callback(update: Update):
     elif query.data == "about":
         # FIXED: Only give XP + message on the VERY FIRST time
         success = await add_xp(chat_id, first_name, "lore", query=query)
-        if success:
-            await send_xp_feedback(chat_id, 10)
+        if success > 0:
+            await send_xp_feedback(chat_id, success)
 
         try:
             await query.message.delete()
