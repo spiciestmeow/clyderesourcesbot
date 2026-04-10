@@ -5,7 +5,7 @@ import httpx
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import time
 from collections import Counter
@@ -120,11 +120,20 @@ async def get_bot_config():
             data = response.json()
             if data and len(data) > 0:
                 return data[0]
-            return {"current_version": "1.3.2", "last_updated": get_last_updated()}
+            
+            # Safe fallback when no data in Supabase
+            return {
+                "current_version": "1.3.2", 
+                "last_updated": "Not set yet"
+            }
+            
         except Exception as e:
             print(f"[Bot Config] Error: {e}")
-            return {"current_version": "1.3.2", "last_updated": get_last_updated()}
-
+            # Safe fallback on error too
+            return {
+                "current_version": "1.3.2", 
+                "last_updated": "Not set yet"
+            }
 
 async def set_bot_info(new_version: str, custom_datetime: str, chat_id: int):
     """OWNER ONLY - Manually set version AND exact Last Updated date/time"""
@@ -1789,27 +1798,31 @@ async def handle_info(chat_id):
         config = await get_bot_config()
         version = config.get("current_version", "1.3.2")
         last_updated = config.get("last_updated", "Not set yet")
-
+        
         headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
+        
         async with httpx.AsyncClient(timeout=12.0) as client:
+            # Total users (unchanged)
             total_res = await client.get(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id",
                 headers=headers
             )
             total_users = len(total_res.json()) if total_res.status_code == 200 else 0
 
+            # === MORE ACCURATE: Active in Last 24 Hours ===
             manila_tz = pytz.timezone('Asia/Manila')
-            today_start = datetime.now(manila_tz).replace(hour=0, minute=0, second=0, microsecond=0)
-            today_utc = today_start.astimezone(pytz.utc).isoformat()
+            now_manila = datetime.now(manila_tz)
+            twenty_four_hours_ago = now_manila - timedelta(hours=24)
+            twenty_four_hours_ago_utc = twenty_four_hours_ago.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             active_res = await client.get(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id&last_active=gte.{today_utc}",
+                f"{SUPABASE_URL}/rest/v1/user_profiles?select=chat_id&last_active=gte.{twenty_four_hours_ago_utc}",
                 headers=headers
             )
-            active_today = len(active_res.json()) if active_res.status_code == 200 else 0
+            active_count = len(active_res.json()) if active_res.status_code == 200 else 0
 
         text = (
             "🌿 <b>Enchanted Clearing Status</b>\n"
@@ -1817,15 +1830,16 @@ async def handle_info(chat_id):
             "🌳 The forest is thriving peacefully.\n\n"
             f"🕒 <b>Uptime:</b> {await get_bot_uptime()}\n"
             f"🌱 <b>Total Wanderers:</b> {total_users:,}\n"
-            f"✨ <b>Active Today:</b> {active_today:,}\n\n"
+            f"✨ <b>Active Today:</b> {active_count:,}\n\n"
             f"📜 <b>Current Version:</b> {version}\n"
             f"🔄 <b>Last Updated:</b> {last_updated}\n\n"
             "⚠️ <i>For personal and educational use only.</i>\n"
             "The developer is not responsible for any misuse.\n\n"
             "Made with care by the Forest Caretaker 🍃"
         )
-        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
         
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+       
     except Exception as e:
         print(f"Info command error: {str(e)}")
         await tg_app.bot.send_message(
