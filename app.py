@@ -1581,7 +1581,7 @@ async def handle_view_feedback(chat_id, user_id):
                 text="⚠️ Something went wrong while reading the feedback scrolls."
             )
 
-# ==================== RESET FIRST-TIME EXPERIENCE (Owner Only) ======================
+# ==================== FULL RESET TO BRAND NEW USER ====================
 async def handle_reset_first_time(chat_id):
     if chat_id != 7399488750:
         await tg_app.bot.send_message(
@@ -1596,27 +1596,62 @@ async def handle_reset_first_time(chat_id):
         "Content-Type": "application/json"
     }
 
-    payload = {"has_seen_menu": False}
-
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
+            # 1. Reset user profile to completely new state
+            profile_payload = {
+                "has_seen_menu": False,
+                "level": 1,
+                "xp": 0,
+                "total_xp_earned": 0,
+                "windows_views": 0,
+                "office_views": 0,
+                "netflix_views": 0,
+                "netflix_reveals": 0,
+                "prime_views": 0,
+                "prime_reveals": 0,
+                "times_cleared": 0,
+                "guidance_reads": 0,
+                "lore_reads": 0,
+                "profile_views": 0,
+                "last_active": datetime.now(pytz.utc).isoformat()
+            }
+
             await client.patch(
                 f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
                 headers=headers,
-                json=payload
+                json=profile_payload
             )
+
+            # 2. Delete all XP history (makes it feel 100% fresh)
+            await client.delete(
+                f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}",
+                headers=headers
+            )
+
+            # Success message
             await tg_app.bot.send_message(
                 chat_id=chat_id,
-                text="✨ <b>First-time experience has been reset.</b>\n\n"
-                     "The next time you enter the Enchanted Clearing, the guided menu "
-                     "with <b>『 Start Here → Guidance 』</b> will appear again.",
+                text="✨ <b>Full Forest Reset Complete!</b>\n\n"
+                     "You are now like a completely new wanderer:\n"
+                     "• Level reset to 1\n"
+                     "• All XP reset to 0\n"
+                     "• All statistics cleared\n"
+                     "• XP history completely wiped\n"
+                     "• First-time Guidance menu will appear again\n\n"
+                     "The Enchanted Clearing has forgotten your previous journey. 🌱\n"
+                     "Welcome back, young sprout!",
                 parse_mode='HTML'
             )
+
+            print(f"✅ Full reset (profile + xp_history) completed for owner {chat_id}")
+
         except Exception as e:
             print(f"Reset failed: {e}")
-            await tg_app.bot.send_message(chat_id=chat_id, text="❌ Failed to reset first-time flag.")
-
-    print(f"✅ First-time flag reset for owner {chat_id}")
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Failed to perform full reset."
+            )
 
 # --- CLEAN CLEAR FUNCTION (No leftover "renewed" message) ---
 async def handle_clear(chat_id, user_command_id, first_name):
