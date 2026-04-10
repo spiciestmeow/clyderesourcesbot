@@ -1581,7 +1581,7 @@ async def handle_view_feedback(chat_id, user_id):
                 text="⚠️ Something went wrong while reading the feedback scrolls."
             )
 
-# ==================== FULL RESET TO BRAND NEW USER ====================
+# ==================== CONFIRMATION BEFORE FULL RESET ====================
 async def handle_reset_first_time(chat_id):
     if chat_id != 7399488750:
         await tg_app.bot.send_message(
@@ -1590,68 +1590,25 @@ async def handle_reset_first_time(chat_id):
         )
         return
 
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
-    }
+    confirm_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✔️ Yes, Reset Everything", callback_data="confirm_full_reset")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_reset")]
+    ])
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            # 1. Reset user profile to completely new state
-            profile_payload = {
-                "has_seen_menu": False,
-                "level": 1,
-                "xp": 0,
-                "total_xp_earned": 0,
-                "windows_views": 0,
-                "office_views": 0,
-                "netflix_views": 0,
-                "netflix_reveals": 0,
-                "prime_views": 0,
-                "prime_reveals": 0,
-                "times_cleared": 0,
-                "guidance_reads": 0,
-                "lore_reads": 0,
-                "profile_views": 0,
-                "last_active": datetime.now(pytz.utc).isoformat()
-            }
-
-            await client.patch(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
-                headers=headers,
-                json=profile_payload
-            )
-
-            # 2. Delete all XP history (makes it feel 100% fresh)
-            await client.delete(
-                f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}",
-                headers=headers
-            )
-
-            # Success message
-            await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text="✨ <b>Full Forest Reset Complete!</b>\n\n"
-                     "You are now like a completely new wanderer:\n"
-                     "• Level reset to 1\n"
-                     "• All XP reset to 0\n"
-                     "• All statistics cleared\n"
-                     "• XP history completely wiped\n"
-                     "• First-time Guidance menu will appear again\n\n"
-                     "The Enchanted Clearing has forgotten your previous journey. 🌱\n"
-                     "Welcome back, young sprout!",
-                parse_mode='HTML'
-            )
-
-            print(f"✅ Full reset (profile + xp_history) completed for owner {chat_id}")
-
-        except Exception as e:
-            print(f"Reset failed: {e}")
-            await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text="❌ Failed to perform full reset."
-            )
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text="⚠️ <b>Full Reset Confirmation</b>\n\n"
+             "Are you absolutely sure you want to reset your account to brand new?\n\n"
+             "This will permanently:\n"
+             "• Reset Level to 1\n"
+             "• Reset all XP to 0\n"
+             "• Clear all statistics\n"
+             "• Wipe entire XP history\n"
+             "• Make Guidance appear as first-time again\n\n"
+             "This action cannot be undone.",
+        parse_mode='HTML',
+        reply_markup=confirm_keyboard
+    )
 
 # --- CLEAN CLEAR FUNCTION (No leftover "renewed" message) ---
 async def handle_clear(chat_id, user_command_id, first_name):
@@ -1840,6 +1797,60 @@ async def handle_callback(update: Update):
             parse_mode='HTML',
             reply_markup=get_inventory_categories()
         )
+
+    # ====================== FULL RESET CONFIRMATION ======================
+    elif query.data == "confirm_full_reset":
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                # Reset profile
+                profile_payload = {
+                    "has_seen_menu": False,
+                    "level": 1,
+                    "xp": 0,
+                    "total_xp_earned": 0,
+                    "windows_views": 0,
+                    "office_views": 0,
+                    "netflix_views": 0,
+                    "netflix_reveals": 0,
+                    "prime_views": 0,
+                    "prime_reveals": 0,
+                    "times_cleared": 0,
+                    "guidance_reads": 0,
+                    "lore_reads": 0,
+                    "profile_views": 0,
+                    "last_active": datetime.now(pytz.utc).isoformat()
+                }
+                await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
+                    headers=headers,
+                    json=profile_payload
+                )
+
+                # Delete XP history
+                await client.delete(
+                    f"{SUPABASE_URL}/rest/v1/xp_history?chat_id=eq.{chat_id}",
+                    headers=headers
+                )
+
+                await query.message.edit_text(
+                    text="✨ <b>Full Forest Reset Complete!</b>\n\n"
+                         "You are now like a completely new wanderer.\n"
+                         "The Enchanted Clearing has forgotten your previous journey. 🌱",
+                    parse_mode='HTML'
+                )
+                print(f"✔️ Full reset completed for owner {chat_id}")
+
+            except Exception as e:
+                await query.message.edit_text("❌ Failed to perform full reset.")
+                print(f"Reset error: {e}")
+
+    elif query.data == "cancel_reset":
+        await query.message.edit_text("❌ Reset cancelled. Your data is safe.")
 
     # ====================== FILTERED INVENTORY ======================
     elif query.data.startswith("vamt_filter_"):
