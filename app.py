@@ -11,8 +11,10 @@ import time
 from collections import Counter
 from io import BytesIO
 
+# ==================== ENVIRONMENT & CONFIG ====================
+OWNER_ID = int(os.getenv("OWNER_ID", "7399488750"))
+
 patch_notes = []
-forest_memory = {}
 forest_memory = {}
 last_reveal_messages = {}   # ← NEW: tracks the last document + success message to clean them
 
@@ -74,6 +76,26 @@ MAINTENANCE_MESSAGE = (
 tg_app = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+
+async def safe_delete(message):
+    try:
+        await message.delete()
+    except:
+        pass
+
+async def safe_send_animation(chat_id, animation, caption, reply_markup=None):
+    return await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=animation,
+        caption=caption,
+        parse_mode='HTML',
+        reply_markup=reply_markup
+    )
+
+def ensure_memory(chat_id):
+    if chat_id not in forest_memory:
+        forest_memory[chat_id] = []
+    return forest_memory[chat_id]
 
 # ==================== DATABASE (WITH CACHING) ====================
 async def get_vamt_data():
@@ -137,7 +159,7 @@ async def get_bot_config():
 
 async def set_bot_info(new_version: str, custom_datetime: str, chat_id: int):
     """OWNER ONLY - Manually set version AND exact Last Updated date/time"""
-    if chat_id != 7399488750:   # ← ONLY YOU CAN USE THIS
+    if chat_id != OWNER_ID:   # ← ONLY YOU CAN USE THIS
         await tg_app.bot.send_message(
             chat_id, 
             "🌿 Sorry, only the Forest Caretaker is allowed to change forest info."
@@ -288,16 +310,15 @@ async def get_user_profile(chat_id):
             return None
         
 async def update_has_seen_menu(chat_id):
-    """Mark that the user has seen the main menu"""
+    """Mark that the user has seen the main menu (safe single call)"""
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
-    
     payload = {"has_seen_menu": True}
-
+    
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.patch(
@@ -307,18 +328,6 @@ async def update_has_seen_menu(chat_id):
             )
         except Exception as e:
             print(f"Failed to update has_seen_menu: {e}")
-
-    payload = {"has_seen_menu": True}
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            await client.patch(
-                f"{SUPABASE_URL}/rest/v1/user_profiles?chat_id=eq.{chat_id}",
-                headers=headers,
-                json=payload
-            )
-        except Exception as e:
-            print(f"Failed to force set has_seen_menu: {e}")
 
 def get_cumulative_xp_for_level(target_level: int) -> int:
     """Win-Win Balanced Formula - Users progress fast enough not to get bored, 
@@ -796,7 +805,7 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
 # ==================== CARETAKER ADMIN MENU (Owner Only) ====================
 async def handle_caretaker(chat_id: int, first_name: str):
     """Hidden grove for the Forest Caretaker only"""
-    if chat_id != 7399488750:
+    if chat_id != OWNER_ID:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Only the Forest Caretaker may enter this sacred glade."
@@ -1007,7 +1016,7 @@ async def send_initial_welcome(chat_id, first_name):
     current_hour = datetime.now(user_tz).hour
     time_icon = "🌅" if 5 <= current_hour < 12 else "🌤️" if 12 <= current_hour < 18 else "🌙"
     greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
-
+    
     caption = (
         f"{time_icon} {greeting}, {html.escape(str(first_name))}!\n\n"
         "🌿 Welcome, dear wanderer, to Clyde's Enchanted Clearing.\n\n"
@@ -1015,9 +1024,15 @@ async def send_initial_welcome(chat_id, first_name):
         "Hidden wonders and peaceful moments are ready to be discovered.\n\n"
         "<i>Tap the button below to step into the heart of the forest.</i> 🍃✨"
     )
-
-    msg = await tg_app.bot.send_animation(chat_id=chat_id, animation=WELCOME_GIF, caption=caption, parse_mode='HTML', reply_markup=get_start_keyboard())
-    if chat_id not in forest_memory: forest_memory[chat_id] = []
+    
+    msg = await safe_send_animation(
+        chat_id=chat_id,
+        animation=WELCOME_GIF,
+        caption=caption,
+        reply_markup=get_start_keyboard()
+    )
+    
+    ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
 
@@ -1104,8 +1119,7 @@ async def send_full_menu(chat_id, first_name, is_first_time=False):
         reply_markup=keyboard
     )
   
-    if chat_id not in forest_memory:
-        forest_memory[chat_id] = []
+    ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
 # ==================== HISTORY LOGS ====================
@@ -1335,8 +1349,7 @@ async def handle_profile(chat_id, first_name):
         await send_xp_feedback(chat_id, 6)
    
     # Add to forest_memory so /clear can delete it
-    if chat_id not in forest_memory:
-        forest_memory[chat_id] = []
+    ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
 
@@ -1428,8 +1441,7 @@ async def handle_stats(chat_id, first_name):
         parse_mode='HTML'
     )
 
-    if chat_id not in forest_memory:
-        forest_memory[chat_id] = []
+    ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
 # ==================== MY ID COMMAND ======================
@@ -1442,14 +1454,14 @@ async def send_myid(chat_id):
         "Keep this ID safe — the caretaker may ask for it if you ever need help with the forest.\n\n"
         "<i>May your roots stay strong in the Enchanted Clearing.</i> 🍃"
     )
-    msg = await tg_app.bot.send_animation(
+    
+    msg = await safe_send_animation(
         chat_id=chat_id,
         animation=MYID_GIF,
-        caption=caption,
-        parse_mode='HTML'
+        caption=caption
     )
-    if chat_id not in forest_memory:
-        forest_memory[chat_id] = []
+    
+    ensure_memory(chat_id)
     forest_memory[chat_id].append(msg.message_id)
 
 # ==================== LEADERBOARD COMMAND ======================
@@ -1458,7 +1470,7 @@ async def handle_leaderboard(chat_id):
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
-    OWNER_CHAT_ID = 7399488750
+    OWNER_CHAT_ID = OWNER_ID
     MIN_LEVEL_TO_UNLOCK = 3
 
     async with httpx.AsyncClient(timeout=12.0) as client:
@@ -1629,7 +1641,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 
     try:
         await tg_app.bot.send_message(
-            chat_id=7399488750,
+            chat_id=OWNER_ID,
             text=owner_message,
             parse_mode='HTML'
         )
@@ -1639,7 +1651,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
 # ==================== VIEW FEEDBACK COMMAND (Owner Only) ======================
 async def handle_view_feedback(chat_id, user_id):
     # Security: Only you (the owner) can use this command
-    if chat_id != 7399488750:
+    if chat_id != OWNER_ID:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker of the forest can view the feedback scrolls."
@@ -1711,7 +1723,7 @@ async def handle_view_feedback(chat_id, user_id):
 
 # ==================== CONFIRMATION BEFORE FULL RESET ====================
 async def handle_reset_first_time(chat_id):
-    if chat_id != 7399488750:
+    if chat_id != OWNER_ID:
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text="🌿 Sorry, only the caretaker can reset the forest memory."
@@ -2230,8 +2242,7 @@ async def handle_callback(update: Update):
                 parse_mode='HTML',
                 reply_markup=keyboard
             )
-            if chat_id not in forest_memory:
-                forest_memory[chat_id] = []
+            ensure_memory(chat_id)
             forest_memory[chat_id].append(msg.message_id)
         else:
             try:
@@ -2254,8 +2265,7 @@ async def handle_callback(update: Update):
 
         
         # Save message ID for /clear
-        if chat_id not in forest_memory:
-            forest_memory[chat_id] = []
+        ensure_memory(chat_id)
         forest_memory[chat_id].append(msg.message_id)
 
         # Mark has_seen_menu only once
@@ -2391,13 +2401,12 @@ async def handle_callback(update: Update):
         except: 
             pass
 
-        if chat_id not in forest_memory: 
-            forest_memory[chat_id] = []
+        ensure_memory(chat_id)
         forest_memory[chat_id].append(final_msg.message_id)
 
     # ====================== CARETAKER ADMIN CALLBACKS (Owner Only) ======================
     elif query.data.startswith("caretaker_"):
-        if chat_id != 7399488750:
+        if chat_id != OWNER_ID:
             await query.answer("🌿 Only the Forest Caretaker may enter this sacred glade.", show_alert=True)
             return
 
@@ -2445,7 +2454,7 @@ def webhook():
         update = Update.de_json(update_data, tg_app.bot)
 
         # ==================== MAINTENANCE MODE ====================
-        OWNER_CHAT_ID = 7399488750
+        OWNER_CHAT_ID = OWNER_ID
 
         if MAINTENANCE_MODE:
             chat_id = None
@@ -2471,8 +2480,7 @@ def webhook():
             user_msg_id = update.message.message_id
             name = update.effective_user.first_name if update.effective_user else "Traveler"
 
-            if chat_id not in forest_memory:
-                forest_memory[chat_id] = []
+            ensure_memory(chat_id)
             forest_memory[chat_id].append(user_msg_id)
 
             # === STRICT REGISTRATION CHECK ===
@@ -2538,7 +2546,7 @@ def webhook():
                     )
 
             elif text.startswith("/setforestinfo"):
-                if update.effective_chat.id != 7399488750:
+                if update.effective_chat.id != OWNER_ID:
                     await tg_app.bot.send_message(
                         chat_id, 
                         "🌿 Sorry, only the Forest Caretaker is allowed to change forest info."
@@ -2562,7 +2570,7 @@ def webhook():
                 await set_bot_info(new_version, custom_datetime, chat_id)
 
             elif text.startswith("/addupdate"):
-                if chat_id != 7399488750:
+                if chat_id != OWNER_ID:
                     await tg_app.bot.send_message(chat_id, "🌿 Sorry, only the caretaker of the forest can add updates.")
                     return
 
@@ -2623,13 +2631,13 @@ def webhook():
                 await handle_updates(chat_id)
 
             elif text.startswith("/viewfeedback") or text.startswith("/feedbacks"):
-                if chat_id == 7399488750:
+                if chat_id == OWNER_ID:
                     await handle_view_feedback(chat_id, None)
                 else:
                     await tg_app.bot.send_message(chat_id, "🌿 Sorry, only the caretaker of the forest can view the feedback scrolls.")
 
             elif text.startswith("/resetfirst") or text.startswith("/reset"):
-                if chat_id == 7399488750:
+                if chat_id == OWNER_ID:
                     await handle_reset_first_time(chat_id)
                 else:
                     await tg_app.bot.send_message(chat_id, "🌿 Sorry, only the caretaker can reset the forest memory.")
