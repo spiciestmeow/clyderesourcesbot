@@ -429,7 +429,6 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
     action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
     success = await add_xp(chat_id, first_name, action_name, query=query)
 
-    # Instant XP feedback for reveal
     if success:
         await send_xp_feedback(chat_id, 14)
 
@@ -489,13 +488,9 @@ Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}
     )
 
     # Store message IDs so we can delete them when user goes back
-    if chat_id not in last_reveal_messages:
-        last_reveal_messages[chat_id] = {}
-    last_reveal_messages[chat_id][service_type] = {
-        "doc": doc_msg.message_id,
-        "success": success_msg.message_id
-    }
-
+    success_text = f"✨ <i>{display_name} successfully delivered!</i>"
+    await send_temporary_message(chat_id, success_text, duration=3)
+    
 async def add_xp(chat_id, first_name, action="general", query=None):
     """Add XP with cooldown + rate limit + true one-time rewards only"""
     
@@ -846,10 +841,8 @@ def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> 
     
     return f"[{bar}] {percent_text}"
 
-# ==================== REUSABLE XP FEEDBACK ====================
-async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 3):
-    """Reusable helper: Shows "+X XP earned!" message only if XP > 0
-    and automatically deletes it after `duration` seconds (default 3s)"""
+# ==================== REUSABLE XP CLAIM ====================
+async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
     if xp_amount <= 0:
         return
     
@@ -862,6 +855,19 @@ async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 3):
             parse_mode='HTML'
         )
         # Auto-delete after specified seconds
+        await asyncio.sleep(duration)
+        await msg.delete()
+    except:
+        pass
+
+# ==================== REUSABLE COOKIE CLAIM MESSAGE ====================
+async def send_temporary_message(chat_id: int, text: str, duration: int = 2):
+    try:
+        msg = await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='HTML'
+        )
         await asyncio.sleep(duration)
         await msg.delete()
     except:
@@ -1158,11 +1164,12 @@ async def calculate_streak(chat_id: int, client, headers):
         return 0
 
 async def handle_profile(chat_id, first_name):
-    await add_xp(chat_id, first_name, "profile")
+    success = await add_xp(chat_id, first_name, "profile")
    
     profile = await get_user_profile(chat_id)
     if not profile:
         return
+    
     level = profile['level']
     xp = profile['xp']
     xp_required_next = get_cumulative_xp_for_level(level + 1)
@@ -1192,6 +1199,10 @@ async def handle_profile(chat_id, first_name):
         caption=caption,
         parse_mode='HTML'
     )
+
+    # Add reusable XP feedback
+    if success:
+        await send_xp_feedback(chat_id, 6)
    
     # Add to forest_memory so /clear can delete it
     if chat_id not in forest_memory:
@@ -1654,7 +1665,9 @@ async def handle_clear(chat_id, user_command_id, first_name):
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
     # Give XP for using /clear
-    await add_xp(chat_id, first_name, "clear")
+    success = await add_xp(chat_id, first_name, "clear")
+    if success:
+        await send_xp_feedback(chat_id, 6)
 
     print(f"🌿 Chat cleared magically for user {chat_id}")
 
@@ -1905,7 +1918,9 @@ async def handle_callback(update: Update):
       
         # Give XP only the very first time
         if query.data == "help":
-            await add_xp(chat_id, first_name, "guidance", query=query)
+            success = await add_xp(chat_id, first_name, "guidance", query=query)
+            if success:
+                await send_xp_feedback(chat_id, 10)
         
         page = 1
         if query.data.startswith("guidance_page_"):
@@ -2114,7 +2129,9 @@ async def handle_callback(update: Update):
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
-        await add_xp(chat_id, first_name, "lore", query=query)
+        success = await add_xp(chat_id, first_name, "lore", query=query)
+        if success:
+            await send_xp_feedback(chat_id, 10)
 
         try: 
             await query.message.delete()
@@ -2122,7 +2139,7 @@ async def handle_callback(update: Update):
             pass
 
         loading_msg = await tg_app.bot.send_animation(
-            chat_id=chat_id,                                   # ← Fixed
+            chat_id=chat_id,                                  
             animation=LOADING_GIF,
             caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>",
             parse_mode='HTML'
