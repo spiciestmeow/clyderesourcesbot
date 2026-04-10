@@ -765,20 +765,18 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
     from datetime import datetime
     manila_tz = pytz.timezone('Asia/Manila')
     current_date = datetime.now(manila_tz).strftime("%B %d, %Y")
-
+    
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
-
     payload = {
         "date": current_date,
         "title": title,
         "content": content
     }
-
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.post(
@@ -786,7 +784,7 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
                 headers=headers,
                 json=payload
             )
-            
+           
             if response.status_code in (200, 201):
                 await tg_app.bot.send_message(
                     owner_chat_id,
@@ -909,9 +907,7 @@ async def log_xp_history(chat_id: int, first_name: str, action: str,
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
-
     leveled_up = new_level > previous_level
-
     payload = {
         "chat_id": chat_id,
         "first_name": first_name,
@@ -923,7 +919,6 @@ async def log_xp_history(chat_id: int, first_name: str, action: str,
         "new_level": new_level,
         "leveled_up": leveled_up
     }
-
     async with httpx.AsyncClient(timeout=8.0) as client:
         try:
             await client.post(
