@@ -799,9 +799,6 @@ async def add_new_update(title: str, content: str, owner_chat_id: int):
         except Exception as e:
             await tg_app.bot.send_message(owner_chat_id, f"❌ Error: {str(e)}")
 
-
-
-
 # ==================== CARETAKER ADMIN MENU (Owner Only) ====================
 async def handle_caretaker(chat_id: int, first_name: str):
     """Hidden grove for the Forest Caretaker only"""
@@ -811,7 +808,7 @@ async def handle_caretaker(chat_id: int, first_name: str):
             text="🌿 Only the Forest Caretaker may enter this sacred glade."
         )
         return
-
+    
     text = (
         "🌲 <b>Welcome back, Forest Caretaker</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -820,13 +817,12 @@ async def handle_caretaker(chat_id: int, first_name: str):
         "The ancient trees part for you.\n\n"
         "Choose your action below:\n"
     )
-
-    # Send with GIF for better atmosphere
-    await tg_app.bot.send_animation(
+    
+    # Use our safe animation helper
+    await safe_send_animation(
         chat_id=chat_id,
-        animation=CARETAKER_GIF,       
+        animation=CARETAKER_GIF,
         caption=text,
-        parse_mode='HTML',
         reply_markup=get_caretaker_keyboard()
     )
 
@@ -1751,44 +1747,39 @@ async def handle_clear(chat_id, user_command_id, first_name):
     except:
         pass
 
-    # Clear ALL previous bot messages
-    if chat_id in forest_memory:
-        for msg_id in forest_memory.get(chat_id, []):
-            try:
-                await tg_app.bot.delete_message(chat_id, msg_id)
-            except:
-                pass  # Message already deleted or doesn't exist
-        forest_memory[chat_id] = []
+    # Clear ALL previous bot messages using our helpers
+    ensure_memory(chat_id)
+    for msg_id in forest_memory[chat_id][:]:   # copy to avoid modification issues
+        try:
+            await tg_app.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except:
+            pass
 
-    # ====================== MAGICAL CLEARING ANIMATION ======================
+    forest_memory[chat_id] = []
+
+# ====================== MAGICAL CLEARING ANIMATION ======================
     loading_msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=CLEAN_GIF,
         caption="🌫️ <b>The ancient mist begins to thicken...</b>",
         parse_mode="HTML"
     )
-
     await asyncio.sleep(1.8)
     await loading_msg.edit_caption(
-        "🍃 <b>The wind spirit awakens...</b>\nWhispers of old paths are being carried away...", 
+        "🍃 <b>The wind spirit awakens...</b>\nWhispers of old paths are being carried away...",
         parse_mode="HTML"
     )
-
     await asyncio.sleep(2.0)
     await loading_msg.edit_caption(
-        "✨ <b>The forest is resetting...</b>\nAll footprints are gently erased by the glowing leaves.", 
+        "✨ <b>The forest is resetting...</b>\nAll footprints are gently erased by the glowing leaves.",
         parse_mode="HTML"
     )
-
     await asyncio.sleep(1.2)
 
     # Delete the loading animation
-    try:
-        await tg_app.bot.delete_message(chat_id, loading_msg.message_id)
-    except:
-        pass
+    await safe_delete(loading_msg)
 
-    # Directly show the main menu (no extra button or old message)
+    # Directly show the main menu
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
     # Give XP for using /clear
