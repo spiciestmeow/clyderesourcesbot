@@ -339,10 +339,10 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
 
     if user_level >= 6:
         filtered = filtered[-max_by_level:]
-        priority_text = "✨ You get the freshest cookies first!"
+        priority = "✨ You get the freshest cookies first!"
     else:
         filtered = filtered[:max_by_level]
-        priority_text = "🌱 You get older but still working cookies."
+        priority = "🌱 You get older but still working cookies."
 
     # Pagination
     start = page * NETFLIX_ITEMS_PER_PAGE
@@ -350,29 +350,27 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
     page_items = filtered[start:end]
     total_pages = (len(filtered) + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
 
-    # === IMPROVED LIMIT NOTE ===
-    limit_note = f"🌿 Level {user_level} → Up to {max_by_level} {title} items\n{priority_text}"
-
-    if len(filtered) < max_by_level:
-        limit_note += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest."
-
-    expire_note = "\n⚠️ Cookies can stop working without notice. Test quickly after revealing."
-
+    # ==================== BEST CLEAN DESIGN ====================
     report = (
         f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"📦 <b>{len(filtered)} {title} Resting in the Glade</b>\n"
-        f"{limit_note}{expire_note}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 <b>{len(filtered)} {title} available</b>\n"
         f"📄 Page {page + 1} of {total_pages}\n\n"
         "<i>Which one whispers to your spirit?</i>\n\n"
-    )
+    )   
+
 
     buttons = []
     for idx, item in enumerate(page_items, start=start + 1):
         display_name = str(item.get('display_name') or '').strip() or f"{title} Cookie"
+
         report += f"✨ <b>{display_name}</b>\n Status: ✅ Working\n Remaining: {item.get('remaining', 0)}\n\n"
+
         buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}",
                                            callback_data=f"reveal_{service_type}|{idx}|{page}")])
+
+    # === IMPROVED LIMIT NOTE ===
+    limit_note = f"🌿 Level {user_level} → Up to {max_by_level} {title} items\n{priority_text}"
 
     nav_buttons = []
     if page > 0:
@@ -381,10 +379,28 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         nav_buttons.append(InlineKeyboardButton("Next ⇀", callback_data=f"{service_type}_page_{page+1}"))
     if nav_buttons:
         buttons.append(nav_buttons)
+
     buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
 
+    # ==================== INFO AT BOTTOM ====================
+    report += (
+        f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🌿 Level {user_level} → Up to {max_by_level} items\n"
+        f"{priority}\n"
+    )
+
+    if len(filtered) < max_by_level:
+        limit_note += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest."
+
+    report += "⚠️ Cookies can stop working without notice. Test quickly after revealing."
+
     kb = InlineKeyboardMarkup(buttons)
-    await query.message.edit_caption(caption=report, parse_mode='HTML', reply_markup=kb)
+
+    await query.message.edit_caption(
+        caption=report,
+        parse_mode='HTML',
+        reply_markup=kb
+    )
 
 #REVEAL COOKIES
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
@@ -712,7 +728,7 @@ async def handle_caretaker(chat_id: int, first_name: str):
 
     text = (
         "🌲 <b>Welcome back, Forest Caretaker</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
         f"👋 Hello, {html.escape(first_name)}!\n\n"
         "You now stand in the hidden grove reserved only for the caretaker.\n"
         "The ancient trees part for you.\n\n"
@@ -2302,25 +2318,26 @@ async def handle_callback(update: Update):
             return
 
         if query.data == "caretaker_addupdate":
-            await query.message.edit_caption(
-                caption="📜 <b>Send new patch note</b>\n\n"
-                        "Please reply with this format:\n\n"
-                        "<code>/addupdate\n"
-                        "Title Here\n"
-                        "Your full description here...</code>",
+            text = (
+                "📜 <b>Add New Patch Note</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "Please reply with the command below:\n\n"
+                "<code>/addupdate\n"
+                "Your Title Here\n"
+                "Your full description here...\n"
+                "(You can write multiple lines)</code>\n\n"
+                "<i>Tip: You can also use <code>|</code> format if you prefer short version.</i>"
+            )
+
+            await tg_app.bot.send_animation(
+                chat_id=chat_id,
+                animation=ABOUT_GIF,
+                caption=text,
                 parse_mode='HTML'
             )
 
         elif query.data == "caretaker_viewfeedback":
             await handle_view_feedback(chat_id, None)
-
-        elif query.data == "caretaker_setversion":
-            await query.message.edit_caption(
-                caption="🔄 <b>Update Bot Version</b>\n\n"
-                        "Reply with the new version like this:\n"
-                        "<code>/setversion 1.4.5</code>",
-                parse_mode='HTML'
-            )
 
         elif query.data == "caretaker_resetfirst":
             await handle_reset_first_time(chat_id)
