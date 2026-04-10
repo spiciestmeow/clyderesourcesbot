@@ -833,7 +833,6 @@ async def handle_updates(chat_id: int):
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
-
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
@@ -845,40 +844,29 @@ async def handle_updates(chat_id: int):
             print(f"Patch notes fetch error: {e}")
             await tg_app.bot.send_message(chat_id, "⚠️ The ancient trees are having trouble recalling the recent updates...")
             return
-
     if not updates:
         await tg_app.bot.send_message(
-            chat_id, 
+            chat_id,
             "🌱 No patch notes yet.\n\nThe forest is still young and full of potential."
         )
         return
-
     text = "🌿 <b>Patch Notes — Recent Updates</b>\n"
     text += "━━━━━━━━━━━━━━━━━━\n\n"
-
     for i, update in enumerate(updates, 1):
         date = update.get('date', 'Unknown Date')
         title = update.get('title', 'Untitled Update')
         content = update.get('content', '').strip()
-
-        # Add subtle numbering for multiple updates
         if len(updates) > 1:
             text += f"✨ <b>{i}. {date}</b>\n"
         else:
             text += f"✨ <b>{date}</b>\n"
-        
+       
         text += f"<b>{title}</b>\n\n"
-
         if content:
-            # Preserve line breaks in content
             formatted_content = content.replace('\n', '\n')
             text += f"{formatted_content}\n\n"
-
-        # Cool separator
         text += "━━━━━━━━━━━━━━━━━━\n\n"
-
     text += "🍃 <i>May these updates bring more magic to your journey.</i> ✨"
-
     try:
         await tg_app.bot.send_message(
             chat_id=chat_id,
@@ -1563,7 +1551,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
     # Get current time in Philippines timezone for display
     user_tz = pytz.timezone('Asia/Manila')
     timestamp = datetime.now(user_tz).strftime("%B %d, %Y • %I:%M %p")
-
+    
     # === Save Feedback to Supabase ===
     headers = {
         "apikey": SUPABASE_KEY,
@@ -1571,13 +1559,11 @@ async def handle_feedback(chat_id, first_name, feedback_text):
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
-
     payload = {
         "chat_id": int(chat_id),
         "first_name": str(first_name),
         "feedback_text": feedback_text.strip()
     }
-
     saved = False
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -1586,7 +1572,7 @@ async def handle_feedback(chat_id, first_name, feedback_text):
                 headers=headers,
                 json=payload
             )
-            
+           
             if response.status_code in (200, 201):
                 print(f"✅ Feedback saved to Supabase | User: {chat_id}")
                 saved = True
@@ -1594,8 +1580,8 @@ async def handle_feedback(chat_id, first_name, feedback_text):
                 print(f"⚠️ Supabase insert failed: {response.status_code} - {response.text}")
         except Exception as e:
             print(f"🔴 Supabase Error while saving feedback: {e}")
-
-    # === Thank you message to user (timestamp at bottom) ===
+    
+    # === Thank you message to user ===
     thank_you = (
         "🕊️ <b>A Message Carried by the Wind</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1606,17 +1592,16 @@ async def handle_feedback(chat_id, first_name, feedback_text):
         "<i>May your voice help the clearing bloom even brighter.</i> 🍃✨\n\n"
         f"🕒 <b>Sent:</b> {timestamp}"
     )
-
-    await tg_app.bot.send_animation(
+    
+    # Use our safe animation helper
+    await safe_send_animation(
         chat_id=chat_id,
         animation=HELP_GIF,
-        caption=thank_you,
-        parse_mode='HTML'
+        caption=thank_you
     )
-
-    # === Notification to owner (timestamp at bottom) ===
+    
+    # === Notification to owner ===
     status = "✅ Saved to database" if saved else "⚠️ Failed to save to database"
-
     owner_message = (
         f"🌿 <b>New Feedback Received from the Forest</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1627,7 +1612,6 @@ async def handle_feedback(chat_id, first_name, feedback_text):
         f"🕒 <b>Received:</b> {timestamp}\n"
         f"💾 <b>Database:</b> {status}"
     )
-
     try:
         await tg_app.bot.send_message(
             chat_id=OWNER_ID,
