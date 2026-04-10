@@ -1956,6 +1956,11 @@ async def handle_callback(update: Update):
     elif query.data == "help" or query.data.startswith("guidance_page_"):
         chat_id = update.effective_chat.id
         first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
+
+        try:
+            await query.message.delete()
+        except:
+            pass
       
         # FIXED: Only give XP + message on the VERY FIRST time
         if query.data == "help":
@@ -2170,6 +2175,11 @@ async def handle_callback(update: Update):
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
+        try:
+            await query.message.delete()
+        except:
+            pass
+
         # FIXED: Only give XP + message on the VERY FIRST time
         success = await add_xp(chat_id, first_name, "lore", query=query)
         if success > 0:
