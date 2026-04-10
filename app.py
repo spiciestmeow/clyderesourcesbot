@@ -369,9 +369,6 @@ async def show_paginated_cookie_list(service_type: str, chat_id: int, query, pag
         buttons.append([InlineKeyboardButton(f"🔓 Reveal {display_name}",
                                            callback_data=f"reveal_{service_type}|{idx}|{page}")])
 
-    # === IMPROVED LIMIT NOTE ===
-    limit_note = f"🌿 Level {user_level} → Up to {max_by_level} {title} items\n{priority_text}"
-
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("↼ Previous", callback_data=f"{service_type}_page_{page-1}"))
