@@ -60,6 +60,7 @@ MYID_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyaj
 CLEAN_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
 GUIDANCE_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 HELLO_GIF = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
+CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef75e9aeb09.gif"
 
 # ==================== MAINTENANCE MODE ====================
 MAINTENANCE_MODE = False
@@ -131,8 +132,8 @@ def get_last_updated():
 def get_caretaker_keyboard():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📜 Add New Patch Note", callback_data="caretaker_addupdate"),
-            InlineKeyboardButton("📬 View All Feedbacks", callback_data="caretaker_viewfeedback")
+            InlineKeyboardButton("📜 Add New Patch", callback_data="caretaker_addupdate"),
+            InlineKeyboardButton("📬 View Feedbacks", callback_data="caretaker_viewfeedback")
         ],
         [
             InlineKeyboardButton("⚠️ Full Reset My Account", callback_data="caretaker_resetfirst")
@@ -718,9 +719,11 @@ async def handle_caretaker(chat_id: int, first_name: str):
         "Choose your action below:\n"
     )
 
-    await tg_app.bot.send_message(
+    # Send with GIF for better atmosphere
+    await tg_app.bot.send_animation(
         chat_id=chat_id,
-        text=text,
+        animation=CARETAKER_GIF,       
+        caption=text,
         parse_mode='HTML',
         reply_markup=get_caretaker_keyboard()
     )
