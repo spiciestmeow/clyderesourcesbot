@@ -2295,20 +2295,19 @@ async def handle_callback(update: Update):
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(final_msg.message_id)
 
-
-# ====================== CARETAKER ADMIN CALLBACKS (Owner Only) ======================
+    # ====================== CARETAKER ADMIN CALLBACKS (Owner Only) ======================
     elif query.data.startswith("caretaker_"):
         if chat_id != 7399488750:
             await query.answer("🌿 Only the Forest Caretaker may enter this sacred glade.", show_alert=True)
             return
 
         if query.data == "caretaker_addupdate":
-            await query.message.edit_text(
-                "📜 <b>Send new patch note</b>\n\n"
-                "Please reply with this format:\n\n"
-                "<code>/addupdate\n"
-                "Title Here\n"
-                "Your full description here...</code>",
+            await query.message.edit_caption(
+                caption="📜 <b>Send new patch note</b>\n\n"
+                        "Please reply with this format:\n\n"
+                        "<code>/addupdate\n"
+                        "Title Here\n"
+                        "Your full description here...</code>",
                 parse_mode='HTML'
             )
 
@@ -2316,10 +2315,10 @@ async def handle_callback(update: Update):
             await handle_view_feedback(chat_id, None)
 
         elif query.data == "caretaker_setversion":
-            await query.message.edit_text(
-                "🔄 <b>Update Bot Version</b>\n\n"
-                "Reply with the new version like this:\n"
-                "<code>/setversion 1.4.5</code>",
+            await query.message.edit_caption(
+                caption="🔄 <b>Update Bot Version</b>\n\n"
+                        "Reply with the new version like this:\n"
+                        "<code>/setversion 1.4.5</code>",
                 parse_mode='HTML'
             )
 
@@ -2327,7 +2326,6 @@ async def handle_callback(update: Update):
             await handle_reset_first_time(chat_id)
 
         return
-
      
 # ==================== WEBHOOK ====================
 async def start_tg_app():
