@@ -167,9 +167,9 @@ async def set_bot_info(new_version: str, custom_datetime: str, chat_id: int):
         except Exception as e:
             await tg_app.bot.send_message(chat_id, f"❌ Failed to save: {e}")
         
-# ==================== LIVE UPTIME BASED ON LAST UPDATE (SUPABASE) ====================
+# ==================== LIVE UPTIME — TOTAL HOURS STYLE (28HRS 30MINS) ====================
 async def get_bot_uptime():
-    """Bot uptime based on the last_updated time you set in Supabase via /setforestinfo"""
+    """Uptime shown as 28HRS 30MINS (total hours + minutes)"""
     try:
         config = await get_bot_config()
         last_updated_str = config.get("last_updated", "").strip()
@@ -179,32 +179,23 @@ async def get_bot_uptime():
         
         manila_tz = pytz.timezone('Asia/Manila')
         
-        # Parse your exact format: "April 10, 2026 • 03:58 PM"
-        # The "•" is a special bullet character
-        clean_str = last_updated_str.replace("•", "·").strip()  # normalize bullet
-        
-        # Try the exact format you use
+        # Support your exact format with "•"
+        clean_str = last_updated_str.replace("•", "·").strip()
         dt = datetime.strptime(clean_str, "%B %d, %Y · %I:%M %p")
         last_updated = manila_tz.localize(dt)
         
-        # Calculate delta
         now = datetime.now(manila_tz)
         delta = now - last_updated
         
-        days = delta.days
-        hours = delta.seconds // 3600
+        # Convert everything to total hours + minutes
+        total_hours = delta.days * 24 + (delta.seconds // 3600)
         minutes = (delta.seconds % 3600) // 60
         
-        if days > 0:
-            return f"{days} day{'s' if days > 1 else ''}, {hours} hour{'s' if hours > 1 else ''}"
-        elif hours > 0:
-            return f"{hours} hour{'s' if hours > 1 else ''}, {minutes} minute{'s' if minutes > 1 else ''}"
-        else:
-            return f"{minutes} minute{'s' if minutes != 1 else ''}"
-            
+        return f"{total_hours}h {minutes}m"
+        
     except Exception as e:
         print(f"⚠️ Uptime parse error: {e}")
-        return "Unknown 🌿"  # safe fallback
+        return "Unknown 🌿"
 
 # ==================== KEYBOARDS ====================
 def get_caretaker_keyboard():
@@ -1824,7 +1815,7 @@ async def handle_info(chat_id):
             "🌿 <b>Enchanted Clearing Status</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "🌳 The forest is thriving peacefully.\n\n"
-            f"🕒 <b>Uptime since last update:</b> {await get_bot_uptime()}\n"
+            f"🕒 <b>Uptime:</b> {await get_bot_uptime()}\n"
             f"🌱 <b>Total Wanderers:</b> {total_users:,}\n"
             f"✨ <b>Active Today:</b> {active_today:,}\n\n"
             f"📜 <b>Current Version:</b> {version}\n"
