@@ -318,7 +318,7 @@ async def update_has_seen_menu(chat_id):
         "Prefer": "return=minimal"
     }
     payload = {"has_seen_menu": True}
-    
+   
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.patch(
@@ -885,7 +885,6 @@ async def update_last_active(chat_id: int):
         "Content-Type": "application/json"
     }
     payload = {"last_active": datetime.now(pytz.utc).isoformat()}
-
     async with httpx.AsyncClient(timeout=8.0) as client:
         try:
             await client.patch(
@@ -894,7 +893,7 @@ async def update_last_active(chat_id: int):
                 json=payload
             )
         except:
-            pass   # silent fail
+            pass  # silent fail
 
 # ==================== XP HISTORY LOGGING ====================
 async def log_xp_history(chat_id: int, first_name: str, action: str,
