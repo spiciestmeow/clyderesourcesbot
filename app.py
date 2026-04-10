@@ -1990,14 +1990,27 @@ async def handle_callback(update: Update):
                 [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
             ])
 
-        msg = await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            animation=GUIDANCE_GIF,
-            caption=text,
-            parse_mode='HTML',
-            reply_markup=keyboard
-        )
+
+        if query.data == 'help':
+            # First time opening Guidance → send new animation
+            msg = await tg_app.bot.send_animation(
+                chat_id=chat_id,
+                animation=GUIDANCE_GIF,
+                caption=text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        else:
+            # Previous / Next button → EDIT the current message (no new message)
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
+
         
+        # Save message ID for /clear
         if chat_id not in forest_memory:
             forest_memory[chat_id] = []
         forest_memory[chat_id].append(msg.message_id)
