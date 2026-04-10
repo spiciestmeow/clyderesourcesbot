@@ -982,9 +982,9 @@ def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> 
 async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
     if xp_amount <= 0:
         return
-    
+   
     text = f"✨ <b>+{xp_amount} XP</b> earned!"
-    
+   
     try:
         msg = await tg_app.bot.send_message(
             chat_id=chat_id,
@@ -993,7 +993,7 @@ async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
         )
         # Auto-delete after specified seconds
         await asyncio.sleep(duration)
-        await msg.delete()
+        await safe_delete(msg)
     except:
         pass
 
@@ -1006,7 +1006,7 @@ async def send_temporary_message(chat_id: int, text: str, duration: int = 2):
             parse_mode='HTML'
         )
         await asyncio.sleep(duration)
-        await msg.delete()
+        await safe_delete(msg)
     except:
         pass
 
