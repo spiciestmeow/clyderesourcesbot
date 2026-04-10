@@ -892,6 +892,8 @@ async def send_initial_welcome(chat_id, first_name):
     if chat_id not in forest_memory: forest_memory[chat_id] = []
     forest_memory[chat_id].append(msg.message_id)
 
+
+# ==================== SEND LEVEL UP MESSAGE ====================
 async def send_level_up_message(chat_id, first_name, old_level, new_level):
     """Send a beautiful level up celebration message"""
     title = get_level_title(new_level)
@@ -1916,12 +1918,12 @@ async def handle_callback(update: Update):
         chat_id = update.effective_chat.id
         first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
       
-        # Give XP only the very first time
+        # FIXED: Only give XP + message on the VERY FIRST time
         if query.data == "help":
             success = await add_xp(chat_id, first_name, "guidance", query=query)
             if success:
                 await send_xp_feedback(chat_id, 10)
-        
+
         page = 1
         if query.data.startswith("guidance_page_"):
             try:
@@ -2129,13 +2131,14 @@ async def handle_callback(update: Update):
 
     # ====================== ABOUT (Lore) ======================
     elif query.data == "about":
+        # FIXED: Only give XP + message on the VERY FIRST time
         success = await add_xp(chat_id, first_name, "lore", query=query)
         if success:
             await send_xp_feedback(chat_id, 10)
 
-        try: 
+        try:
             await query.message.delete()
-        except: 
+        except:
             pass
 
         loading_msg = await tg_app.bot.send_animation(
@@ -2166,7 +2169,7 @@ async def handle_callback(update: Update):
         )
 
         final_msg = await tg_app.bot.send_animation(
-            chat_id=chat_id,                                   # ← Fixed
+            chat_id=chat_id,                                  
             animation=ABOUT_GIF,
             caption=text,
             parse_mode='HTML',
