@@ -544,8 +544,10 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> int:
             "last_active": datetime.now(pytz.utc).isoformat(),
             **stats_update,
         }
+        
         await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
-
+        await redis.delete(f"streak:{chat_id}")
+        
         # Background: XP history log
         if xp_amount > 0:
             asyncio.create_task(
