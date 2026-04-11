@@ -24,7 +24,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
-MAINTENANCE_MODE    = True
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
     "The ancient trees are resting and being prepared for new wonders...\n\n"
@@ -282,6 +281,15 @@ async def handle_flushcache(chat_id: int):
             parse_mode="HTML",
         )
 
+# ──────────────────────────────────────────────
+# MAINTENANCE_MODE CONFIG
+# ──────────────────────────────────────────────
+async def get_maintenance_mode() -> bool:
+    val = await redis.get("maintenance_mode")
+    return val == "1"
+
+async def set_maintenance_mode(enabled: bool):
+    await redis.set("maintenance_mode", "1" if enabled else "0")
 
 # ──────────────────────────────────────────────
 # BOT CONFIG
@@ -649,19 +657,20 @@ def kb_back():
 def kb_caretaker():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📜 Add New Patch",     callback_data="caretaker_addupdate"),
-            InlineKeyboardButton("📬 View Feedbacks",    callback_data="caretaker_viewfeedback"),
+            InlineKeyboardButton("📜 Add New Patch",      callback_data="caretaker_addupdate"),
+            InlineKeyboardButton("📬 View Feedbacks",     callback_data="caretaker_viewfeedback"),
         ],
         [
-            InlineKeyboardButton("🎉 Create Event",      callback_data="caretaker_addevent"),
-            InlineKeyboardButton("🔴 End Event",         callback_data="caretaker_endevent"),
+            InlineKeyboardButton("🎉 Create Event",       callback_data="caretaker_addevent"),
+            InlineKeyboardButton("🔴 End Event",          callback_data="caretaker_endevent"),
         ],
         [
-            InlineKeyboardButton("👁️ View Active Event", callback_data="caretaker_viewevent"),
-            InlineKeyboardButton("🔄 Flush Cookie Cache", callback_data="caretaker_flushcache"),
+            InlineKeyboardButton("👁️ View Event",         callback_data="caretaker_viewevent"),
+            InlineKeyboardButton("🔄 Flush Cookie",       callback_data="caretaker_flushcache"),
         ],
-        [InlineKeyboardButton("⚠️ Full Reset Acc",      callback_data="caretaker_resetfirst")],
-        [InlineKeyboardButton("🌿 Back to Clearing",    callback_data="main_menu")],
+        [InlineKeyboardButton("🛠️ Maintenance Mode",   callback_data="caretaker_togglemaintenance")],
+        [InlineKeyboardButton("⚠️ Full Reset Acc",       callback_data="caretaker_resetfirst")],
+        [InlineKeyboardButton("🌿 Back to Clearing",     callback_data="main_menu")],
     ])
 
 
@@ -1505,13 +1514,13 @@ async def send_myid(chat_id: int):
 
 
 async def handle_info(chat_id: int):
-    config  = await get_bot_config()
-    version = config.get("current_version", "?")
-    updated = config.get("last_updated", "?")
-
+    config = await get_bot_config()
     if not config:
         await send_supabase_error(chat_id)
         return
+
+    version = config.get("current_version", "?")
+    updated = config.get("last_updated", "?")
 
     # Total users
     total_data = await _sb_get("user_profiles", select="chat_id")
@@ -1559,6 +1568,25 @@ async def handle_caretaker(chat_id: int, first_name: str):
     await tg_app.bot.send_animation(
         chat_id=chat_id, animation=CARETAKER_GIF,
         caption=text, parse_mode="HTML", reply_markup=kb_caretaker(),
+    )
+
+async def handle_toggle_maintenance(chat_id: int):
+    if chat_id != OWNER_ID:
+        return
+
+    current = await get_maintenance_mode()
+    new_state = not current
+    await set_maintenance_mode(new_state)
+
+    status = "🔴 ON" if new_state else "🟢 OFF"
+    label  = "active" if new_state else "lifted"
+
+    await tg_app.bot.send_message(
+        chat_id,
+        f"🌿 <b>Maintenance Mode {status}</b>\n\n"
+        f"The Enchanted Clearing is now <b>{label}</b>.\n\n"
+        f"{'Wanderers will see the maintenance message.' if new_state else 'Wanderers can access the clearing again.'} 🍃",
+        parse_mode="HTML",
     )
 
 
@@ -2059,6 +2087,8 @@ async def handle_callback(update: Update):
             await handle_view_event(chat_id)
         elif data == "caretaker_viewfeedback":
             await handle_view_feedback(chat_id)
+        elif data == "caretaker_togglemaintenance":
+            await handle_toggle_maintenance(chat_id)
         elif data == "caretaker_flushcache":
             await handle_flushcache(chat_id)   
         elif data == "caretaker_resetfirst":
@@ -2072,7 +2102,7 @@ async def process_update(update_data: dict):
     update = Update.de_json(update_data, tg_app.bot)
 
     # ── Maintenance mode ──
-    if MAINTENANCE_MODE:
+    if await get_maintenance_mode():
         chat_id = update.effective_chat.id if update.effective_chat else None
         if chat_id and chat_id != OWNER_ID:
             try:
