@@ -22,7 +22,7 @@ TOKEN        = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
-OWNER_ID     = int(os.getenv("OWNER_ID", "0"))
+OWNER_ID = int(os.getenv("OWNER_ID"))
 
 MAINTENANCE_MODE    = False
 MAINTENANCE_MESSAGE = (
@@ -117,7 +117,7 @@ app = FastAPI(lifespan=lifespan)
 # FASTAPI ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/keepalive")
-async def /keepalive():
+async def health():
     return PlainTextResponse("🌿 Clyde's Enchanted Clearing is awake.")
 
 
