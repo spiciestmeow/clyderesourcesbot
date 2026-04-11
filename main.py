@@ -23,6 +23,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
 OWNER_ID = int(os.getenv("OWNER_ID"))
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
@@ -126,7 +127,9 @@ async def health():
 
 @app.post("/")
 async def webhook(request: Request, background_tasks: BackgroundTasks):
-    """Respond to Telegram immediately; process in the background."""
+    token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    if WEBHOOK_SECRET and token != WEBHOOK_SECRET:
+        return PlainTextResponse("Forbidden", status_code=403)
     data = await request.json()
     if not data:
         return PlainTextResponse("No data", status_code=400)
