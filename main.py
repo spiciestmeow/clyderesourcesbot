@@ -796,7 +796,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     # ── Check for active event ──
     event = await get_active_event()
     event_banner = ""
-    if event:
+if event:
         bonus_line = ""
         bonus_type = event.get("bonus_type", "").strip()
 
@@ -805,12 +805,27 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         elif bonus_type == "netflix_max":
             bonus_line = "\n🍿 <b>Netflix slots are maximized for all levels today!</b>"
 
+        # ── Countdown timer ──
+        countdown = ""
+        try:
+            manila = pytz.timezone("Asia/Manila")
+            event_dt = datetime.strptime(event.get("event_date", "").strip(), "%B %d, %Y")
+            event_dt = manila.localize(event_dt)
+            expires_at = event_dt + timedelta(days=1)
+            diff = expires_at - datetime.now(manila)
+            if diff.total_seconds() > 0:
+                hours = int(diff.total_seconds() // 3600)
+                mins  = int((diff.total_seconds() % 3600) // 60)
+                countdown = f"\n⏳ <b>Ends in {hours}h {mins}m</b>"
+        except Exception:
+            pass
+
         event_banner = (
             f"\n✦ ─────────────────── ✦\n"
             f"🎪 <b>FOREST EVENT</b>\n"
             f"✦ ─────────────────── ✦\n\n"
             f"🌸 <b>{event.get('title', '')}</b>\n"
-            f"🕰️ {event.get('event_date', '')}\n\n"
+            f"🕰️ {event.get('event_date', '')}{countdown}\n\n"
             f"<i>{event.get('description', '')}</i>"
             f"{bonus_line}\n\n"
             f"✦ ─────────────────── ✦\n"
@@ -1447,11 +1462,27 @@ async def handle_updates(chat_id: int):
 async def get_active_event() -> dict | None:
     cached = await redis.get("active_event")
     if cached:
-        return json.loads(cached)
-    data = await _sb_get("events", **{"is_active": "eq.true", "order": "created_at.desc", "limit": 1})
-    result = data[0] if data else None
+        result = json.loads(cached)
+    else:
+        data = await _sb_get("events", **{"is_active": "eq.true", "order": "created_at.desc", "limit": 1})
+        result = data[0] if data else None
+        if result:
+            await redis.setex("active_event", 300, json.dumps(result))
+
     if result:
-        await redis.setex("active_event", 300, json.dumps(result))
+        # ── Auto-expire check ──
+        try:
+            manila = pytz.timezone("Asia/Manila")
+            event_dt = datetime.strptime(result.get("event_date", "").strip(), "%B %d, %Y")
+            event_dt = manila.localize(event_dt)
+            expires_at = event_dt + timedelta(days=1)
+            if datetime.now(manila) >= expires_at:
+                await _sb_patch("events?is_active=eq.true", {"is_active": False})
+                await redis.delete("active_event")
+                return None
+        except Exception:
+            pass  # unparseable date — just show event normally
+
     return result
 
 async def handle_add_event(chat_id: int, title: str, description: str, event_date: str, bonus_type: str = ""):
