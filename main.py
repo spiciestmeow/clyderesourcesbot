@@ -1368,6 +1368,22 @@ async def handle_leaderboard(chat_id: int):
 # FEEDBACK
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_feedback(chat_id: int, first_name: str, feedback_text: str):
+    # ── Rate limit: 3 per day ──
+    key = f"feedback_limit:{chat_id}"
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, 86400)  # 24 hours
+
+    if count > 3:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🍃 <b>You've already used all your feedback today.</b>\n\nThe forest appreciates your voice — please return tomorrow. 🌿",
+            parse_mode="HTML",
+        )
+        return
+
+    remaining = 3 - count    
+    
     manila    = pytz.timezone("Asia/Manila")
     timestamp = datetime.now(manila).strftime("%B %d, %Y • %I:%M %p")
 
@@ -1384,7 +1400,8 @@ async def handle_feedback(chat_id: int, first_name: str, feedback_text: str):
         "They have reached the caretaker of the Enchanted Clearing.\n\n"
         "Thank you for sharing your thoughts with this small, magical corner of the forest.\n\n"
         "<i>May your voice help the clearing bloom even brighter.</i> 🍃✨\n\n"
-        f"🕒 <b>Sent:</b> {timestamp}"
+        f"🕒 <b>Sent:</b> {timestamp}\n"
+        f"📬 <b>Remaining feedback today:</b> {remaining}"
     )
     await tg_app.bot.send_animation(
         chat_id=chat_id, animation=HELP_GIF, caption=caption, parse_mode="HTML"
