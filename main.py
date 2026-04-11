@@ -726,6 +726,12 @@ async def _remember(chat_id: int, message_id: int):
 # STREAK
 # ══════════════════════════════════════════════════════════════════════════════
 async def calculate_streak(chat_id: int) -> int:
+    # ── Check Redis cache first ──
+    cached = await redis.get(f"streak:{chat_id}")
+    if cached is not None:
+        return int(cached)
+
+    
     data = await _sb_get(
         "xp_history",
         **{"chat_id": f"eq.{chat_id}", "select": "created_at", "order": "created_at.desc", "limit": 100},
@@ -750,6 +756,9 @@ async def calculate_streak(chat_id: int) -> int:
                     break
         except Exception:
             continue
+            
+    # ── Cache result for 5 minutes ──
+    await redis.setex(f"streak:{chat_id}", 300, streak)
     return streak
 
 
