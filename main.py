@@ -24,7 +24,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
-MAINTENANCE_MODE    = False
+MAINTENANCE_MODE    = True
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
     "The ancient trees are resting and being prepared for new wonders...\n\n"
@@ -2076,28 +2076,39 @@ async def process_update(update_data: dict):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the caretaker can add updates.")
             return
+
         body = raw[10:].strip()
         if not body:
             await tg_app.bot.send_message(
                 chat_id,
-                "📌 Usage:\n`/addupdate\nTitle Here\nLong description...`\n\nor\n`/addupdate | Title | Content`",
+                "📌 Usage:\n"
+                "`/addupdate\nTitle Here\nYour full description...`\n\n"
+                "or\n"
+                "`/addupdate | Title | Your full description...`",
             )
             return
+
+        title = ""
+        content = ""
+
         if "\n" in body:
-            lines   = body.split("\n", 1)
-            title   = lines[0].strip()
+            lines = body.split("\n", 1)
+            title = lines[0].strip()
             content = lines[1].strip() if len(lines) > 1 else ""
         elif "|" in body:
-            parts   = body.split("|", 1)
-            title   = parts[0].strip()
-            content = parts[1].strip() if len(parts) > 1 else ""
-        else:
-            await tg_app.bot.send_message(chat_id, "❌ Use `|` or a new line to separate title and content.")
-            return
+            parts = [p.strip() for p in body.split("|") if p.strip()]
+            if len(parts) >= 2:
+                title = parts[0]
+                content = " | ".join(parts[1:])
+            else:
+                title = ""
+                content = ""
+
         if not title or not content:
             await tg_app.bot.send_message(chat_id, "❌ Title and content cannot be empty.")
             return
-        await add_new_update(title.strip(" |"), content.strip(" |"), chat_id)
+
+        await add_new_update(title, content, chat_id)
 
     elif text.startswith(("/updates", "/update")):
         await handle_updates(chat_id)
