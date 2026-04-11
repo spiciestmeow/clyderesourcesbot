@@ -48,6 +48,11 @@ COOLDOWN_SECONDS = {
     "general":        5,
 }
 
+EVENT_BONUS_TIERS = {
+    "netflix_double": {1: 2, 2: 6, 3: 6, 4: 10, 5: 10, 6: 14, 7: 18, 8: 24, 9: 30},
+    "netflix_max":    {1: 5, 2: 8, 3: 8, 4: 10, 5: 10, 6: 15, 7: 20, 8: 25, 9: 30},
+}
+
 last_reveal_messages: dict = {}
 
 # ──────────────────────────────────────────────
@@ -396,7 +401,7 @@ def get_level_title(level: int) -> str:
     return titles.get(level, f"🌟 Legend {level}")
 
 
-def get_max_items(category: str, level: int) -> int:
+def get_max_items(category: str, level: int, event: dict | None = None) -> int:
     level = int(level)
 
     if category in ("win", "windows", "office"):
@@ -408,6 +413,13 @@ def get_max_items(category: str, level: int) -> int:
         return tiers.get(level, 999)
 
     if category == "netflix":
+        if event:
+            bonus_type = event.get("bonus_type", "").strip()
+            if bonus_type in EVENT_BONUS_TIERS:
+                tiers = EVENT_BONUS_TIERS[bonus_type]
+                return tiers.get(level, 999)
+            
+        # Normal tiers
         tiers = {1: 1, 2: 3, 3: 3, 4: 5, 5: 5, 6: 7, 7: 9, 8: 12, 9: 15}
         return tiers.get(level, 999)
 
@@ -451,8 +463,8 @@ async def check_rate_limit(chat_id: int) -> bool:
 # XP ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
 _XP_TABLE = {
-    "guidance":      10,   # one-time only (checked separately)
-    "lore":          10,   # one-time only
+    "guidance":      10, 
+    "lore":          10, 
     "view_windows":   8,
     "view_office":    8,
     "view_netflix":   8,
@@ -599,7 +611,6 @@ def kb_start():
         InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")
     ]])
 
-
 def kb_main_menu():
     return InlineKeyboardMarkup([
         [
@@ -615,7 +626,6 @@ def kb_main_menu():
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
     ])
 
-
 def kb_first_time_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❓ Start Here → Guidance",   callback_data="help")],
@@ -626,7 +636,6 @@ def kb_first_time_menu():
         [InlineKeyboardButton("ℹ️ Lore",                    callback_data="about")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind",  url="https://t.me/caydigitals")],
     ])
-
 
 def kb_inventory():
     return InlineKeyboardMarkup([
@@ -640,39 +649,35 @@ def kb_inventory():
         [InlineKeyboardButton("⬅️ Back to Clearing",             callback_data="main_menu")],
     ])
 
-
 def kb_back_inventory():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Back to Scroll Selection", callback_data="check_vamt")],
         [InlineKeyboardButton("🏠 Main Menu",                callback_data="main_menu")],
     ])
 
-
 def kb_back():
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("⬅️ Return to the Clearing", callback_data="main_menu")
     ]])
 
-
 def kb_caretaker():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📜 Add New Patch",      callback_data="caretaker_addupdate"),
-            InlineKeyboardButton("📬 View Feedbacks",     callback_data="caretaker_viewfeedback"),
+            InlineKeyboardButton("📜 Add Patch", callback_data="caretaker_addupdate"),
+            InlineKeyboardButton("📬 View Feedbacks", callback_data="caretaker_viewfeedback"),
         ],
         [
-            InlineKeyboardButton("🎉 Create Event",       callback_data="caretaker_addevent"),
-            InlineKeyboardButton("🔴 End Event",          callback_data="caretaker_endevent"),
+            InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent"),
+            InlineKeyboardButton("🔴 End Event", callback_data="confirm_end_event"),
         ],
         [
-            InlineKeyboardButton("👁️ View Event",         callback_data="caretaker_viewevent"),
-            InlineKeyboardButton("🔄 Flush Cookie",       callback_data="caretaker_flushcache"),
+            InlineKeyboardButton("👁️ View Event", callback_data="caretaker_viewevent"),
+            InlineKeyboardButton("🔄 Flush Cookie", callback_data="caretaker_flushcache"),
         ],
-        [InlineKeyboardButton("🛠️ Maintenance Mode",   callback_data="caretaker_togglemaintenance")],
-        [InlineKeyboardButton("⚠️ Full Reset Acc",       callback_data="caretaker_resetfirst")],
-        [InlineKeyboardButton("🌿 Back to Clearing",     callback_data="main_menu")],
+        [InlineKeyboardButton("🛠️ Maintenance Mode", callback_data="confirm_toggle_maintenance")],
+        [InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst")],
+        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITY MESSAGES
@@ -781,13 +786,22 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     event = await get_active_event()
     event_banner = ""
     if event:
+        bonus_line = ""
+        bonus_type = event.get("bonus_type", "").strip()
+
+        if bonus_type == "netflix_double":
+            bonus_line = "\n🍿 <b>Netflix slots are doubled for all levels today!</b>"
+        elif bonus_type == "netflix_max":
+            bonus_line = "\n🍿 <b>Netflix slots are maximized for all levels today!</b>"
+
         event_banner = (
             f"\n✦ ─────────────────── ✦\n"
             f"🎪 <b>FOREST EVENT</b>\n"
             f"✦ ─────────────────── ✦\n\n"
             f"🌸 <b>{event.get('title', '')}</b>\n"
             f"🕰️ {event.get('event_date', '')}\n\n"
-            f"<i>{event.get('description', '')}</i>\n\n"
+            f"<i>{event.get('description', '')}</i>"
+            f"{bonus_line}\n\n"
             f"✦ ─────────────────── ✦\n"
         )
 
@@ -848,7 +862,12 @@ async def show_paginated_cookie_list(
 ):
     profile   = await get_user_profile(chat_id)
     user_level = profile.get("level", 1) if profile else 1
-    max_items  = get_max_items(service_type, user_level)
+    event      = await get_active_event() 
+    max_items  = get_max_items(service_type, user_level, event)
+
+    event_bonus_txt = ""
+    if event and event.get("bonus_type", "").startswith("netflix"):
+        event_bonus_txt = "🎉 <b>Event Bonus Active!</b> You get extra cookies today!\n"
 
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿"    if service_type == "netflix" else "🎥"
@@ -899,6 +918,7 @@ async def show_paginated_cookie_list(
     report = (
         f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{event_bonus_txt}"
         f"📦 <b>{len(filtered)} {title} available</b>\n"
         f"📄 Page {page + 1} of {total_pages}\n\n"
         "<i>Which one whispers to your spirit?</i>\n\n"
@@ -953,7 +973,8 @@ async def reveal_cookie(
 
     profile = await get_user_profile(chat_id)
     user_level = profile.get("level", 1) if profile else 1
-    max_items = get_max_items(service_type, user_level)
+    event      = await get_active_event()  
+    max_items  = get_max_items(service_type, user_level, event)
     data = await get_vamt_data()
     if not data:
         await query.answer("🌫️ The forest is unreachable right now. Please try again shortly.", show_alert=True)
@@ -1422,7 +1443,7 @@ async def get_active_event() -> dict | None:
     return data[0] if data else None
 
 
-async def handle_add_event(chat_id: int, title: str, description: str, event_date: str):
+async def handle_add_event(chat_id: int, title: str, description: str, event_date: str, bonus_type: str = ""):
     if chat_id != OWNER_ID:
         return
 
@@ -1434,6 +1455,7 @@ async def handle_add_event(chat_id: int, title: str, description: str, event_dat
         "description": description.strip(),
         "event_date":  event_date.strip(),
         "is_active":   True,
+        "bonus_type":  bonus_type.strip(),
     })
 
     if ok:
@@ -1524,34 +1546,30 @@ async def handle_info(chat_id: int):
 
     # Total users
     total_data = await _sb_get("user_profiles", select="chat_id")
-    if total_data is None:
-        await send_supabase_error(chat_id)
-        return
-    total_data = total_data or []
-    total_users = len(total_data)
+    total_users = len(total_data) if total_data else 0
 
+    # ── Active Now (last 15 minutes) ──
     manila = pytz.timezone("Asia/Manila")
-    ago    = (datetime.now(manila) - timedelta(hours=24)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ago_15min = (datetime.now(manila) - timedelta(minutes=15)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Active today
-    active_data  = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago}"})
-    if active_data is None:
-        await send_supabase_error(chat_id)
-        return
-    active_data = active_data or []
-    active_count = len(active_data)
+    active_data = await _sb_get(
+        "user_profiles",
+        **{"select": "chat_id", "last_active": f"gte.{ago_15min}"}
+    )
+    active_count = len(active_data) if active_data else 0
 
     text = (
         "🌿 <b>Enchanted Clearing Status</b>\n━━━━━━━━━━━━━━━━━━\n\n"
         "🌳 The forest is thriving peacefully.\n\n"
         f"🕒 <b>Uptime:</b> {await get_bot_uptime()}\n"
         f"🌱 <b>Total Wanderers:</b> {total_users:,}\n"
-        f"✨ <b>Active Today:</b> {active_count:,}\n\n"
+        f"✨ <b>Active Now:</b> {active_count:,}\n\n"
         f"📜 <b>Current Version:</b> {version}\n"
         f"🔄 <b>Last Updated:</b> {updated}\n\n"
         "⚠️ <i>For personal and educational use only.</i>\n\n"
         "Made with care by the Forest Caretaker 🍃"
     )
+
     await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
 
@@ -1648,6 +1666,49 @@ async def handle_reset_first_time(chat_id: int):
         reply_markup=confirm_kb,
     )
 
+# ──────────────────────────────────────────────
+# CONFIRMATION: END EVENT
+# ──────────────────────────────────────────────
+async def handle_confirm_end_event(chat_id: int):
+    if chat_id != OWNER_ID:
+        return
+    confirm_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✔️ Yes, End Event Now", callback_data="yes_end_event")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_end_event")],
+    ])
+    await tg_app.bot.send_message(
+        chat_id,
+        "⚠️ <b>End Current Event?</b>\n\n"
+        "This will immediately remove the event banner for <b>all users</b>.\n"
+        "The forest will return to its normal state.\n\n"
+        "Are you sure?",
+        parse_mode="HTML",
+        reply_markup=confirm_kb,
+    )
+
+# ──────────────────────────────────────────────
+# CONFIRMATION: MAINTENANCE MODE
+# ──────────────────────────────────────────────
+async def handle_confirm_toggle_maintenance(chat_id: int):
+    if chat_id != OWNER_ID:
+        return
+    current = await get_maintenance_mode()
+    status = "🔴 CURRENTLY ON" if current else "🟢 CURRENTLY OFF"
+    action = "ENABLE" if not current else "DISABLE"
+
+    confirm_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"✔️ Yes, {action} Maintenance Mode", callback_data="yes_toggle_maintenance")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_toggle_maintenance")],
+    ])
+
+    await tg_app.bot.send_message(
+        chat_id,
+        f"🛠️ <b>Maintenance Mode {status}</b>\n\n"
+        f"This will {action.lower()} maintenance mode for <b>ALL users</b>.\n\n"
+        "Are you sure you want to continue?",
+        parse_mode="HTML",
+        reply_markup=confirm_kb,
+    )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
@@ -2074,26 +2135,44 @@ async def handle_callback(update: Update):
                 chat_id,
                 "🎉 <b>Create New Event</b>\n━━━━━━━━━━━━━━━━━━\n\n"
                 "Reply with:\n\n"
-                "<code>/addevent\nEvent Title\nApril 12, 2026\nYour event description here...</code>\n\n"
+                "<code>/addevent\nEvent Title\nApril 12, 2026\nYour description here...\n"
+                "Can span multiple lines!\nbonus:netflix_double</code>\n\n"
                 "• Line 1 = Title\n"
                 "• Line 2 = Date\n"
-                "• Line 3+ = Description\n\n"
+                "• Line 3+ = Description (any length)\n"
+                "• Last line = <code>bonus:netflix_double</code> <i>(optional)</i>\n\n"
+                "🎁 <b>Available bonus types:</b>\n"
+                "• <code>bonus:netflix_double</code> — doubles Netflix slots\n"
+                "• <code>bonus:netflix_max</code> — maximizes Netflix slots\n"
+                "• <i>Omit the bonus line for a normal event</i>\n\n"
                 "<i>This will replace any currently active event.</i>",
                 parse_mode="HTML",
             )
-        elif data == "caretaker_endevent":
+
+        elif data == "confirm_end_event":
+            await handle_confirm_end_event(chat_id)
+        elif data == "yes_end_event":
             await handle_end_event(chat_id)
+            await query.message.edit_text("✅ <b>Event ended successfully.</b>\n\nThe forest is now back to normal 🌿")
+        elif data == "cancel_end_event":
+            await query.message.edit_text("❌ Event ending cancelled.")
+
+        elif data == "confirm_toggle_maintenance":
+            await handle_confirm_toggle_maintenance(chat_id)
+        elif data == "yes_toggle_maintenance":
+            await handle_toggle_maintenance(chat_id)
+            await query.message.edit_text("✅ <b>Maintenance mode updated successfully.</b>\n\nAll users have been notified 🌿")
+        elif data == "cancel_toggle_maintenance":
+            await query.message.edit_text("❌ Maintenance mode change cancelled.")
+
         elif data == "caretaker_viewevent":
             await handle_view_event(chat_id)
         elif data == "caretaker_viewfeedback":
             await handle_view_feedback(chat_id)
-        elif data == "caretaker_togglemaintenance":
-            await handle_toggle_maintenance(chat_id)
         elif data == "caretaker_flushcache":
             await handle_flushcache(chat_id)   
         elif data == "caretaker_resetfirst":
             await handle_reset_first_time(chat_id)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN UPDATE PROCESSOR
@@ -2162,21 +2241,34 @@ async def process_update(update_data: dict):
 
         body = raw[9:].strip()
         if not body:
-            await tg_app.bot.send_message(
-                chat_id,
-                "📌 Usage:\n"
-                "`/addevent\nTitle Here\nApril 12, 2026\nYour description...`",
-            )
+            await tg_app.bot.send_message(chat_id, "📌 Usage:\n`/addevent\nTitle\nDate\nDescription\nbonus:netflix_double`")
             return
 
-        lines = body.split("\n", 2)
+        lines = body.split("\n")
+
         if len(lines) < 3:
             await tg_app.bot.send_message(
                 chat_id, "❌ Need at least 3 lines: title, date, description."
             )
             return
+        
+        title      = lines[0].strip()
+        event_date = lines[1].strip()
 
-        await handle_add_event(chat_id, lines[0], lines[2], lines[1])
+        # Extract bonus_type if last line starts with "bonus:"
+        bonus_type = ""
+        desc_lines = lines[2:]
+        if desc_lines and desc_lines[-1].lower().startswith("bonus:"):
+            bonus_type = desc_lines[-1].split(":", 1)[1].strip()
+            desc_lines = desc_lines[:-1]
+
+        description = "\n".join(desc_lines).strip()
+
+        if not description:
+            await tg_app.bot.send_message(chat_id, "❌ Description cannot be empty.")
+            return
+
+        await handle_add_event(chat_id, title, description, event_date, bonus_type)
 
     elif text.startswith("/forest"):
         await handle_info(chat_id)
