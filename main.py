@@ -890,11 +890,15 @@ async def show_paginated_cookie_list(
     user_level = profile.get("level", 1) if profile else 1
     event      = await get_active_event() 
     max_items  = get_max_items(service_type, user_level, event)
-
+    
     event_bonus_txt = ""
-    if event and event.get("bonus_type", "").startswith("netflix"):
-        event_bonus_txt = "🎉 <b>Event Bonus Active!</b> You get extra cookies today!\n"
-
+    if event:
+        bonus_type = event.get("bonus_type", "").strip()
+        if bonus_type == "netflix_double":
+            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>doubled</b> today!\n"
+        elif bonus_type == "netflix_max":
+            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>maximized</b> today!\n"
+    
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿"    if service_type == "netflix" else "🎥"
 
