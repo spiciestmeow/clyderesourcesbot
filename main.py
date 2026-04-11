@@ -2114,6 +2114,32 @@ async def handle_callback(update: Update):
             pass
         await _remember(chat_id, final.message_id)
 
+    # ── MAINTENANCE CONFIRMATION ──
+    elif data in ("confirm_toggle_maintenance", "yes_toggle_maintenance", "cancel_toggle_maintenance"):
+        if chat_id != OWNER_ID:
+            await query.answer("🌿 Only the Forest Caretaker may do this.", show_alert=True)
+            return
+        if data == "confirm_toggle_maintenance":
+            await handle_confirm_toggle_maintenance(chat_id)
+        elif data == "yes_toggle_maintenance":
+            await handle_toggle_maintenance(chat_id)
+            await query.message.edit_text("✅ <b>Maintenance mode updated.</b> 🌿", parse_mode="HTML")
+        elif data == "cancel_toggle_maintenance":
+            await query.message.edit_text("❌ Maintenance mode change cancelled.")
+    
+    # ── END EVENT CONFIRMATION ──
+    elif data in ("confirm_end_event", "yes_end_event", "cancel_end_event"):
+        if chat_id != OWNER_ID:
+            await query.answer("🌿 Only the Forest Caretaker may do this.", show_alert=True)
+            return
+        if data == "confirm_end_event":
+            await handle_confirm_end_event(chat_id)
+        elif data == "yes_end_event":
+            await handle_end_event(chat_id)
+            await query.message.edit_text("✅ <b>Event ended successfully.</b> 🌿", parse_mode="HTML")
+        elif data == "cancel_end_event":
+            await query.message.edit_text("❌ Event ending cancelled.")
+
     # ── CARETAKER ADMIN ──
     elif data.startswith("caretaker_"):
         if chat_id != OWNER_ID:
@@ -2148,22 +2174,6 @@ async def handle_callback(update: Update):
                 "<i>This will replace any currently active event.</i>",
                 parse_mode="HTML",
             )
-
-        elif data == "confirm_end_event":
-            await handle_confirm_end_event(chat_id)
-        elif data == "yes_end_event":
-            await handle_end_event(chat_id)
-            await query.message.edit_text("✅ <b>Event ended successfully.</b>\n\nThe forest is now back to normal 🌿")
-        elif data == "cancel_end_event":
-            await query.message.edit_text("❌ Event ending cancelled.")
-
-        elif data == "confirm_toggle_maintenance":
-            await handle_confirm_toggle_maintenance(chat_id)
-        elif data == "yes_toggle_maintenance":
-            await handle_toggle_maintenance(chat_id)
-            await query.message.edit_text("✅ <b>Maintenance mode updated successfully.</b>\n\nAll users have been notified 🌿")
-        elif data == "cancel_toggle_maintenance":
-            await query.message.edit_text("❌ Maintenance mode change cancelled.")
 
         elif data == "caretaker_viewevent":
             await handle_view_event(chat_id)
