@@ -1470,7 +1470,8 @@ async def handle_add_event(chat_id: int, title: str, description: str, event_dat
         )
     else:
         await tg_app.bot.send_message(chat_id, "❌ Failed to save event.")
-
+    
+    await redis.delete("active_event")
 
 async def handle_end_event(chat_id: int):
     if chat_id != OWNER_ID:
@@ -1487,7 +1488,8 @@ async def handle_end_event(chat_id: int):
         )
     else:
         await tg_app.bot.send_message(chat_id, "ℹ️ No active event found to end.")
-
+    
+    await redis.delete("active_event")
 
 async def handle_view_event(chat_id: int):
     event = await get_active_event()
@@ -1507,6 +1509,7 @@ async def handle_view_event(chat_id: int):
         f"📌 <b>{event.get('title', '')}</b>\n"
         f"📅 {event.get('event_date', '')}\n\n"
         f"{event.get('description', '')}\n\n"
+        f"🎁 Bonus: {event.get('bonus_type') or 'None'}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"<i>Event is currently live.</i> 🌿",
         parse_mode="HTML",
