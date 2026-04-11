@@ -34,7 +34,6 @@ MAINTENANCE_MESSAGE = (
 
 CACHE_TTL            = 300
 NETFLIX_ITEMS_PER_PAGE = 8
-MAX_ACTIONS_PER_MINUTE = 8
 
 COOLDOWN_SECONDS = {
     "view_windows":  10,
@@ -419,10 +418,13 @@ def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> 
 # ══════════════════════════════════════════════════════════════════════════════
 # ANTI-ABUSE  (Redis-backed)
 # ══════════════════════════════════════════════════════════════════════════════
-async def check_cooldown(chat_id: int, action: str) -> bool:
-    """Returns True if allowed, False if still on cooldown."""
+MAX_ACTIONS_PER_MINUTE = 20  # raised from 8 — normal browsing hits ~8-10
+
+async def check_xp_cooldown(chat_id: int, action: str) -> bool:
+    """Per-action XP cooldown — prevents farming same button repeatedly.
+    Returns True if XP is allowed, False if still on cooldown."""
     seconds = COOLDOWN_SECONDS.get(action, 8)
-    key = f"cd:{chat_id}:{action}"
+    key = f"xpcd:{chat_id}:{action}"
     if await redis.exists(key):
         return False
     await redis.setex(key, seconds, 1)
@@ -430,14 +432,12 @@ async def check_cooldown(chat_id: int, action: str) -> bool:
 
 
 async def check_rate_limit(chat_id: int) -> bool:
-    """Allow up to MAX_ACTIONS_PER_MINUTE per chat per 60 s window."""
+    """Fixed window — counter only starts on first action, never resets mid-window."""
     key = f"rl:{chat_id}"
-    pipe = redis.pipeline()
-    pipe.incr(key)
-    pipe.expire(key, 60)
-    results = await pipe.execute()
-    return results[0] <= MAX_ACTIONS_PER_MINUTE
-
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, 60)
+    return count <= MAX_ACTIONS_PER_MINUTE
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
@@ -469,12 +469,8 @@ _STAT_FIELD = {
 }
 
 
-async def add_xp(chat_id: int, first_name: str, action: str = "general", query=None) -> int:
-    """
-    Award XP for an action.  Returns the XP amount awarded (0 if blocked).
-    All cooldown + rate-limit checks are Redis-backed.
-    """
-    # ── rate limit ──
+async def add_xp(chat_id: int, first_name: str, action: str = "general") -> int:
+    # ── Hard spam block ──
     if not await check_rate_limit(chat_id):
         asyncio.create_task(send_temporary_message(
             chat_id,
@@ -483,26 +479,33 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", query=N
             duration=2
         ))
         return 0
+    
+    # Check XP cooldown separately — doesn't block stat tracking
+    xp_allowed = await check_xp_cooldown(chat_id, action)
 
     profile = await get_user_profile(chat_id)
 
     # ── determine XP amount ──
-    xp_amount = _XP_TABLE.get(action, 0)
+    xp_amount = _XP_TABLE.get(action, 0) if xp_allowed else 0
 
     # One-time only: guidance / lore
     if action == "guidance":
-        xp_amount = 10 if (profile and profile.get("guidance_reads", 0) == 0) else 0
+        xp_amount = 10 if (xp_allowed and profile and profile.get("guidance_reads", 0) == 0) else 0
     elif action == "lore":
-        xp_amount = 10 if (profile and profile.get("lore_reads", 0) == 0) else 0
+        xp_amount = 10 if (xp_allowed and profile and profile.get("lore_reads", 0) == 0) else 0
 
     # ── existing user ──
     if profile:
         stat_field = _STAT_FIELD.get(action)
         stats_update: dict = {}
+
+        # ALWAYS increment stat counter regardless of cooldown
         if stat_field:
             stats_update[stat_field] = (profile.get(stat_field) or 0) + 1
 
-        stats_update["total_xp_earned"] = (profile.get("total_xp_earned") or 0) + xp_amount
+        # Only add to total_xp_earned if XP was actually awarded
+        if xp_amount > 0:
+            stats_update["total_xp_earned"] = (profile.get("total_xp_earned") or 0) + xp_amount
 
         new_xp    = (profile.get("xp") or 0) + xp_amount
         old_level = profile.get("level") or 1
@@ -536,7 +539,12 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", query=N
             asyncio.create_task(send_level_up_message(chat_id, first_name, old_level, new_level))
 
     else:
-        # ── new user — create profile ──
+        # ── new user — first tap stat is recorded ──
+        stat_field = _STAT_FIELD.get(action)
+        initial_stats = {f: 0 for f in _STAT_FIELD.values()}
+        if stat_field:
+            initial_stats[stat_field] = 1
+
         payload = {
             "chat_id":        chat_id,
             "first_name":     first_name,
@@ -547,6 +555,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", query=N
             "created_at":     "now()",
             "total_xp_earned": 0,
             **{f: 0 for f in _STAT_FIELD.values()},
+            **initial_stats,
         }
         await _sb_post("user_profiles", payload)
 
@@ -644,9 +653,14 @@ def kb_caretaker():
             InlineKeyboardButton("📬 View Feedbacks",    callback_data="caretaker_viewfeedback"),
         ],
         [
-            InlineKeyboardButton("🔄 Flush Cookie Cache",   callback_data="caretaker_flushcache"),
+            InlineKeyboardButton("🎉 Create Event",      callback_data="caretaker_addevent"),
+            InlineKeyboardButton("🔴 End Event",         callback_data="caretaker_endevent"),
+        ],
+        [
+            InlineKeyboardButton("👁️ View Active Event", callback_data="caretaker_viewevent"),
             InlineKeyboardButton("⚠️ Full Reset Acc", callback_data="caretaker_resetfirst")
         ],
+        [InlineKeyboardButton("⚠️ Full Reset Acc", callback_data="caretaker_resetfirst")],
         [InlineKeyboardButton("🌿 Back to Clearing",       callback_data="main_menu")],
     ])
 
@@ -754,11 +768,22 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     streak     = await calculate_streak(chat_id) if profile else 0
     streak_txt = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Welcome back!"
 
+    # ── Check for active event ──
+    event = await get_active_event()
+    event_banner = ""
+    if event:
+        event_banner = (
+            f"\n🎉 <b>{event.get('title', '')}</b>\n"
+            f"📅 {event.get('event_date', '')}\n"
+            f"{event.get('description', '')}\n"
+        )
+
     if is_first_time:
         caption = (
             f"{icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
-            f"{level_info} • {streak_txt}\n\n"
+            f"{level_info} • {streak_txt}\n"
+            f"{event_banner}\n"
             "Beneath the whispering ancient trees, many paths lie before you...\n\n"
             "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
             "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
@@ -769,7 +794,8 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         caption = (
             f"{icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
-            f"{level_info} • {streak_txt}\n\n"
+            f"{level_info} • {streak_txt}\n"
+            f"{event_banner}\n"
             "The clearing welcomes you back, wanderer.\n\n"
             "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
             "<i>May the forest welcome you once more.</i> 🍃✨"
@@ -947,7 +973,7 @@ async def reveal_cookie(
     display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
 
     action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
-    xp = await add_xp(chat_id, first_name, action_name, query=query)
+    xp = await add_xp(chat_id, first_name, action_name)
     if xp:
         asyncio.create_task(send_xp_feedback(chat_id, 14))
 
@@ -1370,6 +1396,86 @@ async def handle_updates(chat_id: int):
 
     await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# EVENTS
+# ══════════════════════════════════════════════════════════════════════════════
+async def get_active_event() -> dict | None:
+    data = await _sb_get(
+        "events",
+        **{"is_active": "eq.true", "order": "created_at.desc", "limit": 1},
+    )
+    if not data:
+        return None
+    return data[0] if data else None
+
+
+async def handle_add_event(chat_id: int, title: str, description: str, event_date: str):
+    if chat_id != OWNER_ID:
+        return
+
+    # Deactivate all previous events first
+    await _sb_patch("events?is_active=eq.true", {"is_active": False})
+
+    ok = await _sb_post("events", {
+        "title":       title.strip(),
+        "description": description.strip(),
+        "event_date":  event_date.strip(),
+        "is_active":   True,
+    })
+
+    if ok:
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Event created!</b>\n\n"
+            f"🎉 <b>{title}</b>\n"
+            f"📅 {event_date}\n\n"
+            f"{description}\n\n"
+            f"<i>Event is now live and visible to all wanderers.</i> 🌿",
+            parse_mode="HTML",
+        )
+    else:
+        await tg_app.bot.send_message(chat_id, "❌ Failed to save event.")
+
+
+async def handle_end_event(chat_id: int):
+    if chat_id != OWNER_ID:
+        return
+
+    ok = await _sb_patch("events?is_active=eq.true", {"is_active": False})
+    if ok:
+        await tg_app.bot.send_message(
+            chat_id,
+            "✅ <b>Event ended!</b>\n\n"
+            "🌿 The forest has returned to its peaceful state.\n"
+            "<i>No active events running.</i> 🍃",
+            parse_mode="HTML",
+        )
+    else:
+        await tg_app.bot.send_message(chat_id, "ℹ️ No active event found to end.")
+
+
+async def handle_view_event(chat_id: int):
+    event = await get_active_event()
+    if not event:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🌿 <b>No active event right now.</b>\n\n"
+            "<i>Use the caretaker menu to create one.</i>",
+            parse_mode="HTML",
+        )
+        return
+
+    await tg_app.bot.send_message(
+        chat_id,
+        f"🎉 <b>Current Active Event</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 <b>{event.get('title', '')}</b>\n"
+        f"📅 {event.get('event_date', '')}\n\n"
+        f"{event.get('description', '')}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"<i>Event is currently live.</i> 🌿",
+        parse_mode="HTML",
+    )
 
 async def add_new_update(title: str, content: str, owner_chat_id: int):
     date = datetime.now(pytz.timezone("Asia/Manila")).strftime("%B %d, %Y")
@@ -1614,7 +1720,7 @@ async def handle_callback(update: Update):
         }
         action = action_map.get(category)
         if action:
-            xp = await add_xp(chat_id, first_name, action, query=query)
+            xp = await add_xp(chat_id, first_name, action)
             if xp:
                 asyncio.create_task(send_xp_feedback(chat_id, 8))
 
@@ -1700,7 +1806,7 @@ async def handle_callback(update: Update):
                 await query.message.delete()
             except Exception:
                 pass
-            xp = await add_xp(chat_id, first_name, "guidance", query=query)
+            xp = await add_xp(chat_id, first_name, "guidance")
             if xp > 0:
                 asyncio.create_task(send_xp_feedback(chat_id, xp))
 
@@ -1878,7 +1984,7 @@ async def handle_callback(update: Update):
             await query.message.delete()
         except Exception:
             pass
-        xp = await add_xp(chat_id, first_name, "lore", query=query)
+        xp = await add_xp(chat_id, first_name, "lore")
         if xp > 0:
             asyncio.create_task(send_xp_feedback(chat_id, xp))
 
@@ -1931,6 +2037,20 @@ async def handle_callback(update: Update):
                 ),
                 parse_mode="HTML",
             )
+        elif data == "caretaker_addevent":
+            await tg_app.bot.send_message(
+                chat_id,
+                "🎉 <b>Create New Event</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+                "Reply with:\n\n"
+                "<code>/addevent\nEvent Title\nApril 12, 2026\nYour event description here...</code>\n\n"
+                "• Line 1 = Title\n"
+                "• Line 2 = Date\n"
+                "• Line 3+ = Description\n\n"
+                "<i>This will replace any currently active event.</i>",
+                parse_mode="HTML",
+            )
+        elif data == "caretaker_endevent":
+            await handle_end_event(chat_id)
         elif data == "caretaker_viewfeedback":
             await handle_view_feedback(chat_id)
         elif data == "caretaker_flushcache":
@@ -1998,6 +2118,29 @@ async def process_update(update_data: dict):
     # ── Command dispatch ──
     if text.startswith("/start"):
         await send_initial_welcome(chat_id, first_name)
+
+    elif text.startswith("/addevent"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the caretaker can create events.")
+            return
+
+        body = raw[9:].strip()
+        if not body:
+            await tg_app.bot.send_message(
+                chat_id,
+                "📌 Usage:\n"
+                "`/addevent\nTitle Here\nApril 12, 2026\nYour description...`",
+            )
+            return
+
+        lines = body.split("\n", 2)
+        if len(lines) < 3:
+            await tg_app.bot.send_message(
+                chat_id, "❌ Need at least 3 lines: title, date, description."
+            )
+            return
+
+        await handle_add_event(chat_id, lines[0], lines[2], lines[1])
 
     elif text.startswith("/forest"):
         await handle_info(chat_id)
