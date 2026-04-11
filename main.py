@@ -476,20 +476,12 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", query=N
     """
     # ── rate limit ──
     if not await check_rate_limit(chat_id):
-        if query:
-            try:
-                await query.answer("🌿 The forest is quite busy right now... Please slow down.", show_alert=True)
-            except Exception:
-                pass
-        return 0
-
-    # ── per-action cooldown ──
-    if not await check_cooldown(chat_id, action):
-        if query:
-            try:
-                await query.answer("🌿 The forest spirits need a moment to rest... Try again soon!", show_alert=True)
-            except Exception:
-                pass
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            "🌿 <b>Slow down, wanderer!</b>\n\n"
+            "The forest spirits need a moment to breathe... 🍃",
+            duration=2
+        ))
         return 0
 
     profile = await get_user_profile(chat_id)
