@@ -56,6 +56,8 @@ EVENT_BONUS_TIERS = {
 
 last_reveal_messages: dict = {}
 
+limiter = Limiter(key_func=get_remote_address)
+
 # ──────────────────────────────────────────────
 # GIFS
 # ──────────────────────────────────────────────
@@ -70,7 +72,6 @@ CLEAN_GIF     = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1b
 GUIDANCE_GIF  = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 HELLO_GIF     = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
 CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef75e9aeb09.gif"
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
@@ -113,9 +114,8 @@ async def lifespan(app: FastAPI):
     await redis.aclose()
     print("🌿 Bot shut down cleanly")
 
-
 app = FastAPI(lifespan=lifespan)
-
+@app.post("/")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FASTAPI ROUTES
@@ -124,18 +124,21 @@ app = FastAPI(lifespan=lifespan)
 async def health():
     return PlainTextResponse("🌿 Clyde's Enchanted Clearing is awake.")
 
-
-@app.post("/")
+@limiter.limit("60/minute")
 async def webhook(request: Request, background_tasks: BackgroundTasks):
     token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if WEBHOOK_SECRET and token != WEBHOOK_SECRET:
         return PlainTextResponse("Forbidden", status_code=403)
+
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > 1_000_000:
+        return PlainTextResponse("Payload too large", status_code=413)
+
     data = await request.json()
     if not data:
         return PlainTextResponse("No data", status_code=400)
     background_tasks.add_task(process_update, data)
     return PlainTextResponse("OK")
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DATABASE HELPERS
