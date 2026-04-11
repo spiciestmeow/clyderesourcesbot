@@ -796,7 +796,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     # ── Check for active event ──
     event = await get_active_event()
     event_banner = ""
-if event:
+    if event:
         bonus_line = ""
         bonus_type = event.get("bonus_type", "").strip()
 
