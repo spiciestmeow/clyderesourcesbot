@@ -115,7 +115,8 @@ async def lifespan(app: FastAPI):
     print("🌿 Bot shut down cleanly")
 
 app = FastAPI(lifespan=lifespan)
-@app.post("/")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FASTAPI ROUTES
@@ -124,6 +125,7 @@ app = FastAPI(lifespan=lifespan)
 async def health():
     return PlainTextResponse("🌿 Clyde's Enchanted Clearing is awake.")
 
+@app.post("/")
 @limiter.limit("60/minute")
 async def webhook(request: Request, background_tasks: BackgroundTasks):
     token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
