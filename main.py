@@ -22,7 +22,7 @@ TOKEN        = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
-OWNER_ID     = 7399488750
+OWNER_ID = int(os.getenv("OWNER_ID"))
 
 MAINTENANCE_MODE    = False
 MAINTENANCE_MESSAGE = (
@@ -32,7 +32,7 @@ MAINTENANCE_MESSAGE = (
     "<i>Thank you for your patience, kind wanderer.</i> 🍃✨"
 )
 
-CACHE_TTL            = 300   # seconds — VAMT list cache
+CACHE_TTL            = 300
 NETFLIX_ITEMS_PER_PAGE = 8
 MAX_ACTIONS_PER_MINUTE = 8
 
