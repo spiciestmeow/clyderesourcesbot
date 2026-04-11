@@ -826,7 +826,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
             f"✦ ─────────────────── ✦\n\n"
             f"🌸 <b>{event.get('title', '')}</b>\n"
             f"🕰️ {event.get('event_date', '')}{countdown}\n\n"
-            f"<i>{event.get('description', '')}</i>"
+            f"<i>{event.get('description', '')}</i>\n"
             f"{bonus_line}\n\n"
             f"✦ ─────────────────── ✦\n"
         )
@@ -895,9 +895,9 @@ async def show_paginated_cookie_list(
     if event:
         bonus_type = event.get("bonus_type", "").strip()
         if bonus_type == "netflix_double":
-            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>doubled</b> today!\n"
+            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>doubled</b> today!\n\n"
         elif bonus_type == "netflix_max":
-            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>maximized</b> today!\n"
+            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>maximized</b> today!\n\n"
     
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿"    if service_type == "netflix" else "🎥"
