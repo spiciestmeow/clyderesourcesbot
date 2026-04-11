@@ -75,7 +75,7 @@ tg_app: Application = None
 http:   httpx.AsyncClient = None
 redis:  aioredis.Redis = None
 db_sem  = asyncio.Semaphore(10)   # cap concurrent Supabase calls
-forest_memory: dict[int, list[int]] = {}   # chat_id → [message_ids]  (non-critical, RAM is fine)
+forest_memory: dict[int, list[int]] = {}  # fallback only — Redis is primary
 
 
 # ──────────────────────────────────────────────
@@ -230,7 +230,35 @@ async def get_vamt_data() -> list | None:
     if data is not None:
         await redis.setex("vamt_cache", CACHE_TTL, json.dumps(data))
         print(f"✅ VAMT cached — {len(data)} items")
+    else:
+        print("🔴 Supabase returned nothing for vamt_keys")
     return data
+
+
+async def send_supabase_error(chat_id: int, query=None):
+    """
+    Shows a friendly error to the user when Supabase is unreachable.
+    Works for both regular messages and callback queries.
+    """
+    msg = (
+        "🌫️ <b>The forest is currently unreachable...</b>\n\n"
+        "The ancient trees seem to be resting deeply.\n\n"
+        "⚠️ Our database is temporarily unavailable.\n"
+        "Please try again in a few moments.\n\n"
+        "<i>The clearing will be back soon.</i> 🍃"
+    )
+    try:
+        if query:
+            # inside a button callback
+            await query.answer(
+                "🌫️ The forest is unreachable right now. Please try again shortly.",
+                show_alert=True,
+            )
+        else:
+            # regular command
+            await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
+    except Exception:
+        pass
 
 async def handle_flushcache(chat_id: int):
     if chat_id != OWNER_ID:
@@ -261,9 +289,9 @@ async def handle_flushcache(chat_id: int):
 # ──────────────────────────────────────────────
 async def get_bot_config() -> dict:
     data = await _sb_get("bot_info", select="*", limit=1)
-    if data:
-        return data[0]
-    return {"current_version": "1.3.2", "last_updated": "Not set yet"}
+    if data is None:
+        return {"current_version": "1.3.2", "last_updated": "Not set yet"}
+    return data[0] if data else {"current_version": "1.3.2", "last_updated": "Not set yet"}
 
 
 async def set_bot_info(new_version: str, custom_datetime: str, chat_id: int):
@@ -319,6 +347,8 @@ async def get_user_profile(chat_id: int) -> dict | None:
             ),
         },
     )
+    if data is None:
+        print(f"🔴 get_user_profile failed for {chat_id}")
     return data[0] if data else None
 
 
@@ -663,8 +693,13 @@ async def send_temporary_message(chat_id: int, text: str, duration: int = 2):
         pass
 
 
-def _remember(chat_id: int, message_id: int):
-    forest_memory.setdefault(chat_id, []).append(message_id)
+async def _remember(chat_id: int, message_id: int):
+    try:
+        await redis.lpush(f"mem:{chat_id}", message_id)
+        await redis.expire(f"mem:{chat_id}", 86400)  # 24 hours TTL
+    except Exception as e:
+        print(f"⚠️ Redis remember failed: {e}")
+        forest_memory.setdefault(chat_id, []).append(message_id)  # fallback to RAM
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -675,8 +710,10 @@ async def calculate_streak(chat_id: int) -> int:
         "xp_history",
         **{"chat_id": f"eq.{chat_id}", "select": "created_at", "order": "created_at.desc", "limit": 100},
     )
-    if not data:
+    if data is None:
         return 0
+    data = data or []
+
     manila  = pytz.timezone("Asia/Manila")
     today   = datetime.now(manila).date()
     streak  = 0
@@ -712,7 +749,7 @@ async def send_initial_welcome(chat_id: int, first_name: str):
         chat_id=chat_id, animation=WELCOME_GIF,
         caption=caption, parse_mode="HTML", reply_markup=kb_start(),
     )
-    _remember(chat_id, msg.message_id)
+    await _remember(chat_id, msg.message_id)
 
 
 async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = False):
@@ -751,7 +788,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         chat_id=chat_id, animation=MENU_GIF,
         caption=caption, parse_mode="HTML", reply_markup=keyboard,
     )
-    _remember(chat_id, msg.message_id)
+    await _remember(chat_id, msg.message_id)
 
 
 async def send_level_up_message(chat_id: int, first_name: str, old_level: int, new_level: int):
@@ -787,8 +824,11 @@ async def show_paginated_cookie_list(
 
     data = await get_vamt_data()
     if not data:
+        await send_supabase_error(chat_id)
         await query.message.edit_caption(
-            "🌫️ Database connection failed.", reply_markup=kb_back_inventory()
+            "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
+            parse_mode="HTML",
+            reply_markup=kb_back_inventory(),
         )
         return
 
@@ -885,7 +925,7 @@ async def reveal_cookie(
     max_items = get_max_items(service_type, user_level)
     data = await get_vamt_data()
     if not data:
-        await query.answer("Database error", show_alert=True)
+        await query.answer("🌫️ The forest is unreachable right now. Please try again shortly.", show_alert=True)
         return
 
     filtered = [
@@ -988,6 +1028,7 @@ async def handle_profile(chat_id: int, first_name: str):
     xp = await add_xp(chat_id, first_name, "profile")
     profile = await get_user_profile(chat_id)
     if not profile:
+        await send_supabase_error(chat_id)
         return
 
     level            = profile["level"]
@@ -1013,7 +1054,7 @@ async def handle_profile(chat_id: int, first_name: str):
     )
     if xp:
         asyncio.create_task(send_xp_feedback(chat_id, 6))
-    _remember(chat_id, msg.message_id)
+    await _remember(chat_id, msg.message_id)
 
 
 async def handle_stats(chat_id: int, first_name: str):
@@ -1076,7 +1117,7 @@ async def handle_stats(chat_id: int, first_name: str):
         "<i>The trees remember every step you've taken...</i> 🍃"
     )
     msg = await tg_app.bot.send_message(chat_id=chat_id, text=caption, parse_mode="HTML")
-    _remember(chat_id, msg.message_id)
+    await _remember(chat_id, msg.message_id)
 
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
@@ -1094,31 +1135,34 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
         .astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
 
+    # ── single Supabase call, everything filtered in Python ──
     all_logs = await _sb_get(
-        "xp_history",
-        **{"chat_id": f"eq.{chat_id}", "select": "action", "limit": 1000},
-    ) or []
-
-    logs = await _sb_get(
         "xp_history",
         **{
             "chat_id": f"eq.{chat_id}",
+            "select":  "*",
             "order":   "created_at.desc",
-            "limit":   limit,
-            "offset":  offset,
+            "limit":   1000,
         },
-    ) or []
+    )
 
-    count_data = await _sb_get(
-        "xp_history", **{"chat_id": f"eq.{chat_id}", "select": "id"}
-    ) or []
-    total_entries = len(count_data)
+    if all_logs is None:
+        await send_supabase_error(chat_id)
+        return
+    all_logs = all_logs or []  # empty list is valid
+    # ── NEW PATTERN END ──
+    
+    # total count
+    total_entries = len(all_logs)
 
-    today_logs = await _sb_get(
-        "xp_history",
-        **{"chat_id": f"eq.{chat_id}", "created_at": f"gte.{today_utc}", "select": "xp_earned"},
-    ) or []
-    xp_today = sum(r.get("xp_earned", 0) for r in today_logs)
+    # paged logs
+    logs = all_logs[offset: offset + limit]
+
+    # xp earned today (filter in Python)
+    xp_today = sum(
+        r.get("xp_earned", 0) for r in all_logs
+        if r.get("created_at", "") >= today_utc.replace("Z", "+00:00")
+    )
 
     streak = await calculate_streak(chat_id)
     streak_txt = f"You're on a {streak}-day XP streak! 🔥" if streak >= 2 else "Welcome to your journey! 🌱"
@@ -1208,16 +1252,17 @@ async def handle_leaderboard(chat_id: int):
     top_data = await _sb_get(
         "user_profiles",
         **{"select": "first_name,xp,level,chat_id", "xp": "gt.0", "order": "xp.desc", "limit": 10},
-    ) or []
+    )
 
-    if not top_data:
+    if top_data is None:
         await tg_app.bot.send_message(
             chat_id,
             "🏆 <b>Guardians of the Enchanted Clearing</b>\n\n"
             "🌲 No one has earned any XP yet.\nBe the first to explore! 🌱✨",
             parse_mode="HTML",
         )
-        return
+        return  
+    top_data = top_data or []
 
     text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -1283,6 +1328,10 @@ async def handle_view_feedback(chat_id: int):
         return
 
     data = await _sb_get("feedback", select="*", order="created_at.desc", limit=15)
+    if data is None:
+        await tg_app.bot.send_message(chat_id, "🌿 The feedback scroll is empty.")
+        return
+    data = data or []
     if not data:
         await tg_app.bot.send_message(chat_id, "🌿 The feedback scroll is empty.")
         return
@@ -1313,10 +1362,14 @@ async def handle_view_feedback(chat_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_updates(chat_id: int):
     data = await _sb_get("patch_notes", order="created_at.desc", limit=5)
+    if data is None:
+        await tg_app.bot.send_message(chat_id, "🌱 No patch notes yet.")
+        return
+    data = data or []
     if not data:
         await tg_app.bot.send_message(chat_id, "🌱 No patch notes yet.")
         return
-
+    
     text = "🌿 <b>Patch Notes — Recent Updates</b>\n━━━━━━━━━━━━━━━━━━\n\n"
     for i, u in enumerate(data, 1):
         prefix = f"✨ <b>{i}. {u.get('date', '')}</b>\n" if len(data) > 1 else f"✨ <b>{u.get('date', '')}</b>\n"
@@ -1346,7 +1399,7 @@ async def send_myid(chat_id: int):
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id, animation=MYID_GIF, caption=caption, parse_mode="HTML"
     )
-    _remember(chat_id, msg.message_id)
+    await _remember(chat_id, msg.message_id)
 
 
 async def handle_info(chat_id: int):
@@ -1354,12 +1407,27 @@ async def handle_info(chat_id: int):
     version = config.get("current_version", "?")
     updated = config.get("last_updated", "?")
 
-    total_data  = await _sb_get("user_profiles", select="chat_id") or []
+    if not config:
+        await send_supabase_error(chat_id)
+        return
+
+    # Total users
+    total_data = await _sb_get("user_profiles", select="chat_id")
+    if total_data is None:
+        await send_supabase_error(chat_id)
+        return
+    total_data = total_data or []
     total_users = len(total_data)
 
     manila = pytz.timezone("Asia/Manila")
     ago    = (datetime.now(manila) - timedelta(hours=24)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    active_data  = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago}"}) or []
+
+    # Active today
+    active_data  = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago}"})
+    if active_data is None:
+        await send_supabase_error(chat_id)
+        return
+    active_data = active_data or []
     active_count = len(active_data)
 
     text = (
@@ -1398,12 +1466,20 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
     except Exception:
         pass
 
-    for mid in forest_memory.get(chat_id, []):
+    # ── fetch from Redis first, fallback to RAM ──
+    try:
+        message_ids = await redis.lrange(f"mem:{chat_id}", 0, -1)
+        await redis.delete(f"mem:{chat_id}")
+    except Exception as e:
+        print(f"⚠️ Redis clear failed: {e}")
+        message_ids = forest_memory.get(chat_id, [])
+        forest_memory[chat_id] = []
+
+    for mid in message_ids:
         try:
-            await tg_app.bot.delete_message(chat_id, mid)
+            await tg_app.bot.delete_message(chat_id, int(mid))
         except Exception:
             pass
-    forest_memory[chat_id] = []
 
     loading = await tg_app.bot.send_animation(
         chat_id=chat_id, animation=CLEAN_GIF,
@@ -1579,9 +1655,14 @@ async def handle_callback(update: Update):
 
         # Windows / Office simple list
         user_level = profile.get("level", 1)
-        vamt       = await get_vamt_data()
+        vamt = await get_vamt_data()
         if not vamt:
-            await query.message.edit_caption(caption="🌫️ The mist is too thick...", reply_markup=kb_back_inventory())
+            await send_supabase_error(chat_id)
+            await query.message.edit_caption(
+                caption="🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
+                parse_mode="HTML",
+                reply_markup=kb_back_inventory(),
+            )
             return
 
         filtered = [
@@ -1722,7 +1803,7 @@ async def handle_callback(update: Update):
                 chat_id=chat_id, animation=GUIDANCE_GIF,
                 caption=text, parse_mode="HTML", reply_markup=keyboard,
             )
-            _remember(chat_id, msg.message_id)
+            await _remember(chat_id, msg.message_id)
             if not profile.get("has_seen_menu", False):
                 asyncio.create_task(update_has_seen_menu(chat_id))
         else:
@@ -1733,7 +1814,7 @@ async def handle_callback(update: Update):
                     chat_id=chat_id, animation=GUIDANCE_GIF,
                     caption=text, parse_mode="HTML", reply_markup=keyboard,
                 )
-                _remember(chat_id, msg.message_id)
+                await _remember(chat_id, msg.message_id)
 
     # ── COOKIE PAGINATION ──
     elif "_page_" in data and data.split("_page_")[0] in ("netflix", "prime"):
@@ -1840,7 +1921,7 @@ async def handle_callback(update: Update):
             await tg_app.bot.delete_message(loading.chat_id, loading.message_id)
         except Exception:
             pass
-        _remember(chat_id, final.message_id)
+        await _remember(chat_id, final.message_id)
 
     # ── CARETAKER ADMIN ──
     elif data.startswith("caretaker_"):
@@ -1903,7 +1984,7 @@ async def process_update(update_data: dict):
     msg_id    = update.message.message_id
     first_name = update.effective_user.first_name if update.effective_user else "Traveler"
 
-    _remember(chat_id, msg_id)
+    await _remember(chat_id, msg_id)
 
     # Registration guard (except /start)
     if not text.startswith("/start"):
