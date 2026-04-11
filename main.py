@@ -2405,10 +2405,10 @@ async def process_update(update_data: dict):
         await handle_info(chat_id)
         
     elif text.startswith("/health"):
-    if chat_id != OWNER_ID:
-        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check the system status.")
-        return
-    await handle_status(chat_id)
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check the system status.")
+            return
+        await handle_status(chat_id)
     
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
