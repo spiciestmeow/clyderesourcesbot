@@ -232,6 +232,29 @@ async def get_vamt_data() -> list | None:
         print(f"✅ VAMT cached — {len(data)} items")
     return data
 
+async def handle_flushcache(chat_id: int):
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can refresh the forest cache.")
+        return
+
+    deleted = await redis.delete("vamt_cache")
+    if deleted:
+        await tg_app.bot.send_message(
+            chat_id,
+            "✅ <b>Forest Cache Cleared!</b>\n\n"
+            "🌿 The VAMT cache has been flushed.\n"
+            "Next inventory request will fetch fresh data from Supabase.\n\n"
+            "<i>New cookies will now appear immediately.</i> 🍃",
+            parse_mode="HTML",
+        )
+    else:
+        await tg_app.bot.send_message(
+            chat_id,
+            "ℹ️ <b>Cache was already empty.</b>\n\n"
+            "🌿 No cached data found — Supabase is already being hit directly.",
+            parse_mode="HTML",
+        )
+
 
 # ──────────────────────────────────────────────
 # BOT CONFIG
@@ -598,7 +621,10 @@ def kb_caretaker():
             InlineKeyboardButton("📜 Add New Patch",     callback_data="caretaker_addupdate"),
             InlineKeyboardButton("📬 View Feedbacks",    callback_data="caretaker_viewfeedback"),
         ],
-        [InlineKeyboardButton("⚠️ Full Reset My Account", callback_data="caretaker_resetfirst")],
+        [
+            InlineKeyboardButton("🔄 Flush Cookie Cache",   callback_data="caretaker_flushcache"),
+            InlineKeyboardButton("⚠️ Full Reset Acc", callback_data="caretaker_resetfirst")
+        ],
         [InlineKeyboardButton("🌿 Back to Clearing",       callback_data="main_menu")],
     ])
 
@@ -1834,6 +1860,8 @@ async def handle_callback(update: Update):
             )
         elif data == "caretaker_viewfeedback":
             await handle_view_feedback(chat_id)
+        elif data == "caretaker_flushcache":
+            await handle_flushcache(chat_id)   
         elif data == "caretaker_resetfirst":
             await handle_reset_first_time(chat_id)
 
@@ -1916,6 +1944,9 @@ async def process_update(update_data: dict):
     elif text.startswith("/mystats"):
         await handle_stats(chat_id, first_name)
 
+    elif text.startswith("/flushcache"):
+        await handle_flushcache(chat_id)
+
     elif text.startswith("/menu"):
         profile = await get_user_profile(chat_id)
         is_first = not bool(profile.get("has_seen_menu", False)) if profile else True
@@ -1929,13 +1960,22 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/feedback"):
         feedback_text = raw[9:].strip()   # preserve original casing
-        if feedback_text:
-            await handle_feedback(chat_id, first_name, feedback_text)
-        else:
+        if not feedback_text:
             await tg_app.bot.send_message(
                 chat_id,
                 "🌿 Please write your feedback after the command.\n\nExample: `/feedback I love the forest!`",
             )
+        elif len(feedback_text) > 500:
+            await tg_app.bot.send_message(
+                chat_id,
+                f"🍃 <b>Your message is too long!</b>\n\n"
+                f"The forest can only carry <b>500 characters</b> at a time.\n"
+                f"Your message is <b>{len(feedback_text)}</b> characters.\n\n"
+                f"<i>Please shorten it and try again.</i> 🌿",
+                parse_mode="HTML",
+            )
+        else:
+            await handle_feedback(chat_id, first_name, feedback_text)
 
     elif text.startswith("/setforestinfo"):
         if chat_id != OWNER_ID:
