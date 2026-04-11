@@ -1434,14 +1434,14 @@ async def handle_updates(chat_id: int):
 # EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
 async def get_active_event() -> dict | None:
-    data = await _sb_get(
-        "events",
-        **{"is_active": "eq.true", "order": "created_at.desc", "limit": 1},
-    )
-    if not data:
-        return None
-    return data[0] if data else None
-
+    cached = await redis.get("active_event")
+    if cached:
+        return json.loads(cached)
+    data = await _sb_get("events", **{"is_active": "eq.true", "order": "created_at.desc", "limit": 1})
+    result = data[0] if data else None
+    if result:
+        await redis.setex("active_event", 300, json.dumps(result))
+    return result
 
 async def handle_add_event(chat_id: int, title: str, description: str, event_date: str, bonus_type: str = ""):
     if chat_id != OWNER_ID:
