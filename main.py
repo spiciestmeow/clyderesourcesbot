@@ -1725,7 +1725,7 @@ async def handle_status(chat_id: int):
 
     async def check_supabase():
         try:
-            result = await _sb_get("user_profiles", select="id", limit=1)
+            result = await _sb_get("user_profiles", select="chat_id", limit=1)
             slots_used = 10 - db_sem._value
             flag = "⚠️" if slots_used >= 8 else "✅"
             return f"{flag} OK ({slots_used}/10 slots used)" if result is not None else "❌ Query returned None"
