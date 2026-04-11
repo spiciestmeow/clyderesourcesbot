@@ -1743,7 +1743,7 @@ async def handle_status(chat_id: int):
             return f"❌ {e}"
 
     async def check_env():
-        required = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "REDIS_URL", "OWNER_ID"]
+        required = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "REDIS_URL", "OWNER_ID", "WEBHOOK_SECRET"]
         missing = [v for v in required if not os.getenv(v)]
         return "✅ All set" if not missing else f"❌ Missing: {', '.join(missing)}"
 
