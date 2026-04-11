@@ -24,7 +24,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
-MAINTENANCE_MODE    = False
+MAINTENANCE_MODE    = True
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
     "The ancient trees are resting and being prepared for new wonders...\n\n"
@@ -658,10 +658,10 @@ def kb_caretaker():
         ],
         [
             InlineKeyboardButton("👁️ View Active Event", callback_data="caretaker_viewevent"),
-            InlineKeyboardButton("⚠️ Full Reset Acc", callback_data="caretaker_resetfirst")
+            InlineKeyboardButton("🔄 Flush Cookie Cache", callback_data="caretaker_flushcache"),
         ],
-        [InlineKeyboardButton("⚠️ Full Reset Acc", callback_data="caretaker_resetfirst")],
-        [InlineKeyboardButton("🌿 Back to Clearing",       callback_data="main_menu")],
+        [InlineKeyboardButton("⚠️ Full Reset Acc",      callback_data="caretaker_resetfirst")],
+        [InlineKeyboardButton("🌿 Back to Clearing",    callback_data="main_menu")],
     ])
 
 
@@ -773,9 +773,13 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     event_banner = ""
     if event:
         event_banner = (
-            f"\n🎉 <b>{event.get('title', '')}</b>\n"
-            f"📅 {event.get('event_date', '')}\n"
-            f"{event.get('description', '')}\n"
+            f"\n✦ ─────────────────── ✦\n"
+            f"🎪 <b>FOREST EVENT</b>\n"
+            f"✦ ─────────────────── ✦\n\n"
+            f"🌸 <b>{event.get('title', '')}</b>\n"
+            f"🕰️ {event.get('event_date', '')}\n\n"
+            f"<i>{event.get('description', '')}</i>\n\n"
+            f"✦ ─────────────────── ✦\n"
         )
 
     if is_first_time:
@@ -783,7 +787,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
             f"{icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
             f"{level_info} • {streak_txt}\n"
-            f"{event_banner}\n"
+            f"{event_banner}"
             "Beneath the whispering ancient trees, many paths lie before you...\n\n"
             "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
             "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
@@ -795,7 +799,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
             f"{icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
             f"{level_info} • {streak_txt}\n"
-            f"{event_banner}\n"
+            f"{event_banner}"
             "The clearing welcomes you back, wanderer.\n\n"
             "<i>Every view gives +8 XP • Every reveal gives +14 XP</i>\n\n"
             "<i>May the forest welcome you once more.</i> 🍃✨"
@@ -2051,6 +2055,8 @@ async def handle_callback(update: Update):
             )
         elif data == "caretaker_endevent":
             await handle_end_event(chat_id)
+        elif data == "caretaker_viewevent":
+            await handle_view_event(chat_id)
         elif data == "caretaker_viewfeedback":
             await handle_view_feedback(chat_id)
         elif data == "caretaker_flushcache":
