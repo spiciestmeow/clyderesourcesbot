@@ -116,7 +116,7 @@ app = FastAPI(lifespan=lifespan)
 # ══════════════════════════════════════════════════════════════════════════════
 # FASTAPI ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
-@app.get("/")
+@app.get("/keepalive")
 async def health():
     return PlainTextResponse("🌿 Clyde's Enchanted Clearing is awake.")
 
