@@ -24,7 +24,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
-MAINTENANCE_MODE    = True
+MAINTENANCE_MODE    = False
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
     "The ancient trees are resting and being prepared for new wonders...\n\n"
