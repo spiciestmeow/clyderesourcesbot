@@ -79,7 +79,7 @@ http:   httpx.AsyncClient = None
 redis:  aioredis.Redis = None
 db_sem  = asyncio.Semaphore(10)   # cap concurrent Supabase calls
 forest_memory: dict[int, list[int]] = {}  # fallback only — Redis is primary
-
+BOT_START_TIME = datetime.now(pytz.utc)
 
 # ──────────────────────────────────────────────
 # LIFESPAN  (replaces @app.on_event)
@@ -1713,6 +1713,63 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
         asyncio.create_task(send_xp_feedback(chat_id, 6))
 
 
+async def handle_status(chat_id: int):
+    async def check_redis():
+        try:
+            info = await asyncio.wait_for(redis.info("memory"), timeout=3.0)
+            used = round(info["used_memory"] / 1024 / 1024, 2)
+            key_count = await asyncio.wait_for(redis.dbsize(), timeout=3.0)
+            return f"✅ OK ({used} MB, {key_count} keys)"
+        except Exception as e:
+            return f"❌ {e}"
+
+    async def check_supabase():
+        try:
+            result = await _sb_get("users", select="id", limit=1)
+            slots_used = 10 - db_sem._value
+            flag = "⚠️" if slots_used >= 8 else "✅"
+            return f"{flag} OK ({slots_used}/10 slots used)" if result is not None else "❌ Query returned None"
+        except Exception as e:
+            return f"❌ {e}"
+
+    async def check_telegram():
+        try:
+            me = await asyncio.wait_for(tg_app.bot.get_me(), timeout=5.0)
+            return f"✅ OK (@{me.username})"
+        except Exception as e:
+            return f"❌ {e}"
+
+    async def check_env():
+        required = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "REDIS_URL", "OWNER_ID"]
+        missing = [v for v in required if not os.getenv(v)]
+        return "✅ All set" if not missing else f"❌ Missing: {', '.join(missing)}"
+
+    redis_status, supabase_status, telegram_status, env_status, maintenance = await asyncio.gather(
+        check_redis(),
+        check_supabase(),
+        check_telegram(),
+        check_env(),
+        get_maintenance_mode(),
+    )
+
+    uptime = datetime.now(pytz.utc) - BOT_START_TIME
+    hours, rem = divmod(int(uptime.total_seconds()), 3600)
+    minutes, seconds = divmod(rem, 60)
+    uptime_str = f"{hours}h {minutes}m {seconds}s"
+    maintenance_status = "🔴 ON (users blocked)" if maintenance else "🟢 OFF"
+
+    await tg_app.bot.send_message(
+        chat_id,
+        f"🌿 <b>System Health Check</b>\n\n"
+        f"<b>Redis:</b>       {redis_status}\n"
+        f"<b>Supabase:</b>    {supabase_status}\n"
+        f"<b>Telegram:</b>    {telegram_status}\n"
+        f"<b>Env Vars:</b>    {env_status}\n"
+        f"<b>Maintenance:</b> {maintenance_status}\n\n"
+        f"<b>Uptime:</b> {uptime_str}",
+        parse_mode="HTML",
+    )
+
 async def handle_reset_first_time(chat_id: int):
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the caretaker can reset the forest memory.")
@@ -2346,7 +2403,13 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/forest"):
         await handle_info(chat_id)
-
+        
+    elif text.startswith("/health"):
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check the system status.")
+        return
+    await handle_status(chat_id)
+    
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
 
