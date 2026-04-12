@@ -2033,9 +2033,10 @@ async def handle_invite(chat_id: int, first_name: str):
             [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")]
         ])
 
-        await tg_app.bot.send_message(
+        await tg_app.bot.send_animation(
             chat_id=chat_id,
-            text=caption,
+            caption=caption,
+            animation=INVITE_GIF,
             parse_mode="HTML",
             reply_markup=keyboard,
             disable_web_page_preview=True
