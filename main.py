@@ -85,7 +85,7 @@ CLEAN_GIF     = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1b
 GUIDANCE_GIF  = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 HELLO_GIF     = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
 CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef75e9aeb09.gif"
-
+INVITE_GIF = "https://images.gr-assets.com/hostedimages/1489696457ra/22241153.gif"
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
 # ══════════════════════════════════════════════════════════════════════════════
