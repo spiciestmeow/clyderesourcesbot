@@ -188,6 +188,8 @@ async def _sb_post(path: str, payload: dict | list) -> bool:
                 ),
                 timeout=10.0,
             )
+            # ✅ FIX: log the actual status so you can see what's happening
+            print(f"🟢 SB POST {path}: status={r.status_code}")
             return r.status_code in (200, 201)
         except Exception as e:
             print(f"🔴 SB POST {path}: {e}")
@@ -208,6 +210,7 @@ async def _sb_patch(path: str, payload: dict) -> bool:
                 ),
                 timeout=10.0,
             )
+            # ✅ FIX: 204 is success — don't call .json() on empty body
             return r.status_code in (200, 204)
         except Exception as e:
             print(f"🔴 SB PATCH {path}: {e}")
@@ -630,6 +633,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         }
         
         ok = await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
+        print(f"🔵 PATCH result for {chat_id}: ok={ok}, daily_bonus={daily_bonus}")
 
         # ✅ FIX: Only lock in the daily bonus + announce AFTER confirmed DB write
         if daily_bonus > 0 and ok:
@@ -673,7 +677,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             "level":          1,
             "last_active":    datetime.now(pytz.utc).isoformat(),
             "has_seen_menu":  False,
-            "created_at":     "now()",
+            "created_at": datetime.now(pytz.utc).isoformat(),  # ✅ real timestamp
             "total_xp_earned": first_xp,
              "days_active":     1 if daily_bonus > 0 else 0,
             **{f: 0 for f in _STAT_FIELD.values()},
@@ -2704,6 +2708,29 @@ async def process_update(update_data: dict):
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check the system status.")
             return
         await handle_status(chat_id)
+
+    elif text.startswith("/debugbonus"):
+        if chat_id != OWNER_ID:
+            return
+        key = f"daily_bonus:{chat_id}"
+        exists = await redis.exists(key)
+        ttl    = await redis.ttl(key)
+        profile = await get_user_profile(chat_id)
+
+        # ✅ Delete the phantom key so the bonus can trigger again
+        await redis.delete(key)
+
+        await tg_app.bot.send_message(
+            chat_id,
+            f"<b>Daily Bonus Debug</b>\n\n"
+            f"Redis key exists: <code>{bool(exists)}</code>\n"
+            f"Redis TTL: <code>{ttl}s</code>\n\n"
+            f"DB days_active: <code>{profile.get('days_active') if profile else 'no profile'}</code>\n"
+            f"DB total_xp_earned: <code>{profile.get('total_xp_earned') if profile else 'no profile'}</code>\n"
+            f"DB xp: <code>{profile.get('xp') if profile else 'no profile'}</code>\n\n"
+            f"<i>If Redis exists but DB days_active is 0 → confirm function never ran</i>",
+            parse_mode="HTML",
+        )
     
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
