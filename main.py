@@ -1082,12 +1082,18 @@ async def reveal_cookie(
     file_bytes = BytesIO(file_content.encode("utf-8"))
     file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
 
-    kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            f"⬅️ Back to {service_type.title()} Cookies",
-            callback_data=f"back_to_{service_type}_list|{page}"
-        )
-    ]])
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Working", callback_data=f"key_feedback_ok|{item.get('key_id', '')}|{service_type}"),
+            InlineKeyboardButton("❌ Not Working", callback_data=f"key_feedback_bad|{item.get('key_id', '')}|{service_type}"),
+        ],
+        [
+            InlineKeyboardButton(
+                f"⬅️ Back to {service_type.title()} Cookies",
+                callback_data=f"back_to_{service_type}_list|{page}"
+            )
+        ]
+    ])
 
     try:
         await query.message.delete()
@@ -1782,6 +1788,64 @@ async def handle_status(chat_id: int):
         parse_mode="HTML",
     )
 
+async def handle_key_feedback(chat_id: int, first_name: str, key_id: str, service_type: str, is_working: bool, query):
+    status = "working" if is_working else "not_working"
+    emoji  = "✅" if is_working else "🔴"
+    label  = "✅ Working" if is_working else "❌ Not Working"
+
+    # Save to Supabase
+    await _sb_post("key_reports", {
+        "chat_id":      chat_id,
+        "first_name":   first_name,
+        "key_id":       key_id,
+        "service_type": service_type,
+        "status":       status,
+    })
+
+    # Notify owner in DM
+    await tg_app.bot.send_message(
+        OWNER_ID,
+        f"📋 <b>Key Feedback Report</b>\n\n"
+        f"👤 User: <b>{html.escape(str(first_name))}</b> (<code>{chat_id}</code>)\n"
+        f"🗂 Service: <b>{service_type.title()}</b>\n"
+        f"🔑 Key/Cookie: <code>{html.escape(str(key_id)[:60])}</code>\n"
+        f"Status: {emoji} <b>{label}</b>\n"
+        f"🕐 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        parse_mode="HTML",
+    )
+
+    # Acknowledge user
+    await query.answer(
+        "✅ Thanks! Feedback sent to the Caretaker." if is_working else
+        "❌ Reported! The Caretaker will look into it.",
+        show_alert=True,
+    )
+
+async def handle_view_reports(chat_id: int):
+    reports = await _sb_get(
+        "key_reports",
+        select="*",
+        order="reported_at.desc",
+        limit=20,
+    )
+
+    if not reports:
+        await tg_app.bot.send_message(chat_id, "🌿 No feedback reports yet.")
+        return
+
+    lines = []
+    for r in reports:
+        emoji = "✅" if r.get("status") == "working" else "❌"
+        lines.append(
+            f"{emoji} <b>{r.get('service_type', '').title()}</b>\n"
+            f"└ 👤 {html.escape(str(r.get('first_name', 'Unknown')))}\n"
+            f"└ 🔑 <code>{str(r.get('key_id', ''))[:40]}</code>\n"
+            f"└ 🕐 {str(r.get('reported_at', ''))[:19]}\n"
+        )
+
+    text = "📋 <b>Latest Key Reports (last 20)</b>\n━━━━━━━━━━━━━━━━━━\n\n" + "\n".join(lines)
+    await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
+
 async def handle_reset_first_time(chat_id: int):
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the caretaker can reset the forest memory.")
@@ -2014,7 +2078,22 @@ async def handle_callback(update: Update):
         if len(filtered) < max_items:
             report += f"\n⚠️ Only {len(filtered)} items currently available."
 
-        await query.message.edit_caption(caption=report, parse_mode="HTML", reply_markup=kb_back_inventory())
+        feedback_kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Working", callback_data=f"key_feedback_ok|{category}|{category}"),
+                InlineKeyboardButton("❌ Not Working", callback_data=f"key_feedback_bad|{category}|{category}"),
+            ],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+        ])
+        await query.message.edit_caption(caption=report, parse_mode="HTML", reply_markup=feedback_kb)
+
+
+    elif data.startswith("key_feedback_ok|") or data.startswith("key_feedback_bad|"):
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, key_id, service_type = parts
+            is_working = data.startswith("key_feedback_ok|")
+            await handle_key_feedback(chat_id, first_name, key_id, service_type, is_working, query)
 
     # ── HISTORY PAGINATION ──
     elif data.startswith("history_page_"):
@@ -2430,6 +2509,12 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/profile"):
         await handle_profile(chat_id, first_name)
+
+    elif text.startswith("/viewreports"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can view reports.")
+            return
+        await handle_view_reports(chat_id)
 
     elif text.startswith("/caretaker"):
         await handle_caretaker(chat_id, first_name)
