@@ -2860,10 +2860,10 @@ async def process_update(update_data: dict):
             f"🌿 You have already invited <b>0</b> new wanderers.\n\n"
             f"<i>Share the link — watch the forest grow.</i> 🍃"
         )
-        # kb = InlineKeyboardMarkup([
-        #     [InlineKeyboardButton("🔗 Share Invite Link 🌲", url=link)],
-        #     [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")]
-        # ])
+        kb = InlineKeyboardMarkup([
+            # [InlineKeyboardButton("🔗 Share Invite Link 🌲", url=link)],
+            [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")]
+        ])
         await tg_app.bot.send_message(
             chat_id, caption, parse_mode="HTML",
             reply_markup=kb, disable_web_page_preview=True
