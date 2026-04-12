@@ -1113,10 +1113,12 @@ async def reveal_cookie(
         filename=file_bytes.name
     )
 
-    # Store message IDs for cleanup
-    if chat_id not in last_reveal_messages:
-        last_reveal_messages[chat_id] = {}
-    last_reveal_messages[chat_id][service_type] = {"doc": doc_msg.message_id}
+    # NEW — stored in Redis, auto-expires in 1 hour
+    await redis.setex(
+        f"reveal_msg:{chat_id}:{service_type}",
+        3600,
+        str(doc_msg.message_id)
+    )
 
     # Optional success message (auto-deletes)
     asyncio.create_task(send_temporary_message(
@@ -1916,10 +1918,14 @@ async def handle_confirm_toggle_maintenance(chat_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_callback(update: Update):
     query     = update.callback_query
-    await query.answer()
     chat_id   = update.effective_chat.id
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
     data      = query.data
+
+    # Feedback callbacks answer themselves with show_alert — skip early answer
+    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|")
+    if not data.startswith(FEEDBACK_PREFIXES):
+        await query.answer()
 
     # ── MAIN MENU ──
     if data in ("show_main_menu", "main_menu"):
@@ -2073,40 +2079,31 @@ async def handle_callback(update: Update):
         max_items = get_max_items(category, user_level)
         filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
 
-        # report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        # for item in filtered[:max_items]:
-        #     stock = str(item.get("remaining", 0)) if int(item.get("remaining") or 0) > 0 else "Out of stock"
-        #     report += f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n└ 🔑 <code>{item.get('key_id', 'HIDDEN')}</code>\n└ 📦 Stock: <b>{stock}</b>\n\n"
-
-        # report += f"\n🌿 Level {user_level} → Up to {max_items} {category.upper()} items"
-        # if len(filtered) < max_items:
-        #     report += f"\n⚠️ Only {len(filtered)} items currently available."
-
-        # # Build per-item feedback buttons aren't practical in a list — use general report
-        # feedback_kb = InlineKeyboardMarkup([
-        #     [
-        #         InlineKeyboardButton("✅ All Working", callback_data=f"key_feedback_ok|{category}_list|{category}"),
-        #         InlineKeyboardButton("❌ Issue Found", callback_data=f"key_feedback_bad|{category}_list|{category}"),
-        #     ],
-        #     [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-        # ])
-        # await query.message.edit_caption(caption=report, parse_mode="HTML", reply_markup=feedback_kb)
-
         display_items = filtered[:max_items]
 
-        report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        cat_label = "Windows" if category in ("win", "windows") else "Office"
+        cat_emoji = "🪟" if category in ("win", "windows") else "📑"
+
+        report = f"<b>{cat_emoji} {cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
+
         for item in display_items:
             stock = str(item.get("remaining", 0)) if int(item.get("remaining") or 0) > 0 else "Out of stock"
             report += (
                 f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
-                f"└ 🔑 <code>{item.get('key_id', 'HIDDEN')}</code>\n"
+                f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
                 f"└ 📦 Stock: <b>{stock}</b>\n\n"
             )
 
-        report += f"━━━━━━━━━━━━━━━━━━\n🌿 Level {user_level} → Up to {max_items} {category.upper()} items"
+        report += f"━━━━━━━━━━━━━━━━━━\n"
+        report += f"🌿 <b>Level {user_level}</b> → Up to <b>{max_items}</b> {cat_label} keys\n"
         if len(filtered) < max_items:
-            report += f"\n⚠️ Only {len(filtered)} items currently available."
-        report += "\n\n<i>Tap ✅ or ❌ next to each key to report its status.</i>"
+            report += f"⚠️ Only {len(filtered)} key(s) currently in the forest.\n"
+        report += (
+            "\n<b>Did the key work for you?</b>\n"
+            "Tap <b>✅</b> if it activated successfully.\n"
+            "Tap <b>❌</b> if it didn't work — the Caretaker will be notified. 🍃"
+        )
 
         # Per-item feedback buttons
         buttons = []
@@ -2118,7 +2115,7 @@ async def handle_callback(update: Update):
             await redis.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
             buttons.append([
                 InlineKeyboardButton(f"✅ {short_label}", callback_data=f"wkfb_ok|{token}"),
-                InlineKeyboardButton("❌", callback_data=f"wkfb_bad|{token}"),
+                InlineKeyboardButton(f"❌ {short_label}", callback_data=f"wkfb_bad|{token}"),
             ])
 
         buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
@@ -2321,18 +2318,14 @@ async def handle_callback(update: Update):
         except Exception:
             page = 0
 
-        # === CLEAN PREVIOUS REVEAL MESSAGES ===
-        if chat_id in last_reveal_messages and service_type in last_reveal_messages[chat_id]:
+        # NEW — fetch from Redis, delete from Telegram, clean up key
+        stored_msg_id = await redis.get(f"reveal_msg:{chat_id}:{service_type}")
+        if stored_msg_id:
             try:
-                await tg_app.bot.delete_message(
-                    chat_id, last_reveal_messages[chat_id][service_type]["doc"]
-                )
+                await tg_app.bot.delete_message(chat_id, int(stored_msg_id))
             except Exception:
                 pass
-            # Clear record
-            del last_reveal_messages[chat_id][service_type]
-            if not last_reveal_messages[chat_id]:
-                del last_reveal_messages[chat_id]
+            await redis.delete(f"reveal_msg:{chat_id}:{service_type}")
 
         # Show fresh list
         loading = await tg_app.bot.send_animation(
