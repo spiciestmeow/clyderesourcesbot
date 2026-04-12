@@ -39,6 +39,16 @@ MAINTENANCE_MESSAGE = (
 CACHE_TTL            = 300
 NETFLIX_ITEMS_PER_PAGE = 8
 
+# ──────────────────────────────────────────────
+# REFERRAL CONFIG
+# ──────────────────────────────────────────────
+MAX_REFERRALS_PER_DAY = 8
+REFERRAL_XP = 20
+NEW_USER_WELCOME_BONUS_IF_REFERRED = 30
+
+# ──────────────────────────────────────────────
+# COOLDOWN CONFIG
+# ──────────────────────────────────────────────
 COOLDOWN_SECONDS = {
     "view_windows":  10,
     "view_office":   10,
@@ -540,6 +550,104 @@ async def _confirm_daily_bonus_claimed(chat_id: int):
     ttl = int((midnight - now).total_seconds())
     await redis.setex(f"daily_bonus:{chat_id}", ttl, 1)
 
+    # ── Referral reward (only on first daily bonus) ──
+    referral = await _sb_get("referrals", **{"referred_id": f"eq.{chat_id}", "awarded": "eq.false"})
+    if referral:
+        ref = referral[0]
+        referrer_id = ref["referrer_id"]
+        new_name = (await get_user_profile(chat_id) or {}).get("first_name", "Wanderer")
+        await award_referral_bonus(referrer_id, chat_id, new_name)      
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REFERRAL SYSTEM (new dedicated table)
+# ══════════════════════════════════════════════════════════════════════════════
+async def get_referral_link(chat_id: int) -> str:
+    username = OWNER_ID or (await tg_app.bot.get_me()).username
+    return f"https://t.me/{username}?start=ref_{chat_id}"
+
+
+async def store_pending_referral(new_chat_id: int, referrer_id: int):
+    if referrer_id == new_chat_id:
+        return
+    await redis.setex(f"pending_ref:{new_chat_id}", 86400, str(referrer_id))
+
+
+async def get_pending_referrer(chat_id: int) -> int | None:
+    key = f"pending_ref:{chat_id}"
+    val = await redis.get(key)
+    if val:
+        await redis.delete(key)
+        return int(val)
+    return None
+
+
+async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name: str):
+    # Daily limit
+    key = f"referral_daily:{referrer_id}"
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    ttl = int((midnight - now).total_seconds())
+
+    count = await redis.get(key) or "0"
+    if int(count) >= MAX_REFERRALS_PER_DAY:
+        return
+
+    await redis.setex(key, ttl, int(count) + 1)
+
+    # Record in referrals table + award XP
+    profile = await get_user_profile(referrer_id)
+    if not profile:
+        return
+
+    old_xp = profile.get("xp", 0)
+    old_level = profile.get("level", 1)
+    new_xp = old_xp + REFERRAL_XP
+    new_count = (profile.get("referral_count") or 0) + 1
+
+    # Level-up logic
+    new_level = old_level
+    while True:
+        needed = get_cumulative_xp_for_level(new_level + 1)
+        if new_xp < needed:
+            break
+        new_level += 1
+
+    # Update user_profiles
+    ok = await _sb_patch(f"user_profiles?chat_id=eq.{referrer_id}", {
+        "xp": new_xp,
+        "level": new_level,
+        "referral_count": new_count,
+        "total_xp_earned": (profile.get("total_xp_earned") or 0) + REFERRAL_XP,
+        "last_active": datetime.now(pytz.utc).isoformat(),
+    })
+
+    if ok:
+        # Mark as awarded in referrals table
+        await _sb_patch(f"referrals?referred_id=eq.{referred_id}", {
+            "awarded": True,
+            "awarded_at": datetime.now(pytz.utc).isoformat()
+        })
+
+        await _log_xp_history(
+            referrer_id, "Forest Wanderer", "referral", REFERRAL_XP,
+            old_xp, new_xp, old_level, new_level
+        )
+
+        # Beautiful notification
+        try:
+            await tg_app.bot.send_message(
+                referrer_id,
+                f"🌲 <b>A new wanderer has joined the clearing!</b>\n\n"
+                f"✨ <b>+{REFERRAL_XP} Forest Energy</b>\n"
+                f"🌿 Your referral count is now <b>{new_count}</b>\n\n"
+                f"Welcome, {html.escape(new_user_name)}! 🍃",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
@@ -701,6 +809,13 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         daily_bonus, daily_label = await _check_daily_bonus(chat_id, first_name, {})
         first_xp += daily_bonus  # first_xp = action + bonus (what goes in DB)
 
+        # NEW: Check for pending referral
+        pending_referrer = await get_pending_referrer(chat_id)
+        extra_welcome = 0
+        if pending_referrer:
+            extra_welcome = NEW_USER_WELCOME_BONUS_IF_REFERRED
+            first_xp += extra_welcome
+
         payload = {
             "chat_id":        chat_id,
             "first_name":     first_name,
@@ -710,11 +825,19 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             "has_seen_menu":  False,
             "created_at": datetime.now(pytz.utc).isoformat(),  # ✅ real timestamp
             "total_xp_earned": first_xp,
+            "referral_count": 0,   # ← new field still needed for display
             "days_active":     1 if daily_bonus > 0 else 0,
             **{f: 0 for f in _STAT_FIELD.values()},
             **initial_stats,
         }
         ok = await _sb_post("user_profiles", payload)
+
+        # Insert into referrals table
+        if pending_referrer and ok:
+            await _sb_post("referrals", {
+                "referrer_id": pending_referrer,
+                "referred_id": chat_id
+            })
 
         if daily_bonus > 0 and ok:
             await _confirm_daily_bonus_claimed(chat_id)
@@ -958,7 +1081,10 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     if profile:
         await redis.delete(f"streak:{chat_id}")
     streak = await calculate_streak(chat_id) if profile else 0
-    streak_txt = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Welcome back!"
+    if streak >= 2:
+        streak_txt = f"🔥 <b>{streak}-day streak!</b> The forest fire burns bright!"
+    else:
+        streak_txt = "🌱 <b>First steps in the forest!</b>"
 
     # ── Check for active event ──
     event = await get_active_event()
@@ -2690,6 +2816,14 @@ async def process_update(update_data: dict):
 
     # ── Command dispatch ──
     if text.startswith("/start"):
+        if " " in raw:
+            payload = raw.split(maxsplit=1)[1]
+            if payload.startswith("ref_"):
+                try:
+                    referrer_id = int(payload[4:])
+                    await store_pending_referral(chat_id, referrer_id)
+                except:
+                    pass
         await send_initial_welcome(chat_id, first_name)
 
     elif text.startswith("/addevent"):
@@ -2848,25 +2982,44 @@ async def process_update(update_data: dict):
         if not profile:
             await tg_app.bot.send_message(chat_id, "🌿 Start your journey first with /start!")
             return
-        # link = await get_referral_link(chat_id)
-        count = profile.get("referral_count", 0)
+
+        # ── ONLY THE FOREST CARETAKER can use the real invite for now ──
+        if chat_id == OWNER_ID:
+            link = await get_referral_link(chat_id)
+            count = profile.get("referral_count", 0)
+            caption = (
+                f"🌲 <b>Your Personal Wanderer Invite</b>\n\n"
+                f"Bring a new friend to the clearing and gain <b>{REFERRAL_XP} Forest Energy</b>!\n\n"
+                f"<code>{link}</code>\n\n"
+                f"🌿 You have already invited <b>{count}</b> new wanderers.\n\n"
+                f"<i>Share the link — watch the forest grow.</i> 🍃"
+            )
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 Share Invite Link 🌲", url=link)]
+            ])
+            await tg_app.bot.send_message(
+                chat_id, caption, parse_mode="HTML",
+                reply_markup=kb, disable_web_page_preview=True
+            )
+            return
+
+        # ── REGULAR USERS see this polite "Coming Soon" message ──
         caption = (
-            f"🌲 <b>Your Personal Wanderer Invite</b>\n\n"
-            # f"Bring a new friend to the clearing and gain <b>{REFERRAL_XP} Forest Energy</b>!\n\n"
-            f"Bring a new friend to the clearing and gain <b>25XP Forest Energy</b>!\n\n"
-            "per successful referral is coming very soon!\n\n"
-            # f"<code>{link}</code>\n\n"
-            # f"🌿 You have already invited <b>{count}</b> new wanderers.\n\n"
-            f"🌿 You have already invited <b>0</b> new wanderers.\n\n"
-            f"<i>Share the link — watch the forest grow.</i> 🍃"
+            "🌲 <b>The Referral Grove is Still Growing...</b>\n\n"
+            "We’re preparing a beautiful new feature for you:\n\n"
+            "• Bring a new friend → you earn <b>25 XP Forest Energy</b>\n"
+            "• Your friend gets a <b>+40 XP welcome bonus</b> on their first daily login\n"
+            "• Only counts when they claim their first daily bonus\n"
+            "• Max 8 referrals per day (to keep the forest fair)\n\n"
+            "The ancient trees are quietly preparing this path.\n"
+            "Thank you for your patience, kind wanderer.\n\n"
+            "<i>Something wonderful is growing in the clearing...</i> 🍃✨"
         )
-        kb = InlineKeyboardMarkup([
-            # [InlineKeyboardButton("🔗 Share Invite Link 🌲", url=link)],
-            [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")]
-        ])
+
         await tg_app.bot.send_message(
-            chat_id, caption, parse_mode="HTML",
-            reply_markup=kb, disable_web_page_preview=True
+            chat_id, 
+            caption, 
+            parse_mode="HTML"
         )
 
     elif text.startswith(("/updates", "/update")):
