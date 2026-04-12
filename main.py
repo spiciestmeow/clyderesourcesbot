@@ -439,6 +439,30 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
 
     return 0
 
+# ──────────────────────────────────────────────
+# EVENT COUNTDOWN HELPER (reused in menu + viewevent)
+# ──────────────────────────────────────────────
+async def get_event_countdown(event: dict) -> str:
+    """Returns a nice countdown string like '⏳ Ends in 14h 32m' or empty if expired."""
+    if not event or not event.get("event_date"):
+        return ""
+    
+    try:
+        manila = pytz.timezone("Asia/Manila")
+        event_dt = datetime.strptime(event.get("event_date", "").strip(), "%B %d, %Y")
+        event_dt = manila.localize(event_dt)
+        expires_at = event_dt + timedelta(days=1)
+        diff = expires_at - datetime.now(manila)
+        
+        if diff.total_seconds() > 0:
+            hours = int(diff.total_seconds() // 3600)
+            mins = int((diff.total_seconds() % 3600) // 60)
+            return f"\n⏳ <b>Ends in {hours}h {mins}m</b>"
+        else:
+            return "\n⏳ <b>Event has ended</b>"
+    except Exception:
+        return ""  # fallback if date format is broken
+
 
 def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> str:
     if required_xp <= 0:
@@ -948,21 +972,8 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         elif bonus_type == "netflix_max":
             bonus_line = "\n🍿 <b>Netflix slots are maximized for all levels today!</b>"
 
-        # ── Countdown timer ──
-        countdown = ""
-        try:
-            manila = pytz.timezone("Asia/Manila")
-            event_dt = datetime.strptime(event.get("event_date", "").strip(), "%B %d, %Y")
-            event_dt = manila.localize(event_dt)
-            expires_at = event_dt + timedelta(days=1)
-            diff = expires_at - datetime.now(manila)
-            if diff.total_seconds() > 0:
-                hours = int(diff.total_seconds() // 3600)
-                mins  = int((diff.total_seconds() % 3600) // 60)
-                countdown = f"\n⏳ <b>Ends in {hours}h {mins}m</b>"
-        except Exception:
-            pass
-
+        countdown = await get_event_countdown(event)
+        
         event_banner = (
             f"\n✦ ─────────────────── ✦\n"
             f"🎪 <b>FOREST EVENT</b>\n"
@@ -1748,18 +1759,24 @@ async def handle_view_event(chat_id: int):
             parse_mode="HTML",
         )
         return
+    
+    countdown = await get_event_countdown(event)
+
+    text = (
+            f"🎉 <b>Current Active Event</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📌 <b>{event.get('title', '')}</b>\n"
+            f"📅 {event.get('event_date', '')}{countdown}\n\n"
+            f"{event.get('description', '')}\n\n"
+            f"🎁 <b>Bonus:</b> {event.get('bonus_type') or 'None'}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"<i>Event is currently live and visible to all wanderers.</i> 🌿"
+    )
 
     await tg_app.bot.send_message(
-        chat_id,
-        f"🎉 <b>Current Active Event</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📌 <b>{event.get('title', '')}</b>\n"
-        f"📅 {event.get('event_date', '')}\n\n"
-        f"{event.get('description', '')}\n\n"
-        f"🎁 Bonus: {event.get('bonus_type') or 'None'}\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"<i>Event is currently live.</i> 🌿",
-        parse_mode="HTML",
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML"
     )
 
 async def add_new_update(title: str, content: str, owner_chat_id: int):
