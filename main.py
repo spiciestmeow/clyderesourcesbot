@@ -48,8 +48,8 @@ COOLDOWN_SECONDS = {
     "reveal_prime":   18,
     "profile":       12,
     "clear":         20,
-    "guidance":      300,
-    "lore":          300,
+    "guidance":      30,
+    "lore":          30,
     "general":        5,
 }
 
@@ -465,39 +465,37 @@ async def check_rate_limit(chat_id: int) -> bool:
     """Fixed window — counter only starts on first action, never resets mid-window."""
     key = f"rl:{chat_id}"
     count = await redis.incr(key)
-    if count == 1:
-        await redis.expire(key, 60)
+    await redis.expire(key, 60)
     return count <= MAX_ACTIONS_PER_MINUTE
 
 async def check_daily_reveal_cap(chat_id: int, service_type: str) -> bool:
     key = f"daily_reveals:{chat_id}:{service_type}"
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    ttl = int((midnight - now).total_seconds())
     count = await redis.incr(key)
-    if count == 1:
-        # Expire at midnight Manila time
-        manila = pytz.timezone("Asia/Manila")
-        now = datetime.now(manila)
-        midnight = (now + timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        ttl = int((midnight - now).total_seconds())
-        await redis.expire(key, ttl)
-    return count <= 5  # max 5 reveals per service per day
+    await redis.expire(key, ttl)
+    return count <= 5
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
 # ══════════════════════════════════════════════════════════════════════════════
-async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> int:
+async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tuple[int, str]:
     """
-    Returns bonus XP if the user hasn't claimed their daily bonus yet today.
-    Returns 0 if already claimed. Scales with streak.
+    Returns (bonus_xp, label).
+    bonus_xp is 0 if already claimed today.
+    Caller is responsible for announcing — prevents racing with menu animations.
     """
     key = f"daily_bonus:{chat_id}"
     if await redis.exists(key):
-        return 0  # already claimed today
+        return 0, "" # already claimed today
 
     # Set expiry to midnight Manila time
-    manila  = pytz.timezone("Asia/Manila")
-    now     = datetime.now(manila)
+    manila   = pytz.timezone("Asia/Manila")
+    now      = datetime.now(manila)
     midnight = (now + timedelta(days=1)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -507,26 +505,13 @@ async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> in
     # Streak-scaled bonus
     streak = await calculate_streak(chat_id)
     if streak >= 7:
-        bonus = 30
-        streak_label = "🔥🔥 7-Day Streak Bonus!"
+        bonus, label = 30, "🔥🔥 7-Day Streak Bonus!"
     elif streak >= 3:
-        bonus = 20
-        streak_label = "🔥 3-Day Streak Bonus!"
+        bonus, label = 20, "🔥 3-Day Streak Bonus!"
     else:
-        bonus = 10
-        streak_label = "🌅 Daily Login Bonus!"
+        bonus, label = 10, "🌅 Daily Login Bonus!"
 
-    # Announce it as a background task so it doesn't block XP return
-    asyncio.create_task(
-        send_temporary_message(
-            chat_id,
-            f"✨ <b>{streak_label}</b>\n\n"
-            f"<b>+{bonus} XP</b> for visiting the clearing today 🍃",
-            duration=4,
-        )
-    )
-
-    return bonus
+    return bonus, label
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
@@ -613,7 +598,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             stats_update[stat_field] = (profile.get(stat_field) or 0) + 1
 
         # ── Daily login bonus (injected here, once per day) ──
-        daily_bonus = await _check_daily_bonus(chat_id, first_name, profile)
+        daily_bonus, daily_label = await _check_daily_bonus(chat_id, first_name, profile)
         xp_amount += daily_bonus   # 0 if already claimed today
 
         # Only add to total_xp_earned if XP was actually awarded
@@ -645,7 +630,9 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         # Only invalidate streak cache when it actually matters
         # (reveals and views don't affect streak — only daily login does)
         if daily_bonus > 0:
+            stats_update["days_active"] = (profile.get("days_active") or 0) + 1
             await redis.delete(f"streak:{chat_id}")
+            asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
         
         # Background: XP history log
         if xp_amount > 0:
@@ -827,6 +814,18 @@ async def send_temporary_message(chat_id: int, text: str, duration: int = 2):
     except Exception:
         pass
 
+async def _announce_daily_bonus(chat_id: int, bonus: int, label: str):
+    """
+    Announces daily bonus after a short delay so it doesn't race
+    with menu animations or other UI updates.
+    """
+    await asyncio.sleep(2.5)
+    await send_temporary_message(
+        chat_id,
+        f"✨ <b>{label}</b>\n\n"
+        f"<b>+{bonus} XP</b> for visiting the clearing today 🍃",
+        duration=5,
+    )
 
 async def _remember(chat_id: int, message_id: int):
     try:
@@ -903,7 +902,9 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     level      = profile.get("level", 1) if profile else 1
     title      = get_level_title(level)
     level_info = f"🏷️ {title} • ⭐ Level {level}"
-    streak     = await calculate_streak(chat_id) if profile else 0
+    if profile:
+        await redis.delete(f"streak:{chat_id}")
+    streak = await calculate_streak(chat_id) if profile else 0
     streak_txt = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Welcome back!"
 
     # ── Check for active event ──
@@ -1349,6 +1350,7 @@ async def handle_stats(chat_id: int, first_name: str):
         f"• Times Cleared: <b>{profile.get('times_cleared', 0)}</b>\n"
         f"• Guidance Read: <b>{profile.get('guidance_reads', 0)}</b>\n"
         f"• Lore Read: <b>{profile.get('lore_reads', 0)}</b>\n\n"
+        f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🌱 <b>Joined:</b> {joined_date}\n"
         f"🌲 <b>Last Active:</b> {last_active}\n\n"
@@ -1527,8 +1529,7 @@ async def handle_feedback(chat_id: int, first_name: str, feedback_text: str):
     # ── Rate limit: 3 per day ──
     key = f"feedback_limit:{chat_id}"
     count = await redis.incr(key)
-    if count == 1:
-        await redis.expire(key, 86400)  # 24 hours
+    await redis.expire(key, 86400)  # 24 hours
 
     if count > 3:
         await tg_app.bot.send_message(
