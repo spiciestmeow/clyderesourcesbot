@@ -601,6 +601,10 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         daily_bonus, daily_label = await _check_daily_bonus(chat_id, first_name, profile)
         xp_amount += daily_bonus   # 0 if already claimed today
 
+        # ✅ Set days_active BEFORE building payload
+        if daily_bonus > 0:
+            stats_update["days_active"] = (profile.get("days_active") or 0) + 1
+
         # Only add to total_xp_earned if XP was actually awarded
         if xp_amount > 0:
             stats_update["total_xp_earned"] = (
@@ -627,10 +631,8 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         
         await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
 
-        # Only invalidate streak cache when it actually matters
-        # (reveals and views don't affect streak — only daily login does)
+        # Announce and invalidate streak AFTER patch
         if daily_bonus > 0:
-            stats_update["days_active"] = (profile.get("days_active") or 0) + 1
             await redis.delete(f"streak:{chat_id}")
             asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
         
@@ -658,6 +660,11 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         # New users DO get XP for their first action
         # (previously they got 0 — bad first impression)
         first_xp = xp_amount  # whatever action triggered registration
+
+        # ✅ New users get daily bonus on first visit too
+        daily_bonus, daily_label = await _check_daily_bonus(chat_id, first_name, {})
+        first_xp += daily_bonus
+
         payload = {
             "chat_id":        chat_id,
             "first_name":     first_name,
@@ -667,6 +674,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             "has_seen_menu":  False,
             "created_at":     "now()",
             "total_xp_earned": first_xp,
+             "days_active":     1 if daily_bonus > 0 else 0,
             **{f: 0 for f in _STAT_FIELD.values()},
             **initial_stats,
         }
@@ -680,6 +688,10 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
                     0, first_xp, 1, 1,
                 )
             )
+        
+         # ✅ Announce daily bonus for new users too
+        if daily_bonus > 0:
+            asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
 
     return action_xp, xp_amount
 
