@@ -95,6 +95,7 @@ redis:  aioredis.Redis = None
 db_sem  = asyncio.Semaphore(10)   # cap concurrent Supabase calls
 forest_memory: dict[int, list[int]] = {}  # fallback only — Redis is primary
 BOT_START_TIME = datetime.now(pytz.utc)
+BOT_USERNAME: str | None = None
 
 # ──────────────────────────────────────────────
 # LIFESPAN  (replaces @app.on_event)
@@ -116,6 +117,12 @@ async def lifespan(app: FastAPI):
     tg_app = Application.builder().token(TOKEN).build()
     await tg_app.initialize()
     await tg_app.start()
+
+    # ── ADD THESE 4 LINES ──
+    global BOT_USERNAME
+    me = await tg_app.bot.get_me()
+    BOT_USERNAME = me.username
+    print(f"✅ Bot username cached: @{BOT_USERNAME}")
 
     print("✅ Bot started — FastAPI lifespan ready")
     yield
@@ -563,8 +570,14 @@ async def _confirm_daily_bonus_claimed(chat_id: int):
 # REFERRAL SYSTEM (new dedicated table)
 # ══════════════════════════════════════════════════════════════════════════════
 async def get_referral_link(chat_id: int) -> str:
-    username = OWNER_ID or (await tg_app.bot.get_me()).username
-    return f"https://t.me/{username}?start=ref_{chat_id}"
+    """Returns clean referral link using cached bot username"""
+    global BOT_USERNAME
+    if not BOT_USERNAME:
+        me = await tg_app.bot.get_me()
+        BOT_USERNAME = me.username
+        print(f"✅ Bot username auto-cached: @{BOT_USERNAME}")
+    
+    return f"https://t.me/{BOT_USERNAME}?start=ref_{chat_id}"
 
 
 async def store_pending_referral(new_chat_id: int, referrer_id: int):
@@ -901,6 +914,7 @@ def kb_main_menu():
             InlineKeyboardButton("❓ Guidance", callback_data="help"),
             InlineKeyboardButton("ℹ️ Lore",     callback_data="about"),
         ],
+        [InlineKeyboardButton("🌲 Invite Friends • Earn XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
     ])
 
@@ -912,6 +926,7 @@ def kb_first_time_menu():
         [InlineKeyboardButton("🌿 Check Forest Inventory",  callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest",   url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("ℹ️ Lore",                    callback_data="about")],
+        [InlineKeyboardButton("🌲 Invite Friends • Earn XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind",  url="https://t.me/caydigitals")],
     ])
 
@@ -2315,6 +2330,23 @@ async def handle_callback(update: Update):
     elif data == "cancel_reset":
         await query.message.edit_text("❌ Reset cancelled. Your data is safe.")
 
+
+    # ── INVITE COPY LINK ──
+    elif data.startswith("copy_ref_link|"):
+        try:
+            await query.answer("✅ Link copied to your clipboard!", show_alert=True)
+        except:
+            pass
+        # Send clean link so user can long-press to copy
+        link = await get_referral_link(chat_id)
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=f"🌲 <b>Here is your invite link:</b>\n\n<code>{link}</code>\n\n"
+                 f"👉 Long-press the link above and tap <b>Copy</b>",
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+
     # ── INVENTORY FILTERS ──
     elif data.startswith("vamt_filter_"):
         category = data.replace("vamt_filter_", "").lower()
@@ -2977,7 +3009,7 @@ async def process_update(update_data: dict):
 
         await add_new_update(title, content, chat_id)
 
-    elif text.startswith("/invite"):
+    elif text.startswith("/invite") or data == "invite_friends":
         profile = await get_user_profile(chat_id)
         if not profile:
             await tg_app.bot.send_message(chat_id, "🌿 Start your journey first with /start!")
@@ -2987,19 +3019,34 @@ async def process_update(update_data: dict):
         if chat_id == OWNER_ID:
             link = await get_referral_link(chat_id)
             count = profile.get("referral_count", 0)
+
             caption = (
-                f"🌲 <b>Your Personal Wanderer Invite</b>\n\n"
-                f"Bring a new friend to the clearing and gain <b>{REFERRAL_XP} Forest Energy</b>!\n\n"
-                f"<code>{link}</code>\n\n"
-                f"🌿 You have already invited <b>{count}</b> new wanderers.\n\n"
-                f"<i>Share the link — watch the forest grow.</i> 🍃"
+                f"🌲 <b>Your Personal Invite Link</b>\n\n"
+                f"✨ Invite a friend → both get rewards!\n\n"
+                f"🌿 You earn <b>+{REFERRAL_XP} XP</b> per successful referral\n"
+                f"🌱 Friend gets <b>+{NEW_USER_WELCOME_BONUS_IF_REFERRED} XP</b> welcome bonus\n\n"
+                f"🔗 <code>{link}</code>\n\n"
+                f"📊 You have invited <b>{count}</b> wanderers so far\n\n"
+                f"<i>Share the magic of the Enchanted Clearing 🍃</i>"
             )
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Invite Link 🌲", url=link)]
+
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🔗 Share Invite Link 🌲",
+                        url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!%0A%0AGet%20premium%20resources%20%2B%20XP%20bonuses%20%F0%9F%8C%BF"
+                    )
+                ],
+                # Extra tip button
+                [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")]
             ])
+
             await tg_app.bot.send_message(
-                chat_id, caption, parse_mode="HTML",
-                reply_markup=kb, disable_web_page_preview=True
+                chat_id=chat_id,
+                text=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+                disable_web_page_preview=True
             )
             return
 
