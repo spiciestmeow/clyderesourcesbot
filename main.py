@@ -43,8 +43,8 @@ NETFLIX_ITEMS_PER_PAGE = 8
 # REFERRAL CONFIG
 # ──────────────────────────────────────────────
 MAX_REFERRALS_PER_DAY = 8
-REFERRAL_XP = 20
-NEW_USER_WELCOME_BONUS_IF_REFERRED = 30
+REFERRAL_XP = 25
+NEW_USER_WELCOME_BONUS_IF_REFERRED = 40
 
 # ──────────────────────────────────────────────
 # COOLDOWN CONFIG
