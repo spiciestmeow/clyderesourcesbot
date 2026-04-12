@@ -580,10 +580,12 @@ async def get_referral_link(chat_id: int) -> str:
     return f"https://t.me/{BOT_USERNAME}?start=ref_{chat_id}"
 
 
-async def store_pending_referral(new_chat_id: int, referrer_id: int):
+async def store_pending_referral(new_chat_id: int, referrer_id: int) -> bool:
+    """Store pending referral. Returns True if stored, False if self-referral."""
     if referrer_id == new_chat_id:
-        return
+        return False
     await redis.setex(f"pending_ref:{new_chat_id}", 86400, str(referrer_id))
+    return True
 
 
 async def get_pending_referrer(chat_id: int) -> int | None:
@@ -2918,14 +2920,29 @@ async def process_update(update_data: dict):
 
     # ── Command dispatch ──
     if text.startswith("/start"):
+        referral_stored = True  # default
+
         if " " in raw:
             payload = raw.split(maxsplit=1)[1]
             if payload.startswith("ref_"):
                 try:
                     referrer_id = int(payload[4:])
-                    await store_pending_referral(chat_id, referrer_id)
+                    referral_stored = await store_pending_referral(chat_id, referrer_id)
+
+                    if not referral_stored:
+                        # Self-referral → show temporary message
+                        asyncio.create_task(
+                            send_temporary_message(
+                                chat_id,
+                                "🌿 Nice try, wanderer!\n\n"
+                                "You can't refer yourself in the forest 🍃\n"
+                                "The trees are watching 👀",
+                                duration=2
+                            )
+                        )
                 except:
                     pass
+
         await send_initial_welcome(chat_id, first_name)
 
     elif text.startswith("/addevent"):
