@@ -484,25 +484,14 @@ async def check_daily_reveal_cap(chat_id: int, service_type: str) -> bool:
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
 # ══════════════════════════════════════════════════════════════════════════════
 async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tuple[int, str]:
-    """
-    Returns (bonus_xp, label).
-    bonus_xp is 0 if already claimed today.
-    Caller is responsible for announcing — prevents racing with menu animations.
-    """
     key = f"daily_bonus:{chat_id}"
     if await redis.exists(key):
-        return 0, "" # already claimed today
+        return 0, ""  # already claimed today
 
-    # Set expiry to midnight Manila time
-    manila   = pytz.timezone("Asia/Manila")
-    now      = datetime.now(manila)
-    midnight = (now + timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    ttl = int((midnight - now).total_seconds())
-    await redis.setex(key, ttl, 1)
+    # ✅ FIX: Do NOT set Redis here anymore.
+    # Redis is only set AFTER a successful DB write in _confirm_daily_bonus_claimed().
+    # This prevents the bonus being consumed when the DB write fails.
 
-    # Streak-scaled bonus
     streak = await calculate_streak(chat_id)
     if streak >= 7:
         bonus, label = 30, "🔥🔥 7-Day Streak Bonus!"
@@ -512,6 +501,17 @@ async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tu
         bonus, label = 10, "🌅 Daily Login Bonus!"
 
     return bonus, label
+
+
+# ✅ FIX: New helper — call this AFTER a successful DB write to lock in the bonus
+async def _confirm_daily_bonus_claimed(chat_id: int):
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    ttl = int((midnight - now).total_seconds())
+    await redis.setex(f"daily_bonus:{chat_id}", ttl, 1)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
@@ -629,10 +629,11 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             **stats_update,
         }
         
-        await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
+        ok = await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
 
-        # Announce and invalidate streak AFTER patch
-        if daily_bonus > 0:
+        # ✅ FIX: Only lock in the daily bonus + announce AFTER confirmed DB write
+        if daily_bonus > 0 and ok:
+            await _confirm_daily_bonus_claimed(chat_id)
             await redis.delete(f"streak:{chat_id}")
             asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
         
@@ -678,20 +679,21 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             **{f: 0 for f in _STAT_FIELD.values()},
             **initial_stats,
         }
-        await _sb_post("user_profiles", payload)
+        ok = await _sb_post("user_profiles", payload)
+
+        # ✅ FIX: Only lock in the daily bonus + announce AFTER confirmed DB write
+        if daily_bonus > 0 and ok:
+            await _confirm_daily_bonus_claimed(chat_id)
+            asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
 
         # Log new user's first XP earn
-        if first_xp > 0:
+        if first_xp > 0 and ok:
             asyncio.create_task(
                 _log_xp_history(
                     chat_id, first_name, action, first_xp,
                     0, first_xp, 1, 1,
                 )
             )
-        
-         # ✅ Announce daily bonus for new users too
-        if daily_bonus > 0:
-            asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
 
     return action_xp, xp_amount
 
