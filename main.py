@@ -2028,7 +2028,7 @@ async def handle_view_reports(chat_id: int):
             f"└ 🕐 {str(r.get('reported_at', ''))[:19]}\n"
         )
 
-    text = "📋 <b>Latest Key Reports (last 20)</b>\n━━━━━━━━━━━━━━━━━━\n\n" + "\n".join(lines)
+    text = "📋 <b>Latest Key Reports</b>\n━━━━━━━━━━━━━━━━━━\n\n" + "\n".join(lines)
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
 
 async def handle_reset_first_time(chat_id: int):
@@ -2842,6 +2842,32 @@ async def process_update(update_data: dict):
             return
 
         await add_new_update(title, content, chat_id)
+
+    elif text.startswith("/invite"):
+        profile = await get_user_profile(chat_id)
+        if not profile:
+            await tg_app.bot.send_message(chat_id, "🌿 Start your journey first with /start!")
+            return
+        # link = await get_referral_link(chat_id)
+        count = profile.get("referral_count", 0)
+        caption = (
+            f"🌲 <b>Your Personal Wanderer Invite</b>\n\n"
+            # f"Bring a new friend to the clearing and gain <b>{REFERRAL_XP} Forest Energy</b>!\n\n"
+            f"Bring a new friend to the clearing and gain <b>25XP Forest Energy</b>!\n\n"
+            "per successful referral is coming very soon!\n\n"
+            # f"<code>{link}</code>\n\n"
+            # f"🌿 You have already invited <b>{count}</b> new wanderers.\n\n"
+            f"🌿 You have already invited <b>0</b> new wanderers.\n\n"
+            f"<i>Share the link — watch the forest grow.</i> 🍃"
+        )
+        # kb = InlineKeyboardMarkup([
+        #     [InlineKeyboardButton("🔗 Share Invite Link 🌲", url=link)],
+        #     [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")]
+        # ])
+        await tg_app.bot.send_message(
+            chat_id, caption, parse_mode="HTML",
+            reply_markup=kb, disable_web_page_preview=True
+        )
 
     elif text.startswith(("/updates", "/update")):
         await handle_updates(chat_id)
