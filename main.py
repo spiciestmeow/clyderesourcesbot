@@ -2039,7 +2039,6 @@ async def handle_invite(chat_id: int, first_name: str):
             animation=INVITE_GIF,
             parse_mode="HTML",
             reply_markup=keyboard,
-            disable_web_page_preview=True
         )
         return
 
