@@ -635,17 +635,23 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         ok = await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
         print(f"🔵 PATCH result for {chat_id}: ok={ok}, daily_bonus={daily_bonus}")
 
-        # ✅ FIX: Only lock in the daily bonus + announce AFTER confirmed DB write
         if daily_bonus > 0 and ok:
             await _confirm_daily_bonus_claimed(chat_id)
             await redis.delete(f"streak:{chat_id}")
             asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
-        
-        # Background: XP history log
-        if xp_amount > 0:
+            # ✅ INSIDE the if block — only log when bonus actually happened
             asyncio.create_task(
                 _log_xp_history(
-                    chat_id, first_name, action, xp_amount,
+                    chat_id, first_name, "daily_bonus", daily_bonus,
+                    profile.get("xp") or 0, new_xp, old_level, new_level,
+                )
+            )
+
+        # ✅ action_xp only, no bonus mixed in
+        if action_xp > 0:
+            asyncio.create_task(
+                _log_xp_history(
+                    chat_id, first_name, action, action_xp,
                     profile.get("xp") or 0, new_xp, old_level, new_level,
                 )
             )
@@ -665,10 +671,11 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         # New users DO get XP for their first action
         # (previously they got 0 — bad first impression)
         first_xp = xp_amount  # whatever action triggered registration
-
+        action_xp = xp_amount  # ✅ save action_xp before adding bonus
+        
         # ✅ New users get daily bonus on first visit too
         daily_bonus, daily_label = await _check_daily_bonus(chat_id, first_name, {})
-        first_xp += daily_bonus
+        first_xp += daily_bonus  # first_xp = action + bonus (what goes in DB)
 
         payload = {
             "chat_id":        chat_id,
@@ -679,28 +686,32 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             "has_seen_menu":  False,
             "created_at": datetime.now(pytz.utc).isoformat(),  # ✅ real timestamp
             "total_xp_earned": first_xp,
-             "days_active":     1 if daily_bonus > 0 else 0,
+            "days_active":     1 if daily_bonus > 0 else 0,
             **{f: 0 for f in _STAT_FIELD.values()},
             **initial_stats,
         }
         ok = await _sb_post("user_profiles", payload)
 
-        # ✅ FIX: Only lock in the daily bonus + announce AFTER confirmed DB write
         if daily_bonus > 0 and ok:
             await _confirm_daily_bonus_claimed(chat_id)
             asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
-
-        # Log new user's first XP earn
-        if first_xp > 0 and ok:
+            # ✅ log bonus separately
             asyncio.create_task(
                 _log_xp_history(
-                    chat_id, first_name, action, first_xp,
+                    chat_id, first_name, "daily_bonus", daily_bonus,
                     0, first_xp, 1, 1,
                 )
             )
 
+        # ✅ log action_xp only, not first_xp
+        if action_xp > 0 and ok:
+            asyncio.create_task(
+                _log_xp_history(
+                    chat_id, first_name, action, action_xp,
+                    0, action_xp, 1, 1,
+                )
+            )
     return action_xp, xp_amount
-
 
 async def _log_xp_history(
     chat_id: int, first_name: str, action: str,
@@ -2708,29 +2719,6 @@ async def process_update(update_data: dict):
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check the system status.")
             return
         await handle_status(chat_id)
-
-    elif text.startswith("/debugbonus"):
-        if chat_id != OWNER_ID:
-            return
-        key = f"daily_bonus:{chat_id}"
-        exists = await redis.exists(key)
-        ttl    = await redis.ttl(key)
-        profile = await get_user_profile(chat_id)
-
-        # ✅ Delete the phantom key so the bonus can trigger again
-        await redis.delete(key)
-
-        await tg_app.bot.send_message(
-            chat_id,
-            f"<b>Daily Bonus Debug</b>\n\n"
-            f"Redis key exists: <code>{bool(exists)}</code>\n"
-            f"Redis TTL: <code>{ttl}s</code>\n\n"
-            f"DB days_active: <code>{profile.get('days_active') if profile else 'no profile'}</code>\n"
-            f"DB total_xp_earned: <code>{profile.get('total_xp_earned') if profile else 'no profile'}</code>\n"
-            f"DB xp: <code>{profile.get('xp') if profile else 'no profile'}</code>\n\n"
-            f"<i>If Redis exists but DB days_active is 0 → confirm function never ran</i>",
-            parse_mode="HTML",
-        )
     
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
