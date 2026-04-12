@@ -48,16 +48,15 @@ COOLDOWN_SECONDS = {
     "reveal_prime":   18,
     "profile":       12,
     "clear":         20,
-    "guidance":      20,
-    "lore":          20,
+    "guidance":      300,
+    "lore":          300,
     "general":        5,
 }
 
 EVENT_BONUS_TIERS = {
-    "netflix_double": {1: 2, 2: 6, 3: 6, 4: 10, 5: 10, 6: 14, 7: 18, 8: 24, 9: 30},
-    "netflix_max":    {1: 5, 2: 8, 3: 8, 4: 10, 5: 10, 6: 15, 7: 20, 8: 25, 9: 30},
+    "netflix_double": {1: 2, 2: 6, 3: 6, 4: 8,  5: 8,  6: 14, 7: 18, 8: 24, 9: 30},
+    "netflix_max":    {1: 5, 2: 8, 3: 8, 4: 12, 5: 12, 6: 16, 7: 22, 8: 28, 9: 35},
 }
-
 last_reveal_messages: dict = {}
 
 limiter = Limiter(key_func=get_remote_address)
@@ -421,7 +420,7 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
         return tiers.get(level, 999)
 
     if category == "prime":
-        tiers = {1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5, 8: 7, 9: 9}
+        tiers = {1: 2, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5, 8: 7, 9: 9}
         return tiers.get(level, 999)
 
     if category == "netflix":
@@ -432,7 +431,7 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
                 return tiers.get(level, 999)
             
         # Normal tiers
-        tiers = {1: 1, 2: 3, 3: 3, 4: 5, 5: 5, 6: 7, 7: 9, 8: 12, 9: 15}
+        tiers = {1: 2, 2: 3, 3: 3, 4: 5, 5: 5, 6: 7, 7: 9, 8: 12, 9: 15}
         return tiers.get(level, 999)
 
     return 0
@@ -462,7 +461,6 @@ async def check_xp_cooldown(chat_id: int, action: str) -> bool:
     await redis.setex(key, seconds, 1)
     return True
 
-
 async def check_rate_limit(chat_id: int) -> bool:
     """Fixed window — counter only starts on first action, never resets mid-window."""
     key = f"rl:{chat_id}"
@@ -470,6 +468,65 @@ async def check_rate_limit(chat_id: int) -> bool:
     if count == 1:
         await redis.expire(key, 60)
     return count <= MAX_ACTIONS_PER_MINUTE
+
+async def check_daily_reveal_cap(chat_id: int, service_type: str) -> bool:
+    key = f"daily_reveals:{chat_id}:{service_type}"
+    count = await redis.incr(key)
+    if count == 1:
+        # Expire at midnight Manila time
+        manila = pytz.timezone("Asia/Manila")
+        now = datetime.now(manila)
+        midnight = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        ttl = int((midnight - now).total_seconds())
+        await redis.expire(key, ttl)
+    return count <= 5  # max 5 reveals per service per day
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
+# ══════════════════════════════════════════════════════════════════════════════
+async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> int:
+    """
+    Returns bonus XP if the user hasn't claimed their daily bonus yet today.
+    Returns 0 if already claimed. Scales with streak.
+    """
+    key = f"daily_bonus:{chat_id}"
+    if await redis.exists(key):
+        return 0  # already claimed today
+
+    # Set expiry to midnight Manila time
+    manila  = pytz.timezone("Asia/Manila")
+    now     = datetime.now(manila)
+    midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    ttl = int((midnight - now).total_seconds())
+    await redis.setex(key, ttl, 1)
+
+    # Streak-scaled bonus
+    streak = await calculate_streak(chat_id)
+    if streak >= 7:
+        bonus = 30
+        streak_label = "🔥🔥 7-Day Streak Bonus!"
+    elif streak >= 3:
+        bonus = 20
+        streak_label = "🔥 3-Day Streak Bonus!"
+    else:
+        bonus = 10
+        streak_label = "🌅 Daily Login Bonus!"
+
+    # Announce it as a background task so it doesn't block XP return
+    asyncio.create_task(
+        send_temporary_message(
+            chat_id,
+            f"✨ <b>{streak_label}</b>\n\n"
+            f"<b>+{bonus} XP</b> for visiting the clearing today 🍃",
+            duration=4,
+        )
+    )
+
+    return bonus
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
@@ -485,6 +542,7 @@ _XP_TABLE = {
     "reveal_prime":   14,
     "profile":        6,
     "clear":          6,
+    "daily_bonus":    0,
 }
 
 _STAT_FIELD = {
@@ -500,8 +558,11 @@ _STAT_FIELD = {
     "profile":        "profile_views",
 }
 
-
-async def add_xp(chat_id: int, first_name: str, action: str = "general") -> int:
+async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tuple[int, int]:
+    """
+    Awards XP for an action, updates stats, checks level-ups.
+    Returns XP actually awarded (0 if rate-limited or on cooldown).
+    """
     # ── Hard spam block ──
     if not await check_rate_limit(chat_id):
         asyncio.create_task(send_temporary_message(
@@ -510,21 +571,37 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> int:
             "The forest spirits need a moment to breathe... 🍃",
             duration=2
         ))
-        return 0
+        return 0, 0
     
-    # Check XP cooldown separately — doesn't block stat tracking
+    # ── Per-action XP cooldown ──
     xp_allowed = await check_xp_cooldown(chat_id, action)
 
+    # ── Fetch profile ──
     profile = await get_user_profile(chat_id)
 
-    # ── determine XP amount ──
+    # ── Determine XP amount ──
     xp_amount = _XP_TABLE.get(action, 0) if xp_allowed else 0
 
-    # One-time only: guidance / lore
+    # ── Guidance: 10 XP first time, 2 XP recurring (never dead) ──
     if action == "guidance":
-        xp_amount = 10 if (xp_allowed and profile and profile.get("guidance_reads", 0) == 0) else 0
+        if not xp_allowed:
+            xp_amount = 0
+        elif profile is None or profile.get("guidance_reads", 0) == 0:
+            xp_amount = 10
+        else:
+            xp_amount = 2
+
+    # ── Lore: same pattern ──
     elif action == "lore":
-        xp_amount = 10 if (xp_allowed and profile and profile.get("lore_reads", 0) == 0) else 0
+        if not xp_allowed:
+            xp_amount = 0
+        elif profile is None or profile.get("lore_reads", 0) == 0:
+            xp_amount = 10
+        else:
+            xp_amount = 2
+
+    # Save the pure action XP BEFORE we add any daily bonus
+    action_xp = xp_amount
 
     # ── existing user ──
     if profile:
@@ -535,10 +612,16 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> int:
         if stat_field:
             stats_update[stat_field] = (profile.get(stat_field) or 0) + 1
 
+        # ── Daily login bonus (injected here, once per day) ──
+        daily_bonus = await _check_daily_bonus(chat_id, first_name, profile)
+        xp_amount += daily_bonus   # 0 if already claimed today
+
         # Only add to total_xp_earned if XP was actually awarded
         if xp_amount > 0:
-            stats_update["total_xp_earned"] = (profile.get("total_xp_earned") or 0) + xp_amount
-
+            stats_update["total_xp_earned"] = (
+                profile.get("total_xp_earned") or 0) + xp_amount
+            
+        # ── Level-up calculation ──
         new_xp    = (profile.get("xp") or 0) + xp_amount
         old_level = profile.get("level") or 1
         new_level = old_level
@@ -558,7 +641,11 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> int:
         }
         
         await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
-        await redis.delete(f"streak:{chat_id}")
+
+        # Only invalidate streak cache when it actually matters
+        # (reveals and views don't affect streak — only daily login does)
+        if daily_bonus > 0:
+            await redis.delete(f"streak:{chat_id}")
         
         # Background: XP history log
         if xp_amount > 0:
@@ -570,30 +657,44 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> int:
             )
 
         if new_level > old_level:
-            asyncio.create_task(send_level_up_message(chat_id, first_name, old_level, new_level))
+            asyncio.create_task(
+                send_level_up_message(chat_id, first_name, old_level, new_level)
+            )
 
+    # ── new user — first tap stat is recorded ──
     else:
-        # ── new user — first tap stat is recorded ──
         stat_field = _STAT_FIELD.get(action)
         initial_stats = {f: 0 for f in _STAT_FIELD.values()}
         if stat_field:
             initial_stats[stat_field] = 1
 
+        # New users DO get XP for their first action
+        # (previously they got 0 — bad first impression)
+        first_xp = xp_amount  # whatever action triggered registration
         payload = {
             "chat_id":        chat_id,
             "first_name":     first_name,
-            "xp":             0,
+            "xp":             first_xp,
             "level":          1,
             "last_active":    datetime.now(pytz.utc).isoformat(),
             "has_seen_menu":  False,
             "created_at":     "now()",
-            "total_xp_earned": 0,
+            "total_xp_earned": first_xp,
             **{f: 0 for f in _STAT_FIELD.values()},
             **initial_stats,
         }
         await _sb_post("user_profiles", payload)
 
-    return xp_amount
+        # Log new user's first XP earn
+        if first_xp > 0:
+            asyncio.create_task(
+                _log_xp_history(
+                    chat_id, first_name, action, first_xp,
+                    0, first_xp, 1, 1,
+                )
+            )
+
+    return action_xp, xp_amount
 
 
 async def _log_xp_history(
@@ -875,14 +976,33 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
 
 
 async def send_level_up_message(chat_id: int, first_name: str, old_level: int, new_level: int):
+
+    # Show what they unlocked
+    netflix_old = get_max_items("netflix", old_level)
+    netflix_new = get_max_items("netflix", new_level)
+    prime_old   = get_max_items("prime", old_level)
+    prime_new   = get_max_items("prime", new_level)
+    win_old     = get_max_items("win", old_level)
+    win_new     = get_max_items("win", new_level)
+
+    unlocks = []
+    if netflix_new > netflix_old:
+        unlocks.append(f"🍿 Netflix: {netflix_old} → <b>{netflix_new} cookies</b>")
+    if prime_new > prime_old:
+        unlocks.append(f"🎥 Prime: {prime_old} → <b>{prime_new} cookies</b>")
+    if win_new > win_old:
+        unlocks.append(f"🪟 Windows Keys: {win_old} → <b>{win_new} keys</b>")
+    if new_level == 6:
+        unlocks.append("✨ <b>You now receive the FRESHEST cookies first!</b>")
+
+    unlock_text = "\n".join(unlocks) if unlocks else "More wonders await..."
+
     caption = (
-        f"🌟 <b>Congratulations, {html.escape(first_name)}!</b>\n\n"
-        "You have grown stronger!\n\n"
-        f"🏷️ New Title: <b>{get_level_title(new_level)}</b>\n"
-        f"⭐ Level: <b>{old_level}</b> → <b>{new_level}</b>\n\n"
-        "The forest spirits celebrate your growth.\n"
-        "More scrolls and wonders are now within your reach.\n\n"
-        "<i>May your bond with the Enchanted Clearing continue to deepen.</i> 🍃✨"
+        f"🌟 <b>LEVEL UP! Congratulations, {html.escape(first_name)}!</b>\n\n"
+        f"⭐ <b>{old_level} → {new_level}</b>\n"
+        f"🏷️ {get_level_title(new_level)}\n\n"
+        f"🔓 <b>Newly Unlocked:</b>\n{unlock_text}\n\n"
+        "<i>The forest grows with you.</i> 🍃✨"
     )
     try:
         await tg_app.bot.send_animation(
@@ -1001,6 +1121,14 @@ async def reveal_cookie(
     service_type: str, chat_id: int, first_name: str, query, idx: int, page: int
 ):
     emoji = "🍿" if service_type == "netflix" else "🎥"
+
+    if not await check_daily_reveal_cap(chat_id, service_type):
+        await query.answer(
+            "🌿 You've revealed enough cookies for today.\n"
+            "The forest needs to rest — come back tomorrow! 🍃",
+            show_alert=True
+        )
+        return
     
     await query.message.edit_caption(
         caption=f"{emoji} <i>Searching deep within the glowing glade...</i>",
@@ -1049,9 +1177,10 @@ async def reveal_cookie(
     display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
 
     action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
-    xp = await add_xp(chat_id, first_name, action_name)
-    if xp:
-        asyncio.create_task(send_xp_feedback(chat_id, 14))
+    
+    action_xp, _ = await add_xp(chat_id, first_name, action_name)
+    if action_xp:
+        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
     caption = (
         f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
@@ -1130,7 +1259,8 @@ async def reveal_cookie(
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_profile(chat_id: int, first_name: str):
-    xp = await add_xp(chat_id, first_name, "profile")
+    # NEW: add_xp now returns TWO values
+    action_xp, _ = await add_xp(chat_id, first_name, "profile")
     profile = await get_user_profile(chat_id)
     if not profile:
         await send_supabase_error(chat_id)
@@ -1157,8 +1287,11 @@ async def handle_profile(chat_id: int, first_name: str):
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id, animation=MYID_GIF, caption=caption, parse_mode="HTML"
     )
-    if xp:
-        asyncio.create_task(send_xp_feedback(chat_id, 6))
+
+    # ✅ ONLY CHANGE: use action_xp instead of xp
+    if action_xp:
+        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
     await _remember(chat_id, msg.message_id)
 
 
@@ -1731,10 +1864,9 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
         pass
 
     await send_full_menu(chat_id, first_name, is_first_time=False)
-    xp = await add_xp(chat_id, first_name, "clear")
-    if xp:
-        asyncio.create_task(send_xp_feedback(chat_id, 6))
-
+    action_xp, _ = await add_xp(chat_id, first_name, "clear")
+    if action_xp:
+        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
 async def handle_status(chat_id: int):
     async def check_redis():
@@ -1947,7 +2079,7 @@ async def handle_callback(update: Update):
 
         profile = await get_user_profile(chat_id)
         if not profile:
-            await add_xp(chat_id, first_name, "general")
+            action_xp, _ = await add_xp(chat_id, first_name, "general")
             profile = await get_user_profile(chat_id)
 
         is_first = not bool(profile.get("has_seen_menu", False)) if profile else True
@@ -2020,9 +2152,9 @@ async def handle_callback(update: Update):
         }
         action = action_map.get(category)
         if action:
-            xp = await add_xp(chat_id, first_name, action)
-            if xp:
-                asyncio.create_task(send_xp_feedback(chat_id, 8))
+            action_xp, _ = await add_xp(chat_id, first_name, action)
+            if action_xp:
+                asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>", parse_mode="HTML"
@@ -2170,9 +2302,9 @@ async def handle_callback(update: Update):
                 await query.message.delete()
             except Exception:
                 pass
-            xp = await add_xp(chat_id, first_name, "guidance")
-            if xp > 0:
-                asyncio.create_task(send_xp_feedback(chat_id, xp))
+            action_xp, _ = await add_xp(chat_id, first_name, "guidance")
+            if action_xp > 0:
+                asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
         page = 1
         if data.startswith("guidance_page_"):
@@ -2221,11 +2353,11 @@ async def handle_callback(update: Update):
                 "• Lv6: 6 • Lv7: 8 • Lv8: 10\n"
                 "• Lv9: 13 • Lv10+: Unlimited\n\n"
                 "🍿 <b>Netflix Premium Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 3 • Lv4-5: 5\n"
+                "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 5\n"
                 "• Lv6: 7 • Lv7: 9 • Lv8: 12\n"
                 "• Lv9: 15 • Lv10+: Unlimited\n\n"
                 "🎥 <b>PrimeVideo Premium Cookies</b>\n"
-                "• Lv1: 1 • Lv2-3: 2 • Lv4-5: 3\n"
+                "• Lv1: 2 • Lv2-3: 2 • Lv4-5: 3\n"
                 "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
                 "• Lv9: 9 • Lv10+: Unlimited\n\n"
                 "<i>Tap Next → for Steam & XP Rewards</i>",
@@ -2248,7 +2380,9 @@ async def handle_callback(update: Update):
                 "• Viewing any list → <b>+8 XP</b>\n"
                 "• Revealing a cookie → <b>+14 XP</b>\n"
                 "• /profile or /clear → <b>+6 XP</b>\n"
-                "• First Guidance / Lore → <b>+10 XP</b> (one-time)\n\n"
+                "• First Guidance / Lore → <b>+10 XP</b>\n"
+                "• Returning Guidance / Lore → <b>+2 XP</b>\n"
+                "• Daily Login Bonus → <b>+10–30 XP</b> (streak scales)\n\n"
                 f"<b>Cumulative XP Requirements:</b>\n\n{level_req_text}\n\n"
                 "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨",
                 InlineKeyboardMarkup([
@@ -2344,9 +2478,9 @@ async def handle_callback(update: Update):
             await query.message.delete()
         except Exception:
             pass
-        xp = await add_xp(chat_id, first_name, "lore")
-        if xp > 0:
-            asyncio.create_task(send_xp_feedback(chat_id, xp))
+        action_xp, _ = await add_xp(chat_id, first_name, "lore")
+        if action_xp > 0:
+            asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
         loading = await tg_app.bot.send_animation(
             chat_id=chat_id, animation=LOADING_GIF,
