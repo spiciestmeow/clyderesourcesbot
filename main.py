@@ -1082,10 +1082,13 @@ async def reveal_cookie(
     file_bytes = BytesIO(file_content.encode("utf-8"))
     file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
 
+    # Store key_id in Redis so we can retrieve it from the short idx reference
+    await redis.setex(f"reveal_key:{chat_id}:{service_type}:{idx}", 3600, cookie)
+
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Working", callback_data=f"key_feedback_ok|{item.get('key_id', '')}|{service_type}"),
-            InlineKeyboardButton("❌ Not Working", callback_data=f"key_feedback_bad|{item.get('key_id', '')}|{service_type}"),
+            InlineKeyboardButton("✅ Working", callback_data=f"kfb_ok|{service_type}|{idx}"),
+            InlineKeyboardButton("❌ Not Working", callback_data=f"kfb_bad|{service_type}|{idx}"),
         ],
         [
             InlineKeyboardButton(
@@ -1805,12 +1808,13 @@ async def handle_key_feedback(chat_id: int, first_name: str, key_id: str, servic
     # Notify owner in DM
     await tg_app.bot.send_message(
         OWNER_ID,
-        f"📋 <b>Key Feedback Report</b>\n\n"
-        f"👤 User: <b>{html.escape(str(first_name))}</b> (<code>{chat_id}</code>)\n"
-        f"🗂 Service: <b>{service_type.title()}</b>\n"
-        f"🔑 Key/Cookie: <code>{html.escape(str(key_id)[:60])}</code>\n"
+        f"📋 <b>Key Feedback Report</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 <b>User:</b> {html.escape(str(first_name))} (<code>{chat_id}</code>)\n"
+        f"🗂 <b>Service:</b> {service_type.title()}\n\n"
+        f"🔑 <b>Key/Cookie:</b>\n<code>{html.escape(str(key_id))}</code>\n\n"
         f"Status: {emoji} <b>{label}</b>\n"
-        f"🕐 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"🕐 <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         parse_mode="HTML",
     )
 
@@ -2069,24 +2073,59 @@ async def handle_callback(update: Update):
         max_items = get_max_items(category, user_level)
         filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
 
-        report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        for item in filtered[:max_items]:
-            stock = str(item.get("remaining", 0)) if int(item.get("remaining") or 0) > 0 else "Out of stock"
-            report += f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n└ 🔑 <code>{item.get('key_id', 'HIDDEN')}</code>\n└ 📦 Stock: <b>{stock}</b>\n\n"
+        # report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        # for item in filtered[:max_items]:
+        #     stock = str(item.get("remaining", 0)) if int(item.get("remaining") or 0) > 0 else "Out of stock"
+        #     report += f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n└ 🔑 <code>{item.get('key_id', 'HIDDEN')}</code>\n└ 📦 Stock: <b>{stock}</b>\n\n"
 
-        report += f"\n🌿 Level {user_level} → Up to {max_items} {category.upper()} items"
+        # report += f"\n🌿 Level {user_level} → Up to {max_items} {category.upper()} items"
+        # if len(filtered) < max_items:
+        #     report += f"\n⚠️ Only {len(filtered)} items currently available."
+
+        # # Build per-item feedback buttons aren't practical in a list — use general report
+        # feedback_kb = InlineKeyboardMarkup([
+        #     [
+        #         InlineKeyboardButton("✅ All Working", callback_data=f"key_feedback_ok|{category}_list|{category}"),
+        #         InlineKeyboardButton("❌ Issue Found", callback_data=f"key_feedback_bad|{category}_list|{category}"),
+        #     ],
+        #     [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+        # ])
+        # await query.message.edit_caption(caption=report, parse_mode="HTML", reply_markup=feedback_kb)
+
+        display_items = filtered[:max_items]
+
+        report = f"<b>📜 {category.upper()} Scrolls</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        for item in display_items:
+            stock = str(item.get("remaining", 0)) if int(item.get("remaining") or 0) > 0 else "Out of stock"
+            report += (
+                f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
+                f"└ 🔑 <code>{item.get('key_id', 'HIDDEN')}</code>\n"
+                f"└ 📦 Stock: <b>{stock}</b>\n\n"
+            )
+
+        report += f"━━━━━━━━━━━━━━━━━━\n🌿 Level {user_level} → Up to {max_items} {category.upper()} items"
         if len(filtered) < max_items:
             report += f"\n⚠️ Only {len(filtered)} items currently available."
+        report += "\n\n<i>Tap ✅ or ❌ next to each key to report its status.</i>"
 
-        feedback_kb = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Working", callback_data=f"key_feedback_ok|{category}|{category}"),
-                InlineKeyboardButton("❌ Not Working", callback_data=f"key_feedback_bad|{category}|{category}"),
-            ],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-        ])
-        await query.message.edit_caption(caption=report, parse_mode="HTML", reply_markup=feedback_kb)
+        # Per-item feedback buttons
+        buttons = []
+        for item in display_items:
+            raw_key = str(item.get("key_id", "")).strip()
+            svc     = str(item.get("service_type", category)).strip()
+            short_label = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
+            token = f"{chat_id}:{raw_key[:40]}"
+            await redis.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
+            buttons.append([
+                InlineKeyboardButton(f"✅ {short_label}", callback_data=f"wkfb_ok|{token}"),
+                InlineKeyboardButton("❌", callback_data=f"wkfb_bad|{token}"),
+            ])
 
+        buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+        await query.message.edit_caption(
+            caption=report, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
 
     elif data.startswith("key_feedback_ok|") or data.startswith("key_feedback_bad|"):
         parts = data.split("|")
@@ -2094,6 +2133,29 @@ async def handle_callback(update: Update):
             _, key_id, service_type = parts
             is_working = data.startswith("key_feedback_ok|")
             await handle_key_feedback(chat_id, first_name, key_id, service_type, is_working, query)
+
+    # Netflix/Prime reveal feedback (uses idx + Redis to avoid 64-byte limit)
+    elif data.startswith("kfb_ok|") or data.startswith("kfb_bad|"):
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, service_type, idx_str = parts
+            is_working = data.startswith("kfb_ok|")
+            real_key = await redis.get(f"reveal_key:{chat_id}:{service_type}:{idx_str}")
+            key_id = real_key if real_key else idx_str
+            await handle_key_feedback(chat_id, first_name, key_id, service_type, is_working, query)
+
+    # Windows/Office per-item feedback (uses token + Redis)
+    elif data.startswith("wkfb_ok|") or data.startswith("wkfb_bad|"):
+        parts = data.split("|", 1)
+        if len(parts) == 2:
+            _, token = parts
+            is_working = data.startswith("wkfb_ok|")
+            stored = await redis.get(f"winkey:{token}")
+            if stored:
+                real_key, svc = stored.split("||", 1)
+            else:
+                real_key, svc = token, "windows"
+            await handle_key_feedback(chat_id, first_name, real_key, svc, is_working, query)
 
     # ── HISTORY PAGINATION ──
     elif data.startswith("history_page_"):
