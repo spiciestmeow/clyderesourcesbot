@@ -2937,7 +2937,7 @@ async def process_update(update_data: dict):
                                 "🌿 Nice try, wanderer!\n\n"
                                 "You can't refer yourself in the forest 🍃\n"
                                 "The trees are watching 👀",
-                                duration=2
+                                duration=10
                             )
                         )
                 except:
