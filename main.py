@@ -216,6 +216,9 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
     """Upsert — insert or update on conflict. on_conflict = comma-separated column names."""
     async with db_sem:
         try:
+            # Always send payload as list (Supabase is more reliable this way)
+            data = [payload] if isinstance(payload, dict) else payload
+
             r = await asyncio.wait_for(
                 http.post(
                     f"{SUPABASE_URL}/rest/v1/{path}",
@@ -223,7 +226,8 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
                         "Content-Type": "application/json",
                         "Prefer":       f"resolution=merge-duplicates,return=minimal",
                     }),
-                    json=payload,
+                    params={"on_conflict": on_conflict},
+                    json=data,
                 ),
                 timeout=10.0,
             )
@@ -910,6 +914,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             **initial_stats,
         }
         ok = await _sb_upsert("user_profiles", payload, on_conflict="chat_id")
+        print(f"🔵 NEW USER UPSERT for {chat_id}: ok={ok}")
 
         # Insert into referrals table
         if pending_referrer and ok:
