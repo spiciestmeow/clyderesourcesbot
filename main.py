@@ -2487,6 +2487,12 @@ async def handle_callback(update: Update):
     elif data == "cancel_reset":
         await query.message.edit_text("❌ Reset cancelled. Your data is safe.")
 
+    # ── WIN/OFFICE GUIDE ALTER ──
+    elif data == "winoffice_help":
+        await query.answer(
+            "🔵 VAMT = Volume Activation Management Tool\n...",
+            show_alert=True,
+        )
 
     # ── INVITE COPY LINK ──
     elif data.startswith("copy_ref_link|"):
@@ -2517,7 +2523,7 @@ async def handle_callback(update: Update):
             "win": "view_windows", "windows": "view_windows",
             "office": "view_office", "netflix": "view_netflix", "prime": "view_prime",
         }
-        
+
         action = action_map.get(category)
         if action:
             action_xp, _ = await add_xp(chat_id, first_name, action)
@@ -2557,7 +2563,6 @@ async def handle_callback(update: Update):
                 cat_label = "Windows" if category in ("win", "windows") else "Office"
                 cat_emoji = "🪟" if category in ("win", "windows") else "📑"
 
-                # ── ADD THIS LINE — remember which category triggered the guide ──
                 await redis.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
         
                 await query.message.edit_caption(
@@ -2580,8 +2585,9 @@ async def handle_callback(update: Update):
                     parse_mode="HTML",
                     reply_markup=kb_winoffice_guide(),
                 )
-                return  # stop here — don't show keys yet
-            # guide already seen → fall through to key list below
+                return
+            else:
+                await show_winoffice_keys(chat_id, category, profile, query)
 
     elif data.startswith("key_feedback_ok|") or data.startswith("key_feedback_bad|"):
         parts = data.split("|")
@@ -2918,104 +2924,96 @@ async def handle_callback(update: Update):
         # Read which category triggered the guide
         pending_cat = await redis.get(f"winoffice_pending_cat:{chat_id}") or "win"
         await redis.delete(f"winoffice_pending_cat:{chat_id}")
-        
-        cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
-        cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
-        
-        # Show loading
-        await query.message.edit_caption(
-            caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
-            parse_mode="HTML",
-        )
-        await asyncio.sleep(0.8)
-
-        user_level = profile.get("level", 1)
-        vamt = await get_vamt_data()
-        if not vamt:
-            await send_supabase_error(chat_id, query)
-            return
-
-        # Filter (same logic used everywhere now)
-        if pending_cat in ("win", "windows"):
-            filtered = [
-                item for item in vamt
-                if any(x in str(item.get("service_type", "")).lower() for x in ("windows", "win"))
-                and int(item.get("remaining") or 0) > 0
-            ]
-        else:
-            filtered = [
-                item for item in vamt
-                if "office" in str(item.get("service_type", "")).lower()
-                and int(item.get("remaining") or 0) > 0
-            ]
-
-        if not filtered:
-            await query.message.edit_caption(
-                caption=f"🍃 No {cat_label} keys available right now. Check back later!",
-                parse_mode="HTML",
-                reply_markup=kb_back_inventory(),
-            )
-            return
-
-        max_items = get_max_items(pending_cat, user_level)
-        filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
-        display_items = filtered[:max_items]
-
-        report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
-
-        for item in display_items:
-            stock = str(item.get("remaining", 0))
-            report += (
-                f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
-                f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
-                f"└ 📦 Remaining: <b>{stock}</b>\n\n"
-            )
-
-        report += (
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🌿 Level {user_level} → Up to <b>{max_items}</b> {cat_label} keys\n\n"
-            "Tap ✅ if it worked, ❌ if it did not — Caretaker will be notified. 🍃"
-        )
-
-        buttons = []
-        for item in display_items:
-            raw_key = str(item.get("key_id", "")).strip()
-            svc = str(item.get("service_type", pending_cat)).strip()
-            short = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
-            token = f"{chat_id}:{raw_key[:40]}"
-            await redis.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
-            buttons.append([
-                InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
-                InlineKeyboardButton(f"❌ {short}", callback_data=f"wkfb_bad|{token}"),
-            ])
-
-        buttons.append([InlineKeyboardButton(
-            "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
-        )])
-        buttons.append([InlineKeyboardButton(
-            "⬅️ Back to Inventory", callback_data="check_vamt"
-        )])
-
-        await query.message.edit_caption(
-            caption=report,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
-
-    elif data == "winoffice_help":
-        await query.answer(
-            "🔵 VAMT = Volume Activation Management Tool\n"
-            "Microsoft's official key manager.\n\n"
-            "📦 Remaining = how many more PCs this key can still activate.\n"
-            "Once it hits 0 the key is used up.\n\n"
-            "Grab & test quickly! 🍃",
-            show_alert=True,
-        )
+        await show_winoffice_keys(chat_id, pending_cat, profile, query)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN UPDATE PROCESSOR
 # ══════════════════════════════════════════════════════════════════════════════
+async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query):
+    """Shared key display logic for Windows and Office."""
+    pending_cat = category
+    cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
+    cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
+
+    await query.message.edit_caption(
+        caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
+        parse_mode="HTML",
+    )
+    await asyncio.sleep(0.8)
+
+    user_level = profile.get("level", 1)
+    vamt = await get_vamt_data()
+    if not vamt:
+        await send_supabase_error(chat_id, query)
+        return
+
+    if pending_cat in ("win", "windows"):
+        filtered = [
+            item for item in vamt
+            if any(x in str(item.get("service_type", "")).lower() for x in ("windows", "win"))
+            and int(item.get("remaining") or 0) > 0
+        ]
+    else:
+        filtered = [
+            item for item in vamt
+            if "office" in str(item.get("service_type", "")).lower()
+            and int(item.get("remaining") or 0) > 0
+        ]
+
+    if not filtered:
+        await query.message.edit_caption(
+            caption=f"🍃 No {cat_label} keys available right now. Check back later!",
+            parse_mode="HTML",
+            reply_markup=kb_back_inventory(),
+        )
+        return
+
+    max_items = get_max_items(pending_cat, user_level)
+    filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
+    display_items = filtered[:max_items]
+
+    report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
+
+    for item in display_items:
+        stock = str(item.get("remaining", 0))
+        report += (
+            f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
+            f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
+            f"└ 📦 Remaining: <b>{stock}</b>\n\n"
+        )
+
+    report += (
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🌿 Level {user_level} → Up to <b>{max_items}</b> {cat_label} keys\n\n"
+        "Tap ✅ if it worked, ❌ if it did not — Caretaker will be notified. 🍃"
+    )
+
+    buttons = []
+    for item in display_items:
+        raw_key = str(item.get("key_id", "")).strip()
+        svc = str(item.get("service_type", pending_cat)).strip()
+        short = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
+        token = f"{chat_id}:{raw_key[:40]}"
+        await redis.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
+        buttons.append([
+            InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
+            InlineKeyboardButton(f"❌ {short}", callback_data=f"wkfb_bad|{token}"),
+        ])
+
+    buttons.append([InlineKeyboardButton(
+        "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
+    )])
+    buttons.append([InlineKeyboardButton(
+        "⬅️ Back to Inventory", callback_data="check_vamt"
+    )])
+
+    await query.message.edit_caption(
+        caption=report,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
 async def process_update(update_data: dict):
     update = Update.de_json(update_data, tg_app.bot)
 
