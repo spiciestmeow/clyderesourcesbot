@@ -3250,6 +3250,22 @@ async def process_update(update_data: dict):
     elif text.startswith("/myid"):
         await send_myid(chat_id)
 
+    elif text.startswith("/testdaily"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+            return
+        try:
+            target_id = int(text.split()[1]) if len(text.split()) > 1 else chat_id
+            deleted = await redis.delete(f"daily_bonus:{target_id}")
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ Daily bonus key for <code>{target_id}</code> has been reset.\n\n"
+                f"Deleted: {deleted} key(s)",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await tg_app.bot.send_message(chat_id, f"❌ Error: {e}")
+
     elif text.startswith("/clear"):
         await handle_clear(chat_id, msg_id, first_name)
 
