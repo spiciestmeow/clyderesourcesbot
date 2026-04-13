@@ -38,6 +38,7 @@ MAINTENANCE_MESSAGE = (
 
 CACHE_TTL            = 300
 NETFLIX_ITEMS_PER_PAGE = 8
+MAX_DAILY_REVEALS = 5
 
 # ──────────────────────────────────────────────
 # REFERRAL CONFIG
@@ -67,6 +68,30 @@ EVENT_BONUS_TIERS = {
     "netflix_double": {1: 2, 2: 6, 3: 6, 4: 8,  5: 8,  6: 14, 7: 18, 8: 24, 9: 30},
     "netflix_max":    {1: 5, 2: 8, 3: 8, 4: 12, 5: 12, 6: 16, 7: 22, 8: 28, 9: 35},
 }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ATOMIC REVEAL CAP (Lua script — prevents TOCTOU race)
+# ══════════════════════════════════════════════════════════════════════════════
+REVEAL_CAP_SCRIPT = """
+local key = KEYS[1]
+local max_reveals = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+
+local current = redis.call("INCR", key)
+
+-- First time this key is created today → set proper TTL
+if current == 1 then
+    redis.call("EXPIRE", key, ttl)
+end
+
+-- Cap exceeded → rollback and return 0
+if current > max_reveals then
+    redis.call("DECR", key)
+    return 0
+end
+
+return current
+"""
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -538,28 +563,38 @@ async def check_xp_cooldown(chat_id: int, action: str) -> bool:
     return True
 
 async def check_rate_limit(chat_id: int) -> bool:
-    """Fixed window — counter only starts on first action, never resets mid-window."""
     key = f"rl:{chat_id}"
-    count = await redis.incr(key)
-    await redis.expire(key, 60)
-    return count <= MAX_ACTIONS_PER_MINUTE
+    pipe = redis.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, 60)
+    results = await pipe.execute()
+    return results[0] <= MAX_ACTIONS_PER_MINUTE
 
-async def check_daily_reveal_cap(chat_id: int, service_type: str) -> bool:
-    """Returns True if user is within limit WITHOUT incrementing yet."""
+async def try_consume_reveal_cap(chat_id: int, service_type: str) -> bool:
+    """
+    Atomically consume one daily reveal slot using a Lua script.
+    Completely eliminates the TOCTOU race condition.
+    Returns True if the reveal is allowed, False if daily cap is reached.
+    """
     key = f"daily_reveals:{chat_id}:{service_type}"
-    current = await redis.get(key)
-    return int(current or 0) < 5  # check only, do not increment
-
-async def consume_daily_reveal_cap(chat_id: int, service_type: str):
-    """Call this ONLY after a successful reveal to consume one slot."""
-    key = f"daily_reveals:{chat_id}:{service_type}"
+    
     manila = pytz.timezone("Asia/Manila")
     now = datetime.now(manila)
-    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     ttl = int((midnight - now).total_seconds())
-    # INCR + guarantee TTL exists (nx=True on the SET seeds it first)
-    await redis.set(key, 0, ex=ttl, nx=True)  # seed with TTL if not exists
-    await redis.incr(key)
+
+    # Execute Lua script atomically
+    result = await redis.eval(
+        REVEAL_CAP_SCRIPT,
+        1,                    # number of keys
+        key,                  # KEYS[1]
+        MAX_DAILY_REVEALS,    # ARGV[1]
+        ttl                   # ARGV[2]
+    )
+
+    return result != 0
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
@@ -1379,12 +1414,17 @@ async def show_paginated_cookie_list(
     )
 
 
-async def reveal_cookie(
-    service_type: str, chat_id: int, first_name: str, query, idx: int, page: int
-):
+async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
+
+    # Prevent button spam on reveal
+    spam_key = f"reveal_spam:{chat_id}:{service_type}"
+    if await redis.exists(spam_key):
+        await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
+        return
+    await redis.setex(spam_key, 3, 1)
     
-    if not await check_daily_reveal_cap(chat_id, service_type):
+    if not await try_consume_reveal_cap(chat_id, service_type):
         await query.answer(
             "🌿 You've revealed enough cookies for today.\n"
             "The forest needs to rest — come back tomorrow! 🍃",
@@ -1441,13 +1481,6 @@ async def reveal_cookie(
 
     action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
 
-    await consume_daily_reveal_cap(chat_id, service_type)
-    action_xp, _ = await add_xp(chat_id, first_name, action_name)
-    if action_xp:
-        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
-
-
-
     caption = (
         f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
         f"{emoji} <b>{display_name} Revealed</b>\n"
@@ -1493,14 +1526,8 @@ async def reveal_cookie(
         ]
     ])
 
+    # NOW send the document
     try:
-        await query.message.delete()
-    except Exception:
-        pass
-
-    # ── Send document — wrap in try/except with cap refund on failure ──
-    try:
-        # Send document
         doc_msg = await tg_app.bot.send_document(
             chat_id=chat_id,
             document=file_bytes,
@@ -1510,14 +1537,16 @@ async def reveal_cookie(
             filename=file_bytes.name
         )
     except Exception as e:
+        await query.answer("🌿 Delivery failed, please try again.", show_alert=True)
         print(f"🔴 Document send failed for {chat_id}: {e}")
-        key = f"daily_reveals:{chat_id}:{service_type}"
-        current = int(await redis.get(key) or 1)
-        if current > 0:
-            await redis.set(key, current - 1, keepttl=True)
         return
+    
+    # Only reached on successful send
+    action_xp, _ = await add_xp(chat_id, first_name, action_name)
+    if action_xp:
+        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-    # NEW — stored in Redis, auto-expires in 1 hour
+    # Store message ID for later cleanup
     await redis.setex(
         f"reveal_msg:{chat_id}:{service_type}",
         3600,
@@ -1526,8 +1555,13 @@ async def reveal_cookie(
 
     # Optional success message (auto-deletes)
     asyncio.create_task(send_temporary_message(
-        chat_id, f"✨ <i>{display_name} successfully delivered!</i>", duration=3
-    ))
+            chat_id, f"✨ <i>{display_name} successfully delivered!</i>", duration=3
+        ))
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
@@ -1774,8 +1808,12 @@ async def handle_leaderboard(chat_id: int):
             "🌲 No one has earned any XP yet.\nBe the first to explore! 🌱✨",
             parse_mode="HTML",
         )
-        return  
+        return
+    
     top_data = top_data or []
+    if not top_data:
+        await tg_app.bot.send_message(chat_id, "🌲 No one has earned any XP yet...")
+        return
 
     text = "🏆 <b>Guardians of the Enchanted Clearing</b>\n━━━━━━━━━━━━━━━━━━\n\n"
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -2208,10 +2246,11 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
     except Exception:
         pass
 
-    await send_full_menu(chat_id, first_name, is_first_time=False)
     action_xp, _ = await add_xp(chat_id, first_name, "clear")
     if action_xp:
         asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
+    await send_full_menu(chat_id, first_name, is_first_time=False)
 
 async def handle_status(chat_id: int):
     async def check_redis():
