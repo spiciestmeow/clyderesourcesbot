@@ -2393,7 +2393,7 @@ async def handle_callback(update: Update):
     data      = query.data
 
     # Feedback callbacks answer themselves with show_alert — skip early answer
-    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|")
+    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|", "winoffice_help")
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
 
@@ -2422,11 +2422,8 @@ async def handle_callback(update: Update):
 
         is_first = not bool(profile.get("has_seen_menu", False)) if profile else True
 
-        # === FIX FOR FIX 6 ===
-        # Mark as seen as soon as the main menu is displayed
         if profile and not profile.get("has_seen_menu", False):
             asyncio.create_task(update_has_seen_menu(chat_id))
-        # ======================
     
         try:
             await tg_app.bot.delete_message(chat_id, loading.message_id)
@@ -3181,14 +3178,22 @@ async def process_update(update_data: dict):
     elif text.startswith("/myid"):
         await send_myid(chat_id)
 
-    # Add this owner-only command to process_update:
     elif text.startswith("/resetguide"):
         if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
             return
-        target_id = int(text.split()[1]) if len(text.split()) > 1 else chat_id
-        await redis.delete(f"seen_winoffice_guide:{target_id}")
-        await redis.delete(f"winoffice_pending_cat:{target_id}")
-        await tg_app.bot.send_message(chat_id, f"✅ Guide reset for {target_id}")
+        try:
+            target_id = int(text.split()[1]) if len(text.split()) > 1 else chat_id
+            deleted1 = await redis.delete(f"seen_winoffice_guide:{target_id}")
+            deleted2 = await redis.delete(f"winoffice_pending_cat:{target_id}")
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ Guide reset for <code>{target_id}</code>\n\n"
+                f"Deleted: {deleted1 + deleted2} key(s)",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await tg_app.bot.send_message(chat_id, f"❌ Error: {e}")
 
     elif text.startswith("/testdaily"):
         if chat_id != OWNER_ID:
