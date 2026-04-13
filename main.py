@@ -908,11 +908,13 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             "has_seen_menu":  False,
             "created_at": datetime.now(pytz.utc).isoformat(),  # ✅ real timestamp
             "total_xp_earned": first_xp,
-            "referral_count": 0,   # ← new field still needed for display
+            "referral_count": 0,
             "days_active":     1 if daily_bonus > 0 else 0,
             **{f: 0 for f in _STAT_FIELD.values()},
             **initial_stats,
         }
+        # Inside the new-user else: block, just before the upsert
+        print("🔵 NEW USER PAYLOAD KEYS:", list(payload.keys()))
         ok = await _sb_upsert("user_profiles", payload, on_conflict="chat_id")
         print(f"🔵 NEW USER UPSERT for {chat_id}: ok={ok}")
 
