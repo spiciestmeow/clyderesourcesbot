@@ -41,6 +41,11 @@ NETFLIX_ITEMS_PER_PAGE = 8
 MAX_DAILY_REVEALS = 5
 
 # ──────────────────────────────────────────────
+# RENDER COLD-START DETECTION (free tier spin-down)
+# ──────────────────────────────────────────────
+COLD_START = True
+
+# ──────────────────────────────────────────────
 # REFERRAL CONFIG
 # ──────────────────────────────────────────────
 MAX_REFERRALS_PER_DAY = 8
@@ -1120,6 +1125,16 @@ async def send_temporary_message(chat_id: int, text: str, duration: int = 2):
     except Exception:
         pass
 
+async def send_loading(chat_id: int, caption: str = "🌫️ <i>The ancient mist begins to stir...</i>"):
+    msg = await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=LOADING_GIF,
+        caption=caption,
+        parse_mode="HTML"
+    )
+    await _remember(chat_id, msg.message_id)
+    return msg
+
 async def _announce_daily_bonus(chat_id: int, bonus: int, label: str):
     """
     Announces daily bonus after a short delay so it doesn't race
@@ -1315,6 +1330,11 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
 async def show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
+    loading = await send_loading(
+        chat_id,
+        f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Opening the ancient scroll of {service_type.title()} cookies...</i>"
+    )
+
     profile   = await get_user_profile(chat_id)
     user_level = profile.get("level", 1) if profile else 1
     event      = await get_active_event() 
@@ -1330,8 +1350,8 @@ async def show_paginated_cookie_list(
     
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿"    if service_type == "netflix" else "🎥"
-
     data = await get_vamt_data()
+
     if not data:
         await send_supabase_error(chat_id)
         await query.message.edit_caption(
@@ -1339,6 +1359,7 @@ async def show_paginated_cookie_list(
             parse_mode="HTML",
             reply_markup=kb_back_inventory(),
         )
+        await loading.delete()
         return
 
     filtered = [
@@ -1413,6 +1434,11 @@ async def show_paginated_cookie_list(
         caption=report, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
     )
 
+    try:
+        await loading.delete()
+    except Exception:
+        pass
+
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
@@ -1431,15 +1457,16 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
             show_alert=True
         )
         return
-        
-    await query.message.edit_caption(
-        caption=f"{emoji} <i>Searching deep within the glowing glade...</i>",
-        parse_mode="HTML"
+    
+    loading = await send_loading(
+        chat_id,
+        f"{emoji} <i>Searching deep within the glowing glade for your cookie...</i>"
     )
+        
     await asyncio.sleep(1.3)
-    await query.message.edit_caption(
-        caption=f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
-        parse_mode="HTML",
+    await loading.edit_caption(
+        f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
+        parse_mode="HTML"
     )
     await asyncio.sleep(1.5)
 
@@ -1450,6 +1477,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
     data = await get_vamt_data()
     if not data:
         await query.answer("🌫️ The forest is unreachable right now. Please try again shortly.", show_alert=True)
+        await loading.delete()
         return
 
     filtered = [
@@ -1466,12 +1494,14 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 
     if idx < 1 or idx > len(filtered):
         await query.answer("❌ Cookie no longer available", show_alert=True)
+        await loading.delete()
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
 
     item = filtered[idx - 1]
     if str(item.get("status", "")).lower() != "active" or int(item.get("remaining", 0)) <= 0:
         await query.answer("⚠️ This cookie has expired.", show_alert=True)
+        await loading.delete()
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
 
@@ -1538,9 +1568,16 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         )
     except Exception as e:
         await query.answer("🌿 Delivery failed, please try again.", show_alert=True)
+        await loading.delete()
         print(f"🔴 Document send failed for {chat_id}: {e}")
         return
     
+    # Cleanup loading
+    try:
+        await loading.delete()
+    except Exception:
+        pass
+
     # Only reached on successful send
     action_xp, _ = await add_xp(chat_id, first_name, action_name)
     if action_xp:
@@ -1567,6 +1604,8 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_profile(chat_id: int, first_name: str):
+    loading = await send_loading(chat_id, "🌿 <i>Reading your forest soul...</i>")
+
     # NEW: add_xp now returns TWO values
     action_xp, _ = await add_xp(chat_id, first_name, "profile")
     profile = await get_user_profile(chat_id)
@@ -1596,10 +1635,15 @@ async def handle_profile(chat_id: int, first_name: str):
         chat_id=chat_id, animation=MYID_GIF, caption=caption, parse_mode="HTML"
     )
 
+    try:
+        await loading.delete()
+    except:
+        pass
+
     # ✅ ONLY CHANGE: use action_xp instead of xp
     if action_xp:
         asyncio.create_task(send_xp_feedback(chat_id, action_xp))
-
+    
     await _remember(chat_id, msg.message_id)
 
 
@@ -2982,6 +3026,11 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
     cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
 
+    loading = await send_loading(
+        chat_id,
+        f"{cat_emoji} <i>Opening the {cat_label} key scroll from the ancient library...</i>"
+    )
+
     await query.message.edit_caption(
         caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
         parse_mode="HTML",
@@ -2992,6 +3041,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     vamt = await get_vamt_data()
     if not vamt:
         await send_supabase_error(chat_id, query)
+        await loading.delete()
         return
 
     if pending_cat in ("win", "windows"):
@@ -3045,7 +3095,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         await redis.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
         buttons.append([
             InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
-            InlineKeyboardButton(f"❌ {short}", callback_data=f"wkfb_bad|{token}"),
+            InlineKeyboardButton(f"❌", callback_data=f"wkfb_bad|{token}"),
         ])
 
     buttons.append([InlineKeyboardButton(
@@ -3061,8 +3111,30 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
+    try:
+        await loading.delete()
+    except Exception:
+        pass
+
 async def process_update(update_data: dict):
+    global COLD_START
+
     update = Update.de_json(update_data, tg_app.bot)
+
+    # ── COLD START CUTE MESSAGE (only once after Render spin-down) ──
+    if COLD_START:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            try:
+                await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="Yawnnn~ 😴💤\nThe forest just woke me up!\nReady for you now, wanderer ✨🍃",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                print(f"⚠️ Cold-start message failed: {e}")
+        
+        COLD_START = False
 
     # ── Maintenance mode ──
     if await get_maintenance_mode():
