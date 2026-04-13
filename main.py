@@ -211,6 +211,27 @@ async def _sb_post(path: str, payload: dict | list) -> bool:
         except Exception as e:
             print(f"🔴 SB POST {path}: {e}")
             return False
+        
+async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
+    """Upsert — insert or update on conflict. on_conflict = comma-separated column names."""
+    async with db_sem:
+        try:
+            r = await asyncio.wait_for(
+                http.post(
+                    f"{SUPABASE_URL}/rest/v1/{path}",
+                    headers=_supabase_headers({
+                        "Content-Type": "application/json",
+                        "Prefer":       f"resolution=merge-duplicates,return=minimal",
+                    }),
+                    json=payload,
+                ),
+                timeout=10.0,
+            )
+            print(f"🟢 SB UPSERT {path}: status={r.status_code}")
+            return r.status_code in (200, 201)
+        except Exception as e:
+            print(f"🔴 SB UPSERT {path}: {e}")
+            return False
 
 
 async def _sb_patch(path: str, payload: dict) -> bool:
@@ -521,29 +542,41 @@ async def check_rate_limit(chat_id: int) -> bool:
     return count <= MAX_ACTIONS_PER_MINUTE
 
 async def check_daily_reveal_cap(chat_id: int, service_type: str) -> bool:
+    """Returns True if user is within limit WITHOUT incrementing yet."""
+    key = f"daily_reveals:{chat_id}:{service_type}"
+    current = await redis.get(key)
+    return int(current or 0) < 5  # check only, do not increment
+
+
+async def consume_daily_reveal_cap(chat_id: int, service_type: str):
+    """Call this ONLY after a successful reveal to consume one slot."""
     key = f"daily_reveals:{chat_id}:{service_type}"
     manila = pytz.timezone("Asia/Manila")
     now = datetime.now(manila)
-    midnight = (now + timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     ttl = int((midnight - now).total_seconds())
-    count = await redis.incr(key)
-    await redis.expire(key, ttl)
-    return count <= 5
+    # INCR + guarantee TTL exists (nx=True on the SET seeds it first)
+    await redis.set(key, 0, ex=ttl, nx=True)  # seed with TTL if not exists
+    await redis.incr(key)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
 # ══════════════════════════════════════════════════════════════════════════════
 async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tuple[int, str]:
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    ttl = int((midnight - now).total_seconds())
     key = f"daily_bonus:{chat_id}"
-    if await redis.exists(key):
-        return 0, ""  # already claimed today
 
-    # ✅ FIX: Do NOT set Redis here anymore.
-    # Redis is only set AFTER a successful DB write in _confirm_daily_bonus_claimed().
-    # This prevents the bonus being consumed when the DB write fails.
+    # ATOMIC: only one concurrent request wins this SET
+    # nx=True means "only set if key does NOT exist"
+    # If the key already exists, set() returns None → bonus already claimed
+    claimed = await redis.set(key, 1, ex=ttl, nx=True)
+    if not claimed:
+        return 0, ""  # already claimed today — bonus not available
 
+    # Won the race — compute bonus amount
     streak = await calculate_streak(chat_id)
     if streak >= 7:
         bonus, label = 30, "🔥🔥 7-Day Streak Bonus!"
@@ -553,26 +586,6 @@ async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tu
         bonus, label = 10, "🌅 Daily Login Bonus!"
 
     return bonus, label
-
-
-# ✅ FIX: New helper — call this AFTER a successful DB write to lock in the bonus
-async def _confirm_daily_bonus_claimed(chat_id: int):
-    manila = pytz.timezone("Asia/Manila")
-    now = datetime.now(manila)
-    midnight = (now + timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    ttl = int((midnight - now).total_seconds())
-    await redis.setex(f"daily_bonus:{chat_id}", ttl, 1)
-
-    # ── Referral reward (only on first daily bonus) ──
-    referral = await _sb_get("referrals", **{"referred_id": f"eq.{chat_id}", "awarded": "eq.false"})
-    if referral:
-        ref = referral[0]
-        referrer_id = ref["referrer_id"]
-        new_name = (await get_user_profile(chat_id) or {}).get("first_name", "Wanderer")
-        await award_referral_bonus(referrer_id, chat_id, new_name)      
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # REFERRAL SYSTEM (new dedicated table)
@@ -647,12 +660,6 @@ async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name
     })
 
     if ok:
-        # Mark as awarded in referrals table
-        await _sb_patch(f"referrals?referred_id=eq.{referred_id}", {
-            "awarded": True,
-            "awarded_at": datetime.now(pytz.utc).isoformat()
-        })
-
         await _log_xp_history(
             referrer_id, "Forest Wanderer", "referral", REFERRAL_XP,
             old_xp, new_xp, old_level, new_level
@@ -670,6 +677,43 @@ async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name
             )
         except Exception:
             pass
+
+async def _try_award_referral(chat_id: int):
+    """
+    Safely award referral bonus exactly once.
+    Redis lock prevents re-processing if DB write partially failed before.
+    """
+    lock_key = f"ref_awarding:{chat_id}"
+    # nx=True: only one concurrent task can process this referral
+    # ex=60: lock expires after 60s so it's not permanently stuck on crash
+    lock = await redis.set(lock_key, 1, ex=60, nx=True)
+    if not lock:
+        return  # another task is already processing this referral
+
+    try:
+        referral = await _sb_get(
+            "referrals",
+            **{"referred_id": f"eq.{chat_id}", "awarded": "eq.false", "select": "*"}
+        )
+        if not referral:
+            return  # no pending referral — nothing to do
+
+        ref = referral[0]
+        referrer_id = ref["referrer_id"]
+        new_name = (await get_user_profile(chat_id) or {}).get("first_name", "Wanderer")
+
+        # Mark as awarded FIRST before giving XP (fail-safe direction)
+        marked = await _sb_patch(
+            f"referrals?referred_id=eq.{chat_id}&awarded=eq.false",
+            {"awarded": True, "awarded_at": datetime.now(pytz.utc).isoformat()}
+        )
+        if not marked:
+            return  # couldn't mark — don't give XP, will retry next daily login
+
+        # Now safely give XP — worst case: marked but no XP (not re-awardable)
+        await award_referral_bonus(referrer_id, chat_id, new_name)
+    finally:
+        await redis.delete(lock_key)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
@@ -790,24 +834,36 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         ok = await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
         print(f"🔵 PATCH result for {chat_id}: ok={ok}, daily_bonus={daily_bonus}")
 
-        if daily_bonus > 0 and ok:
-            await _confirm_daily_bonus_claimed(chat_id)
-            await redis.delete(f"streak:{chat_id}")
-            asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
-            # ✅ INSIDE the if block — only log when bonus actually happened
-            asyncio.create_task(
-                _log_xp_history(
-                    chat_id, first_name, "daily_bonus", daily_bonus,
-                    profile.get("xp") or 0, new_xp, old_level, new_level,
-                )
-            )
+        # ── Sequential XP values for clean history logging ──
+        base_xp = profile.get("xp") or 0
+        xp_after_action = base_xp + action_xp
+        xp_after_all    = base_xp + action_xp + daily_bonus
 
-        # ✅ action_xp only, no bonus mixed in
+        # Compute level at each step (action might level up before bonus is added)
+        level_after_action = old_level
+        while get_cumulative_xp_for_level(level_after_action + 1) <= xp_after_action:
+            level_after_action += 1
+
+        if daily_bonus > 0:
+            if ok:
+                await redis.delete(f"streak:{chat_id}")
+                asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
+                asyncio.create_task(
+                    _log_xp_history(
+                        chat_id, first_name, "daily_bonus", daily_bonus,
+                        xp_after_action, xp_after_all, level_after_action, new_level,
+                    )
+                )
+                asyncio.create_task(_try_award_referral(chat_id))
+            else:
+                await redis.delete(f"daily_bonus:{chat_id}")
+
+        # ✅ prev = base, new = after action only — not inflated by bonus
         if action_xp > 0:
             asyncio.create_task(
                 _log_xp_history(
                     chat_id, first_name, action, action_xp,
-                    profile.get("xp") or 0, new_xp, old_level, new_level,
+                    base_xp, xp_after_action, old_level, level_after_action,
                 )
             )
 
@@ -853,7 +909,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             **{f: 0 for f in _STAT_FIELD.values()},
             **initial_stats,
         }
-        ok = await _sb_post("user_profiles", payload)
+        ok = await _sb_upsert("user_profiles", payload, on_conflict="chat_id")
 
         # Insert into referrals table
         if pending_referrer and ok:
@@ -862,16 +918,18 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
                 "referred_id": chat_id
             })
 
-        if daily_bonus > 0 and ok:
-            await _confirm_daily_bonus_claimed(chat_id)
-            asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
-            # ✅ log bonus separately
-            asyncio.create_task(
-                _log_xp_history(
-                    chat_id, first_name, "daily_bonus", daily_bonus,
-                    0, first_xp, 1, 1,
+        if daily_bonus > 0:
+            if ok:
+                asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
+                asyncio.create_task(
+                    _log_xp_history(
+                        chat_id, first_name, "daily_bonus", daily_bonus,
+                        0, first_xp, 1, 1,
+                    )
                 )
-            )
+                asyncio.create_task(_try_award_referral(chat_id))  # ← ADD THIS LINE
+            else:
+                await redis.delete(f"daily_bonus:{chat_id}")
 
         # ✅ log action_xp only, not first_xp
         if action_xp > 0 and ok:
@@ -1321,7 +1379,7 @@ async def reveal_cookie(
     service_type: str, chat_id: int, first_name: str, query, idx: int, page: int
 ):
     emoji = "🍿" if service_type == "netflix" else "🎥"
-
+    
     if not await check_daily_reveal_cap(chat_id, service_type):
         await query.answer(
             "🌿 You've revealed enough cookies for today.\n"
@@ -1329,7 +1387,7 @@ async def reveal_cookie(
             show_alert=True
         )
         return
-    
+        
     await query.message.edit_caption(
         caption=f"{emoji} <i>Searching deep within the glowing glade...</i>",
         parse_mode="HTML"
@@ -1381,6 +1439,8 @@ async def reveal_cookie(
     action_xp, _ = await add_xp(chat_id, first_name, action_name)
     if action_xp:
         asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
+    await consume_daily_reveal_cap(chat_id, service_type) 
 
     caption = (
         f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
@@ -2354,6 +2414,13 @@ async def handle_callback(update: Update):
             profile = await get_user_profile(chat_id)
 
         is_first = not bool(profile.get("has_seen_menu", False)) if profile else True
+
+        # === FIX FOR FIX 6 ===
+        # Mark as seen as soon as the main menu is displayed
+        if profile and not profile.get("has_seen_menu", False):
+            asyncio.create_task(update_has_seen_menu(chat_id))
+        # ======================
+    
         try:
             await tg_app.bot.delete_message(chat_id, loading.message_id)
         except Exception:
@@ -3165,6 +3232,12 @@ async def process_update(update_data: dict):
     elif text.startswith("/menu"):
         profile = await get_user_profile(chat_id)
         is_first = not bool(profile.get("has_seen_menu", False)) if profile else True
+
+        # === FIX FOR FIX 6 ===
+        if profile and not profile.get("has_seen_menu", False):
+            asyncio.create_task(update_has_seen_menu(chat_id))
+        # ======================
+
         await send_full_menu(chat_id, first_name, is_first_time=is_first)
 
     elif text.startswith("/myid"):
