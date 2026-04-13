@@ -2490,7 +2490,11 @@ async def handle_callback(update: Update):
     # ── WIN/OFFICE GUIDE ALTER ──
     elif data == "winoffice_help":
         await query.answer(
-            "🔵 VAMT = Volume Activation Management Tool\n...",
+            "🔵 VAMT = Volume Activation Management Tool\n"
+            "Microsoft's official key manager.\n\n"
+            "📦 Remaining = how many more PCs this key can activate.\n"
+            "Once it hits 0 the key is fully used up.\n\n"
+            "Grab & test quickly! 🍃",
             show_alert=True,
         )
 
@@ -3176,6 +3180,15 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/myid"):
         await send_myid(chat_id)
+
+    # Add this owner-only command to process_update:
+    elif text.startswith("/resetguide"):
+        if chat_id != OWNER_ID:
+            return
+        target_id = int(text.split()[1]) if len(text.split()) > 1 else chat_id
+        await redis.delete(f"seen_winoffice_guide:{target_id}")
+        await redis.delete(f"winoffice_pending_cat:{target_id}")
+        await tg_app.bot.send_message(chat_id, f"✅ Guide reset for {target_id}")
 
     elif text.startswith("/testdaily"):
         if chat_id != OWNER_ID:
