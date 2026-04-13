@@ -67,7 +67,6 @@ EVENT_BONUS_TIERS = {
     "netflix_double": {1: 2, 2: 6, 3: 6, 4: 8,  5: 8,  6: 14, 7: 18, 8: 24, 9: 30},
     "netflix_max":    {1: 5, 2: 8, 3: 8, 4: 12, 5: 12, 6: 16, 7: 22, 8: 28, 9: 35},
 }
-last_reveal_messages: dict = {}
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -224,7 +223,7 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
                     f"{SUPABASE_URL}/rest/v1/{path}",
                     headers=_supabase_headers({
                         "Content-Type": "application/json",
-                        "Prefer":       f"resolution=merge-duplicates,return=minimal",
+                        "Prefer":       "resolution=merge-duplicates,return=minimal",
                     }),
                     params={"on_conflict": on_conflict},
                     json=data,
@@ -551,7 +550,6 @@ async def check_daily_reveal_cap(chat_id: int, service_type: str) -> bool:
     current = await redis.get(key)
     return int(current or 0) < 5  # check only, do not increment
 
-
 async def consume_daily_reveal_cap(chat_id: int, service_type: str):
     """Call this ONLY after a successful reveal to consume one slot."""
     key = f"daily_reveals:{chat_id}:{service_type}"
@@ -634,8 +632,6 @@ async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name
     if int(count) >= MAX_REFERRALS_PER_DAY:
         return
 
-    await redis.setex(key, ttl, int(count) + 1)
-
     # Record in referrals table + award XP
     profile = await get_user_profile(referrer_id)
     if not profile:
@@ -664,6 +660,7 @@ async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name
     })
 
     if ok:
+        await redis.setex(key, ttl, int(count) + 1)
         await _log_xp_history(
             referrer_id, "Forest Wanderer", "referral", REFERRAL_XP,
             old_xp, new_xp, old_level, new_level
@@ -1438,16 +1435,18 @@ async def reveal_cookie(
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
 
+    # ── Validate item is still good FIRST ──
     cookie = str(item.get("key_id", "")).strip()
     display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
 
     action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
-    
+
+    await consume_daily_reveal_cap(chat_id, service_type)
     action_xp, _ = await add_xp(chat_id, first_name, action_name)
     if action_xp:
         asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-    await consume_daily_reveal_cap(chat_id, service_type) 
+
 
     caption = (
         f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
@@ -1499,15 +1498,24 @@ async def reveal_cookie(
     except Exception:
         pass
 
-    # Send document
-    doc_msg = await tg_app.bot.send_document(
-        chat_id=chat_id,
-        document=file_bytes,
-        caption=caption,
-        parse_mode="HTML",
-        reply_markup=kb,
-        filename=file_bytes.name
-    )
+    # ── Send document — wrap in try/except with cap refund on failure ──
+    try:
+        # Send document
+        doc_msg = await tg_app.bot.send_document(
+            chat_id=chat_id,
+            document=file_bytes,
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=kb,
+            filename=file_bytes.name
+        )
+    except Exception as e:
+        print(f"🔴 Document send failed for {chat_id}: {e}")
+        key = f"daily_reveals:{chat_id}:{service_type}"
+        current = int(await redis.get(key) or 1)
+        if current > 0:
+            await redis.set(key, current - 1, keepttl=True)
+        return
 
     # NEW — stored in Redis, auto-expires in 1 hour
     await redis.setex(
@@ -1520,7 +1528,6 @@ async def reveal_cookie(
     asyncio.create_task(send_temporary_message(
         chat_id, f"✨ <i>{display_name} successfully delivered!</i>", duration=3
     ))
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
@@ -1638,7 +1645,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     manila = pytz.timezone("Asia/Manila")
     today_utc = (
         datetime.now(manila).replace(hour=0, minute=0, second=0, microsecond=0)
-        .astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        .astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     )
 
     # ── single Supabase call, everything filtered in Python ──
@@ -1667,7 +1674,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     # xp earned today (filter in Python)
     xp_today = sum(
         r.get("xp_earned", 0) for r in all_logs
-        if r.get("created_at", "") >= today_utc.replace("Z", "+00:00")
+        if r.get("created_at", "") >= today_utc
     )
 
     streak = await calculate_streak(chat_id)
@@ -1779,7 +1786,7 @@ async def handle_leaderboard(chat_id: int):
 
     if profile and profile.get("xp", 0) > 0:
         rank_data = await _sb_get("user_leaderboard", **{"chat_id": f"eq.{chat_id}", "select": "rank"}) or []
-        real_rank = rank_data[0].get("rank", 1) if rank_data else 1
+        real_rank = rank_data[0].get("rank", "?") if rank_data else "?"
         text += "━━━━━━━━━━━━━━━━━━\n"
         display = "The Forest Warden" if chat_id == OWNER_ID else f"ranked #{real_rank}"
         text += f"📍 <b>You are currently {display}</b>\n   {get_level_title(profile.get('level', 1))} • Level {profile.get('level', 1)}\n   ✨ {profile.get('xp', 0):,} XP\n"
@@ -2043,7 +2050,7 @@ async def handle_info(chat_id: int):
 
     # ── Active Now (last 15 minutes) ──
     manila = pytz.timezone("Asia/Manila")
-    ago_15min = (datetime.now(manila) - timedelta(minutes=15)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ago_15min = (datetime.now(manila) - timedelta(minutes=15)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
     active_data = await _sb_get(
         "user_profiles",
@@ -2393,7 +2400,7 @@ async def handle_callback(update: Update):
     data      = query.data
 
     # Feedback callbacks answer themselves with show_alert — skip early answer
-    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|", "winoffice_help")
+    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|", "winoffice_help", "copy_ref_link|")
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
 
