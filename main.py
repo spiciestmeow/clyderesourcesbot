@@ -2577,11 +2577,11 @@ async def handle_callback(update: Update):
     # ── WIN/OFFICE GUIDE ALTER ──
     elif data == "winoffice_help":
         await query.answer(
-            "🔵 VAMT = Volume Activation Management Tool\n"
-            "Microsoft's official key manager.\n\n"
-            "📦 Remaining = how many more PCs this key can activate.\n"
-            "Once it hits 0 the key is fully used up.\n\n"
-            "Grab & test quickly! 🍃",
+            "📜 THE ANCIENT SCROLLS GUIDE\n\n"
+            "🔵 VAMT: Official Microsoft 'Volume' keys. One key can activate multiple different PCs at once.\n\n"
+            "📦 REMAINING: This shows exactly how many activations are left. \n"
+            "Example: 'Remaining: 10' means 10 more people can use it!\n\n"
+            "⚠️ Tips: Use them quickly before the magic runs out! 🍃",
             show_alert=True,
         )
 
@@ -2658,19 +2658,16 @@ async def handle_callback(update: Update):
         
                 await query.message.edit_caption(
                     caption=(
-                        f"{cat_emoji} <b>Before you browse {cat_label} keys...</b>\n\n"
+                        f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
                         "━━━━━━━━━━━━━━━━━━\n\n"
-                        "🔵 <b>What is VAMT?</b>\n"
-                        "VAMT stands for <b>Volume Activation Management Tool</b> — "
-                        "Microsoft's official system for managing product keys across "
-                        "multiple devices. The keys here are real Microsoft activation "
-                        "keys managed through that system.\n\n"
+                        "🔵 <b>What is a VAMT Key?</b>\n"
+                        "It is a <b>Volume Activation</b> key. Instead of a standard code that only works for one person, these are official Microsoft keys designed to activate multiple PCs. We share them so everyone in the clearing can benefit.\n\n"
                         "━━━━━━━━━━━━━━━━━━\n\n"
                         "📦 <b>What does \"Remaining\" mean?</b>\n"
-                        "Each key activates Windows or Office on a limited number of devices.\n\n"
-                        "<b>Remaining: 3</b> = still works on 3 more PCs.\n"
-                        "Once it hits 0 it is fully used up.\n\n"
-                        "Grab one and activate quickly — popular keys go fast! 🍃\n\n"
+                        "Because these keys are shared, they have a strict activation limit.\n\n"
+                        "• <b>Remaining: 5</b> = Works on exactly 5 more devices.\n"
+                        "• <b>Remaining: 0</b> = The key is fully exhausted.\n\n"
+                        "<i>Apply them swiftly! The highest remaining keys vanish fast.</i> 🍃\n\n"
                         "━━━━━━━━━━━━━━━━━━"
                     ),
                     parse_mode="HTML",
