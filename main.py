@@ -327,6 +327,14 @@ async def get_maintenance_mode() -> bool:
 async def set_maintenance_mode(enabled: bool):
     await redis.set("maintenance_mode", "1" if enabled else "0")
 
+async def has_seen_winoffice_guide(chat_id: int) -> bool:
+    # Returns True if this user has already seen the guide
+    return bool(await redis.get(f"seen_winoffice_guide:{chat_id}"))
+
+async def mark_winoffice_guide_seen(chat_id: int):
+    # Permanently marks guide as seen — no TTL, never expires
+    await redis.set(f"seen_winoffice_guide:{chat_id}", 1)
+
 # ──────────────────────────────────────────────
 # BOT CONFIG
 # ──────────────────────────────────────────────
@@ -973,6 +981,14 @@ def kb_caretaker():
         [InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
+
+def kb_winoffice_guide():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "✅ Got it, show me the keys →",
+            callback_data="winoffice_got_it"
+        )
+    ]])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITY MESSAGES
@@ -2459,6 +2475,38 @@ async def handle_callback(update: Update):
         if category in ("netflix", "prime"):
             await show_paginated_cookie_list(category, chat_id, query, page=0)
             return
+        
+        # ── NEW: First-time guide for Windows / Office ──────────────────
+        if category in ("win", "windows", "office"):
+            if not await has_seen_winoffice_guide(chat_id):
+                cat_label = "Windows" if category in ("win", "windows") else "Office"
+                cat_emoji = "🪟" if category in ("win", "windows") else "📑"
+
+                # ── ADD THIS LINE — remember which category triggered the guide ──
+                await redis.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
+        
+                await query.message.edit_caption(
+                    caption=(
+                        f"{cat_emoji} <b>Before you browse {cat_label} keys...</b>\n\n"
+                        "━━━━━━━━━━━━━━━━━━\n\n"
+                        "🔵 <b>What is VAMT?</b>\n"
+                        "VAMT stands for <b>Volume Activation Management Tool</b> — "
+                        "Microsoft's official system for managing product keys across "
+                        "multiple devices. The keys here are real Microsoft activation "
+                        "keys managed through that system.\n\n"
+                        "━━━━━━━━━━━━━━━━━━\n\n"
+                        "📦 <b>What does \"Remaining\" mean?</b>\n"
+                        "Each key activates Windows or Office on a limited number of devices.\n\n"
+                        "<b>Remaining: 3</b> = still works on 3 more PCs.\n"
+                        "Once it hits 0 it is fully used up.\n\n"
+                        "Grab one and activate quickly — popular keys go fast! 🍃\n\n"
+                        "━━━━━━━━━━━━━━━━━━"
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=kb_winoffice_guide(),
+                )
+                return  # stop here — don't show keys yet
+            # guide already seen → fall through to key list below
 
         # Windows / Office simple list
         user_level = profile.get("level", 1)
@@ -2526,6 +2574,11 @@ async def handle_callback(update: Update):
                 InlineKeyboardButton(f"✅ {short_label}", callback_data=f"wkfb_ok|{token}"),
                 InlineKeyboardButton(f"❌ {short_label}", callback_data=f"wkfb_bad|{token}"),
             ])
+
+        # ── ADD THIS LINE ──────────────────────────────────────
+        buttons.append([InlineKeyboardButton(
+            "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
+        )])
 
         buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
         await query.message.edit_caption(
@@ -2861,6 +2914,101 @@ async def handle_callback(update: Update):
             await handle_flushcache(chat_id)   
         elif data == "caretaker_resetfirst":
             await handle_reset_first_time(chat_id)
+
+    elif data == "winoffice_got_it":
+        await mark_winoffice_guide_seen(chat_id)
+
+        # ── Read which category the user came from ──
+        pending_cat = await redis.get(f"winoffice_pending_cat:{chat_id}") or "win"
+        await redis.delete(f"winoffice_pending_cat:{chat_id}")
+
+        cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
+        cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
+
+        await query.message.edit_caption(
+            caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
+            parse_mode="HTML",
+        )
+        await asyncio.sleep(0.8)
+
+        user_level = profile.get("level", 1)
+        vamt = await get_vamt_data()
+        if not vamt:
+            await send_supabase_error(chat_id, query)
+            return
+
+        # ── Filter correctly for Windows OR Office ──
+        if pending_cat in ("win", "windows"):
+            filtered = [
+                item for item in vamt
+                if any(x in str(item.get("service_type", "")).lower() for x in ("windows", "win"))
+                and int(item.get("remaining") or 0) > 0
+            ]
+        else:
+            filtered = [
+                item for item in vamt
+                if "office" in str(item.get("service_type", "")).lower()
+                and int(item.get("remaining") or 0) > 0
+            ]
+
+        if not filtered:
+            await query.message.edit_caption(
+                caption=f"🍃 No {cat_label} keys available right now. Check back later!",
+                parse_mode="HTML",
+                reply_markup=kb_back_inventory(),
+            )
+            return
+
+        max_items = get_max_items(pending_cat, user_level)
+        filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
+        display_items = filtered[:max_items]
+
+        report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
+        for item in display_items:
+            stock = str(item.get("remaining", 0))
+            report += (
+                f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
+                f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
+                f"└ 📦 Remaining: <b>{stock}</b>\n\n"
+            )
+        report += (
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🌿 Level {user_level} → Up to <b>{max_items}</b> {cat_label} keys\n\n"
+            "Tap ✅ if it worked, ❌ if it did not — Caretaker will be notified. 🍃"
+        )
+
+        buttons = []
+        for item in display_items:
+            raw_key = str(item.get("key_id", "")).strip()
+            svc     = str(item.get("service_type", pending_cat)).strip()
+            short   = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
+            token   = f"{chat_id}:{raw_key[:40]}"
+            await redis.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
+            buttons.append([
+                InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
+                InlineKeyboardButton(f"❌ {short}", callback_data=f"wkfb_bad|{token}"),
+            ])
+        buttons.append([InlineKeyboardButton(
+            "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
+        )])
+        buttons.append([InlineKeyboardButton(
+            "⬅️ Back to Inventory", callback_data="check_vamt"
+        )])
+        await query.message.edit_caption(
+            caption=report, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    elif data == "winoffice_help":
+        await query.answer(
+            "🔵 VAMT = Volume Activation Management Tool\n"
+            "Microsoft's system for managing product keys across many devices.\n\n"
+            "📦 Remaining = how many more PCs can still activate with this key.\n"
+            "Once it hits 0 the key is fully used up.\n\n"
+            "Grab one and activate quickly! 🍃",
+            show_alert=True,
+        )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN UPDATE PROCESSOR
