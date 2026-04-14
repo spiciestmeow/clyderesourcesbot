@@ -1564,27 +1564,51 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
                 "referred_id": chat_id
             })
 
+        # ── Sequential XP cursor — each log entry shows its own exact before/after ──
+        xp_cursor = 0
+
         if daily_bonus > 0:
             if ok:
                 asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
                 asyncio.create_task(
                     _log_xp_history(
                         chat_id, first_name, "daily_bonus", daily_bonus,
-                        0, first_xp, 1, 1,
+                        xp_cursor, xp_cursor + daily_bonus, 1, 1,
                     )
                 )
-                asyncio.create_task(_try_award_referral(chat_id))  # ← ADD THIS LINE
+                asyncio.create_task(_try_award_referral(chat_id))
+                xp_cursor += daily_bonus
             else:
                 await redis.delete(f"daily_bonus:{chat_id}")
 
-        # ✅ log action_xp only, not first_xp
         if action_xp > 0 and ok:
             asyncio.create_task(
                 _log_xp_history(
                     chat_id, first_name, action, action_xp,
-                    0, action_xp, 1, 1,
+                    xp_cursor, xp_cursor + action_xp, 1, 1,
                 )
             )
+            xp_cursor += action_xp
+
+        # Notify friend + log welcome bonus separately
+        if extra_welcome > 0 and ok:
+            asyncio.create_task(
+                _log_xp_history(
+                    chat_id, first_name, "welcome_bonus", extra_welcome,
+                    xp_cursor, xp_cursor + extra_welcome, 1, 1,
+                )
+            )
+            try:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    f"🎁 <b>Welcome Bonus!</b>\n\n"
+                    f"✨ <b>+{extra_welcome} Forest Energy</b> has been added to your path!\n\n"
+                    f"A friend invited you to the clearing — the forest rewards bonds. 🌿\n\n"
+                    f"<i>The trees remember every step you've taken...</i> 🍃",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
     return action_xp, xp_amount
 
 async def _log_xp_history(
@@ -3190,16 +3214,32 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         "⬅️ Back to Inventory", callback_data="check_vamt"
     )])
 
-    await query.message.edit_caption(
-        caption=report,
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
-
     try:
         await loading.delete()
     except Exception:
         pass
+
+    try:
+        await query.message.edit_caption(
+            caption=report,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+    except Exception as e:
+        if "too long" in str(e).lower() or "MESSAGE_TOO_LONG" in str(e):
+            # Caption limit hit — fall back to a regular message (4096 char limit)
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await tg_app.bot.send_message(
+                chat_id,
+                report,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+        else:
+            raise
 
 
 # ══════════════════════════════════════════════════════════════════════════════
