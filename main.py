@@ -1730,7 +1730,7 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("📤 Upload Keys", callback_data="caretaker_uploadkeys"),
-            InlineKeyboardButton("🎮 Upload Steam", callback_data="caretaker_uploadsteam"),
+             InlineKeyboardButton("📊 System Health", callback_data="caretaker_health"),
         ],
         [
             InlineKeyboardButton("📋 View Key Reports", callback_data="caretaker_viewreports"),
@@ -1741,8 +1741,11 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
             InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst"),
         ],
         [
+            InlineKeyboardButton("🎮 Search Steam", callback_data="caretaker_searchsteam"),
+            InlineKeyboardButton("🎮 Upload Steam", callback_data="caretaker_uploadsteam"),
+        ],
+        [
             InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu"),
-            InlineKeyboardButton("📊 System Health", callback_data="caretaker_health"),
         ],
     ])
 
@@ -3248,15 +3251,55 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
+async def handle_searchsteam_command(chat_id: int, raw_text: str):
+    """/searchsteam email — checks if Steam account already exists"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+        return
+
+    email = raw_text.replace("/searchsteam", "").strip()
+    if not email or "@" not in email:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🔍 <b>Search Steam Account</b>\n\n"
+            "Usage:\n"
+            "<code>/searchsteam username@email.com</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    existing = await _sb_get(
+        "steamCredentials",
+        **{"email": f"eq.{email}"}
+    )
+
+    if existing:
+        acc = existing[0]
+        game = acc.get("game_name") or "Not specified"
+        await tg_app.bot.send_message(
+            chat_id,
+            f"⚠️ <b>Account Found!</b>\n\n"
+            f"📧 <b>Email:</b> <code>{html.escape(email)}</code>\n"
+            f"🎮 <b>Game:</b> {game}\n"
+            f"Status: <b>{acc.get('status', 'Available')}</b>\n\n"
+            f"✅ Already exists in database.",
+            parse_mode="HTML"
+        )
+    else:
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>No account found</b>\n\n"
+            f"The email <code>{html.escape(email)}</code> is <b>not</b> in the database.\n"
+            f"You can safely upload it now.",
+            parse_mode="HTML"
+        )
 async def handle_uploadsteam_command(chat_id: int, raw_text: str):
-    """Handle /uploadsteam command - multi-line format"""
+    """Handle /uploadsteam — NOW detects duplicate emails automatically"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload Steam accounts.")
         return
 
-    # Remove the command itself
     body = raw_text.replace("/uploadsteam", "").strip()
-
     if not body:
         await tg_app.bot.send_message(
             chat_id,
@@ -3265,23 +3308,14 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "<code>/uploadsteam\n"
             "username@email.com\n"
             "yourpassword123\n"
-            "Game Name (optional)</code>\n\n"
-            "<i>Just reply with the command + 2 or 3 lines.</i> 🍃",
+            "Game Name (optional)</code>",
             parse_mode="HTML"
         )
         return
 
     lines = [line.strip() for line in body.split("\n") if line.strip()]
-
     if len(lines) < 2:
-        await tg_app.bot.send_message(
-            chat_id,
-            "❌ Not enough info.\n\n"
-            "Need at least:\n"
-            "• Username/Email\n"
-            "• Password",
-            parse_mode="HTML"
-        )
+        await tg_app.bot.send_message(chat_id, "❌ Need at least: Email + Password")
         return
 
     email = lines[0]
@@ -3297,7 +3331,12 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         "Posted": None,
     }
 
-    success = await _sb_post("steamCredentials", payload)
+    # ←←← THIS IS THE KEY CHANGE ←←←
+    success = await _sb_upsert(
+        path="steamCredentials",
+        payload=payload,
+        on_conflict="email"      # ← uses your unique email constraint
+    )
 
     if success:
         await tg_app.bot.send_message(
@@ -3307,14 +3346,20 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             f"🔑 <b>Password:</b> <code>{html.escape(password)}</code>\n"
             f"🎮 <b>Game:</b> {game_name or '<i>Not specified</i>'}\n"
             f"Status: <b>✅ Available</b>\n\n"
-            "🔄 Automatically synced to Notion via your trigger!",
+            "🔄 Automatically synced to Notion!",
             parse_mode="HTML"
         )
     else:
+        # Nice duplicate message
         await tg_app.bot.send_message(
             chat_id,
-            "❌ Failed to save to Supabase.\nCheck the logs for details."
+            f"⚠️ <b>Duplicate Account Detected!</b>\n\n"
+            f"The email <code>{html.escape(email)}</code> already exists in the database.\n\n"
+            f"✅ No duplicate was created.\n"
+            f"🔄 It was automatically skipped.",
+            parse_mode="HTML"
         )
+
 async def handle_callback(update: Update):
     query     = update.callback_query
     chat_id   = update.effective_chat.id
@@ -3864,7 +3909,8 @@ async def handle_callback(update: Update):
             await handle_reset_first_time(chat_id)
         elif data == "caretaker_uploadsteam":
             await handle_uploadsteam_command(chat_id, "/uploadsteam")
-            return
+        elif data == "caretaker_searchsteam":
+            await handle_searchsteam_command(chat_id, "/searchsteam")
     elif data == "winoffice_got_it":
         await mark_winoffice_guide_seen(chat_id)
         
@@ -4038,9 +4084,11 @@ async def process_update(update_data: dict):
     elif text.startswith("/leaderboard"):
         await handle_leaderboard(chat_id)
 
+    elif text.startswith("/searchsteam"):
+        await handle_searchsteam_command(chat_id, raw)
+
     elif text.startswith("/uploadsteam"):
         await handle_uploadsteam_command(chat_id, raw)
-        return
 
     elif text.startswith("/profile"):
         await handle_profile(chat_id, first_name)
