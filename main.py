@@ -704,6 +704,80 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
 
     return imported, skipped, errors
 
+# ── TXT BATCH ACCUMULATOR (Redis-backed, 3s window) ──────────────────────────
+TXT_BATCH_TTL = 4  # seconds to wait for more files before flushing
+
+async def _flush_txt_batch(chat_id: int):
+    """Called after TXT_BATCH_TTL seconds of no new uploads — sends one combined result."""
+    await asyncio.sleep(TXT_BATCH_TTL)
+
+    # Check if we're still the latest flush task
+    task_id = await redis.get(f"txt_batch_task:{chat_id}")
+    my_id = str(asyncio.current_task().get_name())
+    if task_id != my_id:
+        return  # a newer file arrived, a newer task will flush
+
+    # Collect all buffered results
+    raw = await redis.lrange(f"txt_batch:{chat_id}", 0, -1)
+    await redis.delete(f"txt_batch:{chat_id}")
+    await redis.delete(f"txt_batch_task:{chat_id}")
+
+    if not raw:
+        return
+
+    records = [json.loads(r) for r in raw]
+    total_imported = sum(r["imported"] for r in records)
+    total_skipped  = sum(r["skipped"]  for r in records)
+
+    if len(records) == 1:
+        # Single file — original one-message format
+        r = records[0]
+        result = (
+            f"✅ <b>Import Complete!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📄 <b>File:</b> <code>{r['filename']}</code>\n"
+            f"🔍 <b>Detected as:</b> {r['display']}\n\n"
+            f"🌱 <b>Imported:</b> {r['imported']}\n"
+            f"📦 <b>Skipped:</b> {r['skipped']}\n\n"
+            f"🧹 Cache refreshed!\n"
+        )
+        if r["skipped"] > 0 and r["errors"]:
+            result += f"\n⚠️ <b>Skipped Details:</b>\n"
+            for err in r["errors"][:5]:
+                result += f"• {err}\n"
+    else:
+        # Multiple files — combined summary
+        lines = []
+        for r in records:
+            icon = "✅" if r["imported"] > 0 else "⚠️"
+            lines.append(
+                f"{icon} <code>{r['filename']}</code>\n"
+                f"   → {r['display']} · +{r['imported']} imported"
+                + (f" · {r['skipped']} skipped" if r["skipped"] else "")
+            )
+
+        result = (
+            f"✅ <b>Batch Import Complete!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📁 <b>Files:</b> {len(records)}\n"
+            f"🌱 <b>Total Imported:</b> {total_imported}\n"
+            f"📦 <b>Total Skipped:</b> {total_skipped}\n\n"
+            + "\n\n".join(lines) +
+            f"\n\n🧹 Cache refreshed!"
+        )
+
+    # Chunk if needed
+    if len(result) <= 4000:
+        await tg_app.bot.send_message(chat_id, result, parse_mode="HTML")
+    else:
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Batch Import Complete!</b>\n\n"
+            f"📁 {len(records)} files · 🌱 {total_imported} imported · ⚠️ {total_skipped} skipped\n"
+            f"🧹 Cache refreshed!",
+            parse_mode="HTML"
+        )
+
 async def handle_document(update: Update):
     message = update.message
     chat_id = message.chat_id
@@ -801,8 +875,7 @@ async def handle_document(update: Update):
         # Flush cache once after all files
         await redis.delete("vamt_cache")
 
-        # Build result message
-        files_summary = "\n".join(processed_files[:15])  # max 15 lines
+        files_summary = "\n".join(processed_files[:20])
         result = (
             f"✅ <b>ZIP Import Complete!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -812,10 +885,34 @@ async def handle_document(update: Update):
             f"<b>Per-file results:</b>\n{files_summary}\n\n"
             f"🧹 Cache refreshed!"
         )
-        if len(processed_files) > 15:
-            result += f"\n<i>...and {len(processed_files) - 15} more files</i>"
+        if len(processed_files) > 20:
+            result += f"\n<i>...and {len(processed_files) - 20} more files</i>"
 
-        await loading.edit_caption(result, parse_mode="HTML")
+        # Safe Telegram send — chunk if over 4000 chars
+        MAX_CAPTION = 1000  # captions are limited to 1024 chars
+        MAX_MSG = 4000
+
+        if len(result) <= MAX_CAPTION:
+            await loading.edit_caption(result, parse_mode="HTML")
+        else:
+            # Edit caption to a short summary, send details as separate messages
+            await loading.edit_caption(
+                f"✅ <b>ZIP Import Complete!</b>\n\n"
+                f"📦 {len(txt_files)} files · 🌱 {total_imported} imported · ⚠️ {total_skipped} skipped\n"
+                f"🧹 Cache refreshed!",
+                parse_mode="HTML"
+            )
+            # Send full per-file breakdown in chunks
+            chunk = ""
+            for line in processed_files:
+                addition = line + "\n"
+                if len(chunk) + len(addition) > MAX_MSG:
+                    await tg_app.bot.send_message(OWNER_ID, chunk, parse_mode="HTML")
+                    chunk = addition
+                else:
+                    chunk += addition
+            if chunk:
+                await tg_app.bot.send_message(OWNER_ID, chunk, parse_mode="HTML")
 
         if all_errors:
             error_msg = "🔴 <b>ZIP Upload Issues:</b>\n\n" + "\n".join(all_errors[:10])
@@ -823,7 +920,7 @@ async def handle_document(update: Update):
         return
 
     # ══════════════════════════════════════
-    # SINGLE TXT file (original behavior)
+    # SINGLE TXT — buffer into batch window
     # ══════════════════════════════════════
     try:
         content = file_bytes.decode("utf-8")
@@ -833,31 +930,29 @@ async def handle_document(update: Update):
 
     detected_service, detected_display = detect_service_type(content, filename)
     imported, skipped, errors = await parse_and_import_keys(content, filename)
-
     await redis.delete("vamt_cache")
 
-    result = (
-        f"✅ <b>Import Complete!</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📄 <b>File:</b> <code>{filename}</code>\n"
-        f"🔍 <b>Detected as:</b> {detected_display}\n\n"
-        f"🌱 <b>Imported:</b> {imported}\n"
-        f"📦 <b>Skipped:</b> {skipped}\n\n"
-        f"🧹 Cache refreshed!\n"
-    )
-    if skipped > 0 and errors:
-        result += f"\n⚠️ <b>Skipped Details:</b>\n"
-        for err in errors[:5]:
-            result += f"• {err}\n"
+    # Buffer this result into Redis
+    record = json.dumps({
+        "filename": filename,
+        "display":  detected_display,
+        "imported": imported,
+        "skipped":  skipped,
+        "errors":   errors[:5],
+    })
+    await redis.rpush(f"txt_batch:{chat_id}", record)
+    await redis.expire(f"txt_batch:{chat_id}", 30)
 
-    await loading.edit_caption(result, parse_mode="HTML")
+    # Delete the loading animation — no result message yet
+    try:
+        await loading.delete()
+    except Exception:
+        pass
 
-    if errors:
-        await tg_app.bot.send_message(
-            OWNER_ID,
-            "🔴 <b>Upload Issues:</b>\n\n" + "\n".join(errors[:10]),
-            parse_mode="HTML"
-        )
+    # Cancel previous flush task, start a fresh 4s countdown
+    task_name = f"txt_flush_{chat_id}_{int(asyncio.get_event_loop().time()*1000)}"
+    await redis.setex(f"txt_batch_task:{chat_id}", 10, task_name)
+    asyncio.create_task(_flush_txt_batch(chat_id), name=task_name)
 
 # ──────────────────────────────────────────────
 # MAINTENANCE_MODE CONFIG
