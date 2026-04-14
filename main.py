@@ -242,10 +242,9 @@ async def _sb_post(path: str, payload: dict | list) -> bool:
             return False
         
 async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
-    """Upsert — insert or update on conflict. on_conflict = comma-separated column names."""
+    """Upsert with FULL error logging when it fails"""
     async with db_sem:
         try:
-            # Always send payload as list (Supabase is more reliable this way)
             data = [payload] if isinstance(payload, dict) else payload
 
             r = await asyncio.wait_for(
@@ -253,19 +252,26 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
                     f"{SUPABASE_URL}/rest/v1/{path}",
                     headers=_supabase_headers({
                         "Content-Type": "application/json",
-                        "Prefer":       "resolution=merge-duplicates,return=minimal",
+                        "Prefer": "resolution=merge-duplicates,return=minimal",
                     }),
                     params={"on_conflict": on_conflict},
                     json=data,
                 ),
                 timeout=10.0,
             )
-            print(f"🟢 SB UPSERT {path}: status={r.status_code}")
-            return r.status_code in (200, 201)
-        except Exception as e:
-            print(f"🔴 SB UPSERT {path}: {e}")
-            return False
 
+            print(f"🟢 SB UPSERT {path}: status={r.status_code}")
+
+            if r.status_code not in (200, 201):
+                error_body = await r.text() if r.text else "No body"
+                print(f"🔴 SB UPSERT ERROR {r.status_code}: {error_body}")
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"🔴 SB UPSERT {path} EXCEPTION: {e}")
+            return False
 
 async def _sb_patch(path: str, payload: dict) -> bool:
     async with db_sem:
