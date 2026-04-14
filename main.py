@@ -1679,10 +1679,20 @@ def kb_caretaker():
         ],
         [
             InlineKeyboardButton("👁️ View Event", callback_data="caretaker_viewevent"),
-            InlineKeyboardButton("🔄 Flush Cookie", callback_data="caretaker_flushcache"),
+            InlineKeyboardButton("🔄 Flush Cache", callback_data="caretaker_flushcache"),
         ],
-        [InlineKeyboardButton("🛠️ Maintenance Mode", callback_data="confirm_toggle_maintenance")],
-        [InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst")],
+        [
+            InlineKeyboardButton("📤 Upload Keys", callback_data="caretaker_uploadkeys"),
+            InlineKeyboardButton("📊 System Health", callback_data="caretaker_health"),
+        ],
+        [
+            InlineKeyboardButton("📋 View Key Reports", callback_data="caretaker_viewreports"),
+            InlineKeyboardButton("🛠️ Maintenance Mode", callback_data="confirm_toggle_maintenance"),
+        ],
+        [
+            InlineKeyboardButton("📝 Set Forest Info", callback_data="caretaker_setinfo"),
+            InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst"),
+        ],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
 
@@ -2764,14 +2774,16 @@ async def handle_caretaker(chat_id: int, first_name: str):
     text = (
         "🌲 <b>Welcome back, Forest Caretaker</b>\n━━━━━━━━━━━━━━━━━━\n\n"
         f"👋 Hello, {html.escape(first_name)}!\n\n"
-        "You stand in the hidden grove reserved only for the caretaker.\n"
-        "Choose your action below:\n"
+        "All owner commands are now available as buttons below.\n"
+        "Choose your action:"
     )
     await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=CARETAKER_GIF,
-        caption=text, parse_mode="HTML", reply_markup=kb_caretaker(),
+        chat_id=chat_id,
+        animation=CARETAKER_GIF,
+        caption=text,
+        parse_mode="HTML",
+        reply_markup=kb_caretaker(),
     )
-
 # ──────────────────────────────────────────────
 # INVITE HANDLER (used by both /invite and menu button)
 # ──────────────────────────────────────────────
@@ -3598,7 +3610,20 @@ async def handle_callback(update: Update):
                 "<i>This will replace any currently active event.</i>",
                 parse_mode="HTML",
             )
-
+        elif data == "caretaker_uploadkeys":
+            await handle_uploadkeys_command(chat_id)
+        elif data == "caretaker_health":
+            await handle_status(chat_id)
+        elif data == "caretaker_viewreports":
+            await handle_view_reports(chat_id)
+        elif data == "caretaker_setinfo":
+            await tg_app.bot.send_message(
+                chat_id,
+                "📝 <b>Set Forest Info</b>\n\n"
+                "Reply with the command in this format:\n\n"
+                "<code>/setforestinfo 1.4.5 April 14, 2026 · 02:58 PM</code>",
+                parse_mode="HTML",
+            )
         elif data == "caretaker_viewevent":
             await handle_view_event(chat_id)
         elif data == "caretaker_viewfeedback":
