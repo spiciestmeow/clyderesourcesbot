@@ -1730,17 +1730,20 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("📤 Upload Keys", callback_data="caretaker_uploadkeys"),
-            InlineKeyboardButton("📊 System Health", callback_data="caretaker_health"),
+            InlineKeyboardButton("🎮 Upload Steam", callback_data="caretaker_uploadsteam"),
         ],
         [
             InlineKeyboardButton("📋 View Key Reports", callback_data="caretaker_viewreports"),
-            InlineKeyboardButton("🛠️ Maintenance Mode", callback_data="confirm_toggle_maintenance"),
+            InlineKeyboardButton("🛠️ Maintenance", callback_data="confirm_toggle_maintenance"),
         ],
         [
             InlineKeyboardButton("📝 Set Forest Info", callback_data="caretaker_setinfo"),
             InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst"),
         ],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [
+            InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu"),
+            InlineKeyboardButton("📊 System Health", callback_data="caretaker_health"),
+        ],
     ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3245,6 +3248,73 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
+async def handle_uploadsteam_command(chat_id: int, raw_text: str):
+    """Handle /uploadsteam command - multi-line format"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload Steam accounts.")
+        return
+
+    # Remove the command itself
+    body = raw_text.replace("/uploadsteam", "").strip()
+
+    if not body:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🎮 <b>Steam Account Uploader</b>\n\n"
+            "Send in this format:\n\n"
+            "<code>/uploadsteam\n"
+            "username@email.com\n"
+            "yourpassword123\n"
+            "Game Name (optional)</code>\n\n"
+            "<i>Just reply with the command + 2 or 3 lines.</i> 🍃",
+            parse_mode="HTML"
+        )
+        return
+
+    lines = [line.strip() for line in body.split("\n") if line.strip()]
+
+    if len(lines) < 2:
+        await tg_app.bot.send_message(
+            chat_id,
+            "❌ Not enough info.\n\n"
+            "Need at least:\n"
+            "• Username/Email\n"
+            "• Password",
+            parse_mode="HTML"
+        )
+        return
+
+    email = lines[0]
+    password = lines[1]
+    game_name = lines[2] if len(lines) >= 3 else None
+
+    payload = {
+        "email": email,
+        "password": password,
+        "status": "Available",
+        "game_name": game_name,
+        "action": None,
+        "Posted": None,
+    }
+
+    success = await _sb_post("steamCredentials", payload)
+
+    if success:
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Steam Account Successfully Uploaded!</b>\n\n"
+            f"📧 <b>Email:</b> <code>{html.escape(email)}</code>\n"
+            f"🔑 <b>Password:</b> <code>{html.escape(password)}</code>\n"
+            f"🎮 <b>Game:</b> {game_name or '<i>Not specified</i>'}\n"
+            f"Status: <b>✅ Available</b>\n\n"
+            "🔄 Automatically synced to Notion via your trigger!",
+            parse_mode="HTML"
+        )
+    else:
+        await tg_app.bot.send_message(
+            chat_id,
+            "❌ Failed to save to Supabase.\nCheck the logs for details."
+        )
 async def handle_callback(update: Update):
     query     = update.callback_query
     chat_id   = update.effective_chat.id
@@ -3792,7 +3862,9 @@ async def handle_callback(update: Update):
             await handle_flushcache(chat_id)   
         elif data == "caretaker_resetfirst":
             await handle_reset_first_time(chat_id)
-
+        elif data == "caretaker_uploadsteam":
+            await handle_uploadsteam_command(chat_id, "/uploadsteam")
+            return
     elif data == "winoffice_got_it":
         await mark_winoffice_guide_seen(chat_id)
         
@@ -3965,6 +4037,10 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/leaderboard"):
         await handle_leaderboard(chat_id)
+
+    elif text.startswith("/uploadsteam"):
+        await handle_uploadsteam_command(chat_id, raw)
+        return
 
     elif text.startswith("/profile"):
         await handle_profile(chat_id, first_name)
