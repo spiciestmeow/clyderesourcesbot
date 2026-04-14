@@ -371,6 +371,166 @@ async def handle_flushcache(chat_id: int):
             parse_mode="HTML",
         )
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ADMIN KEY UPLOAD (TXT → Supabase vamt_keys)
+# ══════════════════════════════════════════════════════════════════════════════
+async def handle_uploadkeys_command(chat_id: int):
+    """Command /uploadkeys — tells admin how to format the file"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload keys.")
+        return
+
+    msg = (
+        "📤 <b>Upload Keys via TXT</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "Send me a <b>.txt</b> file now.\n\n"
+        "<b>Supported formats:</b>\n"
+        "1. Simple (one key per line):\n"
+        "<code>ABCDE-FGHIJ-KLMNO-PQRST-UVWXY\n"
+        "NETFLIX-COOKIE-1234567890</code>\n\n"
+        "2. Advanced (with details):\n"
+        "<code>KEY_HERE|50|windows|Windows 11 Pro\n"
+        "cookie123|999|netflix|Netflix Premium</code>\n\n"
+        "• Lines starting with # are ignored\n"
+        "• remaining defaults to 999 if not specified\n"
+        "• service_type examples: windows, office, netflix, prime, steam\n\n"
+        "<i>Just send the .txt file now — I’ll import it instantly.</i> 🍃"
+    )
+    await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
+
+
+async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, list[str]]:
+    """Parse TXT — supports both simple keys AND Netflix cookie files"""
+    imported = 0
+    skipped = 0
+    errors = []
+
+    # ── NEW: Netflix cookie file detection ──
+    is_netflix_cookie = (
+        "NetflixId" in content or
+        "hacked by riva-s stealer" in content.lower() or
+        "netflix.com" in content.lower() and "# copy the cookies from here" in content
+    )
+
+    if is_netflix_cookie:
+        # Extract exact cookie block (format 100% preserved)
+        if "# copy the cookies from here :" in content:
+            cookie_block = content.split("# copy the cookies from here :")[-1].strip()
+        else:
+            cookie_block = content.strip()
+
+        # Clean display name from filename
+        display_name = filename.replace(".txt", "").strip()
+        if not display_name or display_name == "unknown":
+            display_name = "Netflix Premium Cookie"
+
+        payload = {
+            "key_id": cookie_block,           # ← full cookie block, exact format
+            "remaining": 999,
+            "service_type": "netflix",
+            "status": "active",
+            "display_name": display_name,
+        }
+
+        success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+        if success:
+            imported += 1
+        else:
+            skipped += 1
+            errors.append("Failed to upsert Netflix cookie")
+        return imported, skipped, errors
+
+    # ── Fallback: old simple/advanced key format (bulk keys) ──
+    for line_num, raw_line in enumerate(content.splitlines(), 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith("//"):
+            continue
+
+        try:
+            if "|" in line:
+                parts = [p.strip() for p in line.split("|")]
+                key_id = parts[0]
+                remaining = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 999
+                service_type = parts[2] if len(parts) > 2 else None
+                display_name = parts[3] if len(parts) > 3 else None
+            else:
+                key_id = line
+                remaining = 999
+                service_type = None
+                display_name = key_id[:20] + "..." if len(key_id) > 20 else key_id
+
+            if not key_id:
+                continue
+
+            payload = {
+                "key_id": key_id,
+                "remaining": remaining,
+                "service_type": service_type,
+                "status": "active",
+                "display_name": display_name,
+            }
+
+            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+            if success:
+                imported += 1
+            else:
+                skipped += 1
+                errors.append(f"Line {line_num}: Failed to upsert")
+
+        except Exception as e:
+            skipped += 1
+            errors.append(f"Line {line_num}: {str(e)[:100]}")
+
+    return imported, skipped, errors
+
+
+async def handle_document(update: Update):
+    """Handles TXT file upload from admin — now supports Netflix cookie files"""
+    message = update.message
+    chat_id = message.chat_id
+    if chat_id != OWNER_ID:
+        return
+
+    document = message.document
+    if not document or document.mime_type != "text/plain":
+        await message.reply_text("❌ Only .txt files are allowed.")
+        return
+
+    filename = document.file_name or "unknown.txt"
+
+    try:
+        file = await document.get_file()
+        file_bytes = await file.download_as_bytearray()
+        content = file_bytes.decode("utf-8")
+    except Exception as e:
+        await message.reply_text(f"❌ Failed to download file: {e}")
+        return
+
+    loading = await message.reply_animation(
+        animation=LOADING_GIF,
+        caption="🌿 <i>Planting new keys in the ancient library...</i>",
+        parse_mode="HTML"
+    )
+
+    imported, skipped, errors = await parse_and_import_keys(content, filename)
+
+    await redis.delete("vamt_cache")   # auto-refresh inventory
+
+    result = (
+        f"✅ <b>Keys Imported Successfully!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"🌱 <b>Imported:</b> {imported} keys\n"
+        f"📦 <b>Skipped:</b> {skipped} keys\n\n"
+        f"🧹 Redis cache flushed — inventory is now fresh!\n\n"
+    )
+    if errors:
+        result += f"⚠️ <b>Errors:</b> {len(errors)} issues"
+
+    await loading.edit_caption(result, parse_mode="HTML")
+
+    if errors:
+        await tg_app.bot.send_message(OWNER_ID, f"🔴 Upload issues:\n\n" + "\n".join(errors[:10]), parse_mode="HTML")
+
 # ──────────────────────────────────────────────
 # MAINTENANCE_MODE CONFIG
 # ──────────────────────────────────────────────
@@ -3154,6 +3314,11 @@ async def process_update(update_data: dict):
         await handle_callback(update)
         return
 
+    # ── DOCUMENT HANDLER (Admin TXT key upload) ──
+    if update.message and update.message.document:
+        await handle_document(update)
+        return
+
     # ── Text messages ──
     if not (update.message and update.message.text):
         return
@@ -3209,6 +3374,9 @@ async def process_update(update_data: dict):
                     pass
 
         await send_initial_welcome(chat_id, first_name)
+
+    elif text.startswith("/uploadkeys"):
+        await handle_uploadkeys_command(chat_id)
 
     elif text.startswith("/addevent"):
         if chat_id != OWNER_ID:
