@@ -40,6 +40,14 @@ CACHE_TTL            = 300
 NETFLIX_ITEMS_PER_PAGE = 8
 MAX_DAILY_REVEALS = 5
 
+DISPLAY_NAME_MAP = {
+    "netflix": "Netflix Cookie",
+    "prime":   "PrimeVideo Cookie",
+    "office":  "Office Key",
+    "windows": "Win Key",
+    "win":     "Win Key",
+}
+
 # ──────────────────────────────────────────────
 # RENDER COLD-START DETECTION (free tier spin-down)
 # ──────────────────────────────────────────────
@@ -404,38 +412,78 @@ async def handle_uploadkeys_command(chat_id: int):
     )
     await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
 
+def detect_service_type(content: str, filename: str) -> tuple[str, str]:
+    """
+    Auto-detects service_type and display_name enum from file content/filename.
+    Returns (service_type, display_name_enum)
+    """
+    content_lower = content.lower()
+    filename_lower = filename.lower()
+
+    # ── Netflix ──
+    if (
+        "netflixid" in content_lower or
+        "netflix.com" in content_lower or
+        "netflix" in filename_lower
+    ):
+        return "netflix", "Netflix Cookie"
+
+    # ── PrimeVideo ──
+    if (
+        "primevideo" in content_lower or
+        "amazon" in content_lower or
+        "prime" in filename_lower or
+        "prime" in content_lower
+    ):
+        return "prime", "PrimeVideo Cookie"
+
+    # ── Office ──
+    if (
+        "office" in filename_lower or
+        "microsoft office" in content_lower or
+        "office" in content_lower
+    ):
+        return "office", "Office Key"
+
+    # ── Windows ──
+    if (
+        "windows" in filename_lower or
+        "win" in filename_lower or
+        "windows" in content_lower
+    ):
+        return "windows", "Win Key"
+
+    # ── Fallback ──
+    return "unknown", "Netflix Cookie"
 
 async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, list[str]]:
-    """Parse TXT — supports both simple keys AND Netflix cookie files"""
     imported = 0
     skipped = 0
     errors = []
 
-    # ── NEW: Netflix cookie file detection ──
-    is_netflix_cookie = (
+    # ── Auto-detect service type from content + filename ──
+    detected_service, detected_display = detect_service_type(content, filename)
+
+    # ── Netflix/Prime cookie file detection ──
+    is_cookie_file = (
         "NetflixId" in content or
         "hacked by riva-s stealer" in content.lower() or
-        "netflix.com" in content.lower() and "# copy the cookies from here" in content
+        ("netflix.com" in content.lower() and "# copy the cookies from here" in content) or
+        ("amazon" in content.lower() and "# copy the cookies from here" in content)
     )
 
-    if is_netflix_cookie:
-        # Extract exact cookie block (format 100% preserved)
+    if is_cookie_file:
         if "# copy the cookies from here :" in content:
             cookie_block = content.split("# copy the cookies from here :")[-1].strip()
         else:
             cookie_block = content.strip()
 
-        # Clean display name from filename
-        display_name = filename.replace(".txt", "").strip()
-        if not display_name or display_name == "unknown":
-            display_name = "Netflix Premium Cookie"
-
         payload = {
-            "key_id": cookie_block,           # ← full cookie block, exact format
-            "remaining": 999,
-            "service_type": "netflix",
-            "status": "active",
-            "display_name": display_name,
+            "key_id":       cookie_block,
+            "remaining":    999,
+            "service_type": detected_service,   # ← auto-detected
+            "status":       "active",
+            "display_name": detected_display,   # ← correct enum value
         }
 
         success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
@@ -443,10 +491,10 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             imported += 1
         else:
             skipped += 1
-            errors.append("Failed to upsert Netflix cookie")
+            errors.append(f"Failed to upsert {detected_service} cookie")
         return imported, skipped, errors
 
-    # ── Fallback: old simple/advanced key format (bulk keys) ──
+    # ── Bulk key format ──
     for line_num, raw_line in enumerate(content.splitlines(), 1):
         line = raw_line.strip()
         if not line or line.startswith("#") or line.startswith("//"):
@@ -455,24 +503,37 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
         try:
             if "|" in line:
                 parts = [p.strip() for p in line.split("|")]
-                key_id = parts[0]
-                remaining = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 999
-                service_type = parts[2] if len(parts) > 2 else None
-                display_name = parts[3] if len(parts) > 3 else None
+                key_id       = parts[0]
+                remaining    = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 999
+                raw_service  = parts[2].lower() if len(parts) > 2 else detected_service
+                
+                # ── Map service type to correct enum ──
+                SERVICE_MAP = {
+                    "netflix":    ("netflix",  "Netflix Cookie"),
+                    "prime":      ("prime",    "PrimeVideo Cookie"),
+                    "primevideo": ("prime",    "PrimeVideo Cookie"),
+                    "office":     ("office",   "Office Key"),
+                    "windows":    ("windows",  "Win Key"),
+                    "win":        ("windows",  "Win Key"),
+                }
+                service_type, display_name = SERVICE_MAP.get(
+                    raw_service,
+                    (detected_service, detected_display)  # fallback to auto-detected
+                )
             else:
-                key_id = line
-                remaining = 999
-                service_type = None
-                display_name = key_id[:20] + "..." if len(key_id) > 20 else key_id
+                key_id       = line
+                remaining    = 999
+                service_type = detected_service
+                display_name = detected_display
 
             if not key_id:
                 continue
 
             payload = {
-                "key_id": key_id,
-                "remaining": remaining,
+                "key_id":       key_id,
+                "remaining":    remaining,
                 "service_type": service_type,
-                "status": "active",
+                "status":       "active",
                 "display_name": display_name,
             }
 
