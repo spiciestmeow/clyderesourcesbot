@@ -3954,7 +3954,31 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/forest"):
         await handle_info(chat_id)
-        
+    elif text.startswith("/resetreferral"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can reset referrals.")
+            return
+        try:
+            target = int(text.split()[1]) if len(text.split()) > 1 else chat_id
+            # Reset pending Redis key
+            del_pending = await redis.delete(f"pending_ref:{target}")
+            # Reset daily limit (if you want)
+            del_daily = await redis.delete(f"referral_daily:{target}")
+            # Delete Supabase record
+            deleted_ref = await _sb_delete(f"referrals?referred_id=eq.{target}")
+
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ <b>Referral fully reset for <code>{target}</code></b>\n\n"
+                f"• pending_ref deleted: {del_pending}\n"
+                f"• referral_daily deleted: {del_daily}\n"
+                f"• Supabase referrals row deleted: {deleted_ref}\n\n"
+                f"Now you can re-test with /start ref_{OWNER_ID} (or any referrer)",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await tg_app.bot.send_message(chat_id, f"❌ Error: {e}")
+            
     elif text.startswith("/health"):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check the system status.")
