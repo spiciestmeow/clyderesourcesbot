@@ -807,6 +807,7 @@ async def _flush_txt_batch(chat_id: int):
         )
 
 async def handle_document(update: Update):
+    """Handle document uploads (.txt or .zip) - Fast single file + Batch for multiple"""
     message = update.message
     chat_id = message.chat_id
     if chat_id != OWNER_ID:
@@ -816,15 +817,20 @@ async def handle_document(update: Update):
     if not document:
         return
 
-    filename = document.file_name or "unknown"
+    filename = document.file_name or "unknown.txt"
     mime = document.mime_type or ""
 
-    # ── Accept .txt and .zip only ──
-    is_txt = mime == "text/plain" or filename.endswith(".txt")
-    is_zip = mime in ("application/zip", "application/x-zip-compressed") or filename.endswith(".zip")
+    # ── Accept only .txt and .zip ──
+    is_txt = mime == "text/plain" or filename.lower().endswith(".txt")
+    is_zip = mime in ("application/zip", "application/x-zip-compressed") or filename.lower().endswith(".zip")
 
     if not is_txt and not is_zip:
         await message.reply_text("❌ Only .txt or .zip files are allowed.")
+        return
+
+    # ── File size limit for stability ──
+    if document.file_size and document.file_size > 50 * 1024 * 1024:  # 50 MB
+        await message.reply_text("❌ File is too large. Maximum allowed is 50 MB.")
         return
 
     try:
@@ -841,12 +847,11 @@ async def handle_document(update: Update):
     )
 
     # ══════════════════════════════════════
-    # ZIP: extract all .txt files inside
+    # ZIP HANDLING (unchanged - bulk)
     # ══════════════════════════════════════
     if is_zip:
         import zipfile
         import io
-
         total_imported = 0
         total_skipped = 0
         all_errors = []
@@ -858,36 +863,23 @@ async def handle_document(update: Update):
                     name for name in zf.namelist()
                     if name.endswith(".txt") and not name.startswith("__MACOSX")
                 ]
-
                 if not txt_files:
-                    await loading.edit_caption(
-                        "❌ No .txt files found inside the ZIP.",
-                        parse_mode="HTML"
-                    )
+                    await loading.edit_caption("❌ No .txt files found inside the ZIP.", parse_mode="HTML")
                     return
 
-                await loading.edit_caption(
-                    f"🌿 <i>Found {len(txt_files)} scrolls inside the archive...</i>",
-                    parse_mode="HTML"
-                )
+                await loading.edit_caption(f"🌿 <i>Found {len(txt_files)} scrolls inside the archive...</i>", parse_mode="HTML")
 
                 for txt_name in txt_files:
                     try:
                         raw_bytes = zf.read(txt_name)
                         content = raw_bytes.decode("utf-8", errors="replace")
-                        basename = txt_name.split("/")[-1]  # strip folder path
-
-                        detected_service, detected_display = detect_service_type(content, basename)
+                        basename = txt_name.split("/")[-1]
                         imported, skipped, errors = await parse_and_import_keys(content, basename)
-
                         total_imported += imported
                         total_skipped += skipped
                         all_errors.extend(errors)
-                        processed_files.append(
-                            f"{'✅' if imported > 0 else '⚠️'} <code>{basename}</code> → "
-                            f"{detected_display} | +{imported} imported"
-                        )
-
+                        icon = "✅" if imported > 0 else "⚠️"
+                        processed_files.append(f"{icon} <code>{basename}</code> → +{imported} imported")
                     except Exception as e:
                         total_skipped += 1
                         all_errors.append(f"❌ {txt_name}: {str(e)[:80]}")
@@ -900,9 +892,9 @@ async def handle_document(update: Update):
             await loading.edit_caption(f"❌ Failed to extract ZIP: {e}")
             return
 
-        # Flush cache once after all files
         await redis.delete("vamt_cache")
 
+        # Build result message
         files_summary = "\n".join(processed_files[:20])
         result = (
             f"✅ <b>ZIP Import Complete!</b>\n"
@@ -916,25 +908,19 @@ async def handle_document(update: Update):
         if len(processed_files) > 20:
             result += f"\n<i>...and {len(processed_files) - 20} more files</i>"
 
-        # Safe Telegram send — chunk if over 4000 chars
-        MAX_CAPTION = 1000  # captions are limited to 1024 chars
-        MAX_MSG = 4000
-
-        if len(result) <= MAX_CAPTION:
+        if len(result) <= 1000:
             await loading.edit_caption(result, parse_mode="HTML")
         else:
-            # Edit caption to a short summary, send details as separate messages
             await loading.edit_caption(
                 f"✅ <b>ZIP Import Complete!</b>\n\n"
-                f"📦 {len(txt_files)} files · 🌱 {total_imported} imported · ⚠️ {total_skipped} skipped\n"
-                f"🧹 Cache refreshed!",
+                f"📦 {len(txt_files)} files · 🌱 {total_imported} imported · ⚠️ {total_skipped} skipped",
                 parse_mode="HTML"
             )
-            # Send full per-file breakdown in chunks
+            # Send detailed breakdown
             chunk = ""
             for line in processed_files:
                 addition = line + "\n"
-                if len(chunk) + len(addition) > MAX_MSG:
+                if len(chunk) + len(addition) > 4000:
                     await tg_app.bot.send_message(OWNER_ID, chunk, parse_mode="HTML")
                     chunk = addition
                 else:
@@ -943,45 +929,50 @@ async def handle_document(update: Update):
                 await tg_app.bot.send_message(OWNER_ID, chunk, parse_mode="HTML")
 
         if all_errors:
-            error_msg = "🔴 <b>ZIP Upload Issues:</b>\n\n" + "\n".join(all_errors[:10])
-            await tg_app.bot.send_message(OWNER_ID, error_msg, parse_mode="HTML")
+            await tg_app.bot.send_message(OWNER_ID, "🔴 <b>ZIP Upload Issues:</b>\n\n" + "\n".join(all_errors[:10]), parse_mode="HTML")
         return
 
     # ══════════════════════════════════════
-    # SINGLE TXT — buffer into batch window
+    # SINGLE TXT FILE - FAST PATH (NEW)
     # ══════════════════════════════════════
     try:
-        content = file_bytes.decode("utf-8")
+        content = file_bytes.decode("utf-8", errors="replace")
     except Exception as e:
-        await message.reply_text(f"❌ Failed to read file: {e}")
+        await loading.edit_caption(f"❌ Failed to read file: {e}", parse_mode="HTML")
         return
 
     detected_service, detected_display = detect_service_type(content, filename)
     imported, skipped, errors = await parse_and_import_keys(content, filename)
     await redis.delete("vamt_cache")
 
-    # Buffer this result into Redis
-    record = json.dumps({
-        "filename": filename,
-        "display":  detected_display,
-        "imported": imported,
-        "skipped":  skipped,
-        "errors":   errors[:5],
-    })
-    await redis.rpush(f"txt_batch:{chat_id}", record)
-    await redis.expire(f"txt_batch:{chat_id}", 30)
+    # Immediate result for single file (no 4-second wait)
+    result = (
+        f"✅ <b>Import Complete!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📄 <b>File:</b> <code>{filename}</code>\n"
+        f"🔍 <b>Detected as:</b> {detected_display}\n\n"
+        f"🌱 <b>Imported:</b> {imported}\n"
+        f"📦 <b>Skipped:</b> {skipped}\n\n"
+        f"🧹 Cache refreshed!"
+    )
 
-    # Delete the loading animation — no result message yet
+    if skipped > 0 and errors:
+        result += f"\n\n⚠️ <b>Skipped Details:</b>\n" + "\n".join([f"• {err}" for err in errors[:6]])
+
     try:
-        await loading.delete()
+        await loading.edit_caption(result, parse_mode="HTML")
     except Exception:
-        pass
+        # Fallback if edit fails
+        await tg_app.bot.send_message(chat_id, result, parse_mode="HTML")
 
-    # Cancel previous flush task, start a fresh 4s countdown
-    task_name = f"txt_flush_{chat_id}_{int(asyncio.get_event_loop().time()*1000)}"
-    await redis.setex(f"txt_batch_task:{chat_id}", 10, task_name)
-    asyncio.create_task(_flush_txt_batch(chat_id), name=task_name)
-
+    # Optional: small success feedback
+    if imported > 0:
+        await asyncio.sleep(0.8)
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✨ Successfully imported <b>{imported}</b> key(s) from <code>{filename}</code>",
+            parse_mode="HTML"
+        )
 # ──────────────────────────────────────────────
 # MAINTENANCE_MODE CONFIG
 # ──────────────────────────────────────────────
