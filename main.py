@@ -2663,18 +2663,27 @@ async def handle_end_event(chat_id: int):
     if chat_id != OWNER_ID:
         return
 
+    event = await get_active_event()
+    if not event:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🌿 <b>No active event to end.</b>\n\nThe forest is already peaceful. 🍃",
+            parse_mode="HTML",
+        )
+        return
+
     ok = await _sb_patch("events?is_active=eq.true", {"is_active": False})
     if ok:
         await tg_app.bot.send_message(
             chat_id,
-            "✅ <b>Event ended!</b>\n\n"
+            "✅ <b>Event ended successfully!</b>\n\n"
             "🌿 The forest has returned to its peaceful state.\n"
             "<i>No active events running.</i> 🍃",
             parse_mode="HTML",
         )
         await redis.delete("active_event")
     else:
-        await tg_app.bot.send_message(chat_id, "ℹ️ No active event found to end.")
+        await tg_app.bot.send_message(chat_id, "❌ Failed to end event.")
 
 async def handle_view_event(chat_id: int):
     event = await get_active_event()
@@ -3049,15 +3058,30 @@ async def handle_reset_first_time(chat_id: int):
 async def handle_confirm_end_event(chat_id: int):
     if chat_id != OWNER_ID:
         return
+
+    # ← NEW: Check if there's actually an active event first
+    event = await get_active_event()
+
+    if not event:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🌿 <b>No active event to end.</b>\n\n"
+            "The forest is already in its peaceful state. 🍃",
+            parse_mode="HTML",
+        )
+        return
+
+    # Only show confirmation if there IS an active event
     confirm_kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✔️ Yes, End Event Now", callback_data="yes_end_event")],
         [InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_end_event")],
     ])
+
     await tg_app.bot.send_message(
         chat_id,
         "⚠️ <b>End Current Event?</b>\n\n"
         "This will immediately remove the event banner for <b>all users</b>.\n"
-        "The forest will return to its normal state.\n\n"
+        "The forest will return to its peaceful state.\n\n"
         "Are you sure?",
         parse_mode="HTML",
         reply_markup=confirm_kb,
