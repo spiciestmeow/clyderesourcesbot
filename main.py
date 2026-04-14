@@ -580,7 +580,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 continue
             payload = {
                 "key_id":       key_id,
-                "remaining":    999,
+                "remaining":    1,
                 "service_type": detected_service,
                 "status":       "active",
                 "display_name": detected_display,
@@ -705,53 +705,159 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     return imported, skipped, errors
 
 async def handle_document(update: Update):
-    """Handles TXT file upload from admin — now supports Netflix cookie files"""
     message = update.message
     chat_id = message.chat_id
     if chat_id != OWNER_ID:
         return
 
     document = message.document
-    if not document or document.mime_type != "text/plain":
-        await message.reply_text("❌ Only .txt files are allowed.")
+    if not document:
         return
 
-    filename = document.file_name or "unknown.txt"
+    filename = document.file_name or "unknown"
+    mime = document.mime_type or ""
+
+    # ── Accept .txt and .zip only ──
+    is_txt = mime == "text/plain" or filename.endswith(".txt")
+    is_zip = mime in ("application/zip", "application/x-zip-compressed") or filename.endswith(".zip")
+
+    if not is_txt and not is_zip:
+        await message.reply_text("❌ Only .txt or .zip files are allowed.")
+        return
 
     try:
         file = await document.get_file()
         file_bytes = await file.download_as_bytearray()
-        content = file_bytes.decode("utf-8")
     except Exception as e:
         await message.reply_text(f"❌ Failed to download file: {e}")
         return
 
     loading = await message.reply_animation(
         animation=LOADING_GIF,
-        caption="🌿 <i>Planting new keys in the ancient library...</i>",
+        caption="🌿 <i>Unpacking the ancient scrolls...</i>",
         parse_mode="HTML"
     )
 
+    # ══════════════════════════════════════
+    # ZIP: extract all .txt files inside
+    # ══════════════════════════════════════
+    if is_zip:
+        import zipfile
+        import io
+
+        total_imported = 0
+        total_skipped = 0
+        all_errors = []
+        processed_files = []
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(bytes(file_bytes))) as zf:
+                txt_files = [
+                    name for name in zf.namelist()
+                    if name.endswith(".txt") and not name.startswith("__MACOSX")
+                ]
+
+                if not txt_files:
+                    await loading.edit_caption(
+                        "❌ No .txt files found inside the ZIP.",
+                        parse_mode="HTML"
+                    )
+                    return
+
+                await loading.edit_caption(
+                    f"🌿 <i>Found {len(txt_files)} scrolls inside the archive...</i>",
+                    parse_mode="HTML"
+                )
+
+                for txt_name in txt_files:
+                    try:
+                        raw_bytes = zf.read(txt_name)
+                        content = raw_bytes.decode("utf-8", errors="replace")
+                        basename = txt_name.split("/")[-1]  # strip folder path
+
+                        detected_service, detected_display = detect_service_type(content, basename)
+                        imported, skipped, errors = await parse_and_import_keys(content, basename)
+
+                        total_imported += imported
+                        total_skipped += skipped
+                        all_errors.extend(errors)
+                        processed_files.append(
+                            f"{'✅' if imported > 0 else '⚠️'} <code>{basename}</code> → "
+                            f"{detected_display} | +{imported} imported"
+                        )
+
+                    except Exception as e:
+                        total_skipped += 1
+                        all_errors.append(f"❌ {txt_name}: {str(e)[:80]}")
+                        processed_files.append(f"❌ <code>{txt_name.split('/')[-1]}</code> → Failed")
+
+        except zipfile.BadZipFile:
+            await loading.edit_caption("❌ Invalid or corrupted ZIP file.")
+            return
+        except Exception as e:
+            await loading.edit_caption(f"❌ Failed to extract ZIP: {e}")
+            return
+
+        # Flush cache once after all files
+        await redis.delete("vamt_cache")
+
+        # Build result message
+        files_summary = "\n".join(processed_files[:15])  # max 15 lines
+        result = (
+            f"✅ <b>ZIP Import Complete!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>Files processed:</b> {len(txt_files)}\n"
+            f"🌱 <b>Total Imported:</b> {total_imported}\n"
+            f"📦 <b>Total Skipped:</b> {total_skipped}\n\n"
+            f"<b>Per-file results:</b>\n{files_summary}\n\n"
+            f"🧹 Cache refreshed!"
+        )
+        if len(processed_files) > 15:
+            result += f"\n<i>...and {len(processed_files) - 15} more files</i>"
+
+        await loading.edit_caption(result, parse_mode="HTML")
+
+        if all_errors:
+            error_msg = "🔴 <b>ZIP Upload Issues:</b>\n\n" + "\n".join(all_errors[:10])
+            await tg_app.bot.send_message(OWNER_ID, error_msg, parse_mode="HTML")
+        return
+
+    # ══════════════════════════════════════
+    # SINGLE TXT file (original behavior)
+    # ══════════════════════════════════════
+    try:
+        content = file_bytes.decode("utf-8")
+    except Exception as e:
+        await message.reply_text(f"❌ Failed to read file: {e}")
+        return
+
+    detected_service, detected_display = detect_service_type(content, filename)
     imported, skipped, errors = await parse_and_import_keys(content, filename)
 
-    await redis.delete("vamt_cache")   # auto-refresh inventory
+    await redis.delete("vamt_cache")
 
     result = (
-        f"✅ <b>Keys Imported Successfully!</b>\n"
+        f"✅ <b>Import Complete!</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"🌱 <b>Imported:</b> {imported} keys\n"
-        f"📦 <b>Skipped:</b> {skipped} keys\n\n"
-        f"🧹 Redis cache flushed — inventory is now fresh!\n\n"
+        f"📄 <b>File:</b> <code>{filename}</code>\n"
+        f"🔍 <b>Detected as:</b> {detected_display}\n\n"
+        f"🌱 <b>Imported:</b> {imported}\n"
+        f"📦 <b>Skipped:</b> {skipped}\n\n"
+        f"🧹 Cache refreshed!\n"
     )
     if skipped > 0 and errors:
-        result += f"⚠️ <b>Skipped Details:</b>\n"
-        for err in errors[:10]:  # show max 10
+        result += f"\n⚠️ <b>Skipped Details:</b>\n"
+        for err in errors[:5]:
             result += f"• {err}\n"
 
     await loading.edit_caption(result, parse_mode="HTML")
 
     if errors:
-        await tg_app.bot.send_message(OWNER_ID, f"🔴 Upload issues:\n\n" + "\n".join(errors[:10]), parse_mode="HTML")
+        await tg_app.bot.send_message(
+            OWNER_ID,
+            "🔴 <b>Upload Issues:</b>\n\n" + "\n".join(errors[:10]),
+            parse_mode="HTML"
+        )
 
 # ──────────────────────────────────────────────
 # MAINTENANCE_MODE CONFIG
