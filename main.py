@@ -38,7 +38,7 @@ MAINTENANCE_MESSAGE = (
 
 CACHE_TTL            = 300
 NETFLIX_ITEMS_PER_PAGE = 8
-MAX_DAILY_REVEALS = 5
+MAX_DAILY_REVEALS = 999
 
 DISPLAY_NAME_MAP = {
     "netflix": "Netflix Cookie",
@@ -461,29 +461,44 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     skipped = 0
     errors = []
 
-    # ── Auto-detect service type from content + filename ──
     detected_service, detected_display = detect_service_type(content, filename)
 
-    # ── Netflix/Prime cookie file detection ──
+    # ══════════════════════════════════════
+    # FORMAT 1 — Cookie file with header block
+    # (any stealer format, any service)
+    # ══════════════════════════════════════
     is_cookie_file = (
         "NetflixId" in content or
-        "hacked by riva-s stealer" in content.lower() or
-        ("netflix.com" in content.lower() and "# copy the cookies from here" in content) or
-        ("amazon" in content.lower() and "# copy the cookies from here" in content)
+        "SecureNetflixId" in content or
+        "hacked by" in content.lower() or
+        "stealer" in content.lower() or
+        ("# copy the cookies from here" in content.lower()) or
+        # Amazon/Prime detection
+        ("amazon.com" in content.lower() and "ubid-main" in content.lower()) or
+        ("primevideo.com" in content.lower())
     )
 
     if is_cookie_file:
-        if "# copy the cookies from here :" in content:
-            cookie_block = content.split("# copy the cookies from here :")[-1].strip()
+        # Try to extract only the cookie block
+        if "# copy the cookies from here" in content.lower():
+            # Find the marker regardless of exact spacing/casing
+            import re
+            match = re.split(r"#\s*copy the cookies from here\s*:?", content, flags=re.IGNORECASE)
+            cookie_block = match[-1].strip() if len(match) > 1 else content.strip()
         else:
+            # No marker — use entire content as cookie
             cookie_block = content.strip()
+
+        if not cookie_block:
+            errors.append(f"❌ {filename}: Cookie block was empty after extraction")
+            return 0, 1, errors
 
         payload = {
             "key_id":       cookie_block,
             "remaining":    999,
-            "service_type": detected_service,   # ← auto-detected
+            "service_type": detected_service,
             "status":       "active",
-            "display_name": detected_display,   # ← correct enum value
+            "display_name": detected_display,
         }
 
         success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
@@ -491,10 +506,153 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             imported += 1
         else:
             skipped += 1
-            errors.append(f"Failed to upsert {detected_service} cookie")
+            errors.append(
+                f"❌ Cookie file skipped\n"
+                f"   File: {filename}\n"
+                f"   Service: {detected_service}\n"
+                f"   Reason: Supabase upsert rejected"
+            )
         return imported, skipped, errors
 
-    # ── Bulk key format ──
+    # ══════════════════════════════════════
+    # FORMAT 2 — JSON format
+    # {"email": "x@x.com", "password": "pass"}
+    # ══════════════════════════════════════
+    stripped = content.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            import json
+            data = json.loads(stripped)
+            if isinstance(data, dict):
+                data = [data]
+
+            for i, item in enumerate(data):
+                # Try to build a cookie-like string from key:value pairs
+                key_id = "\n".join(f"{k}: {v}" for k, v in item.items())
+                payload = {
+                    "key_id":       key_id,
+                    "remaining":    int(item.get("remaining", 999)),
+                    "service_type": item.get("service_type", detected_service),
+                    "status":       "active",
+                    "display_name": detected_display,
+                }
+                success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+                if success:
+                    imported += 1
+                else:
+                    skipped += 1
+                    errors.append(f"❌ JSON item {i+1} skipped: Supabase rejected")
+        except Exception as e:
+            errors.append(f"❌ JSON parse failed: {str(e)[:100]}")
+            skipped += 1
+        return imported, skipped, errors
+
+    # ══════════════════════════════════════
+    # FORMAT 3 — Key:Value block format
+    # Email: x@x.com
+    # Password: pass123
+    # Plan: Premium
+    # ══════════════════════════════════════
+    lines = [l.strip() for l in content.splitlines() if l.strip() and not l.startswith("#")]
+    is_keyvalue = sum(1 for l in lines if ":" in l) > len(lines) * 0.6  # >60% lines have ":"
+
+    if is_keyvalue and not any("|" in l for l in lines):
+        # Group into blocks separated by blank lines
+        blocks = []
+        current = []
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line:
+                if current:
+                    blocks.append(current)
+                    current = []
+            elif not line.startswith("#"):
+                current.append(line)
+        if current:
+            blocks.append(current)
+
+        if not blocks:
+            blocks = [lines]  # treat whole file as one block
+
+        for i, block in enumerate(blocks):
+            key_id = "\n".join(block)
+            if not key_id:
+                continue
+            payload = {
+                "key_id":       key_id,
+                "remaining":    999,
+                "service_type": detected_service,
+                "status":       "active",
+                "display_name": detected_display,
+            }
+            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+            if success:
+                imported += 1
+            else:
+                skipped += 1
+                errors.append(f"❌ Block {i+1} skipped: Supabase rejected")
+        return imported, skipped, errors
+
+    # ══════════════════════════════════════
+    # FORMAT 4 — CSV format
+    # key_id,service,remaining
+    # ABCDE,windows,50
+    # ══════════════════════════════════════
+    if "," in content and "\n" in content:
+        csv_lines = [l.strip() for l in content.splitlines() if l.strip() and not l.startswith("#")]
+        first_line = csv_lines[0].lower() if csv_lines else ""
+        has_header = "key" in first_line or "service" in first_line or "remaining" in first_line
+        data_lines = csv_lines[1:] if has_header else csv_lines
+
+        SERVICE_MAP = {
+            "netflix":    ("netflix",  "Netflix Cookie"),
+            "prime":      ("prime",    "PrimeVideo Cookie"),
+            "primevideo": ("prime",    "PrimeVideo Cookie"),
+            "office":     ("office",   "Office Key"),
+            "windows":    ("windows",  "Win Key"),
+            "win":        ("windows",  "Win Key"),
+        }
+
+        all_pipe = all("|" not in l and "," in l for l in data_lines[:5])
+        if all_pipe or has_header:
+            for line_num, line in enumerate(data_lines, 1):
+                parts = [p.strip() for p in line.split(",")]
+                if not parts[0]:
+                    continue
+                key_id    = parts[0]
+                remaining = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 999
+                raw_svc   = parts[2].lower() if len(parts) > 2 else detected_service
+                svc, disp = SERVICE_MAP.get(raw_svc, (detected_service, detected_display))
+
+                payload = {
+                    "key_id":       key_id,
+                    "remaining":    remaining,
+                    "service_type": svc,
+                    "status":       "active",
+                    "display_name": disp,
+                }
+                success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+                if success:
+                    imported += 1
+                else:
+                    skipped += 1
+                    errors.append(f"❌ CSV line {line_num} skipped: {key_id[:30]}")
+            return imported, skipped, errors
+
+    # ══════════════════════════════════════
+    # FORMAT 5 — Pipe separated OR plain keys
+    # KEY|remaining|service|display
+    # or just: ABCDE-FGHIJ-KLMNO
+    # ══════════════════════════════════════
+    SERVICE_MAP = {
+        "netflix":    ("netflix",  "Netflix Cookie"),
+        "prime":      ("prime",    "PrimeVideo Cookie"),
+        "primevideo": ("prime",    "PrimeVideo Cookie"),
+        "office":     ("office",   "Office Key"),
+        "windows":    ("windows",  "Win Key"),
+        "win":        ("windows",  "Win Key"),
+    }
+
     for line_num, raw_line in enumerate(content.splitlines(), 1):
         line = raw_line.strip()
         if not line or line.startswith("#") or line.startswith("//"):
@@ -502,29 +660,16 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
 
         try:
             if "|" in line:
-                parts = [p.strip() for p in line.split("|")]
+                parts        = [p.strip() for p in line.split("|")]
                 key_id       = parts[0]
                 remaining    = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 999
-                raw_service  = parts[2].lower() if len(parts) > 2 else detected_service
-                
-                # ── Map service type to correct enum ──
-                SERVICE_MAP = {
-                    "netflix":    ("netflix",  "Netflix Cookie"),
-                    "prime":      ("prime",    "PrimeVideo Cookie"),
-                    "primevideo": ("prime",    "PrimeVideo Cookie"),
-                    "office":     ("office",   "Office Key"),
-                    "windows":    ("windows",  "Win Key"),
-                    "win":        ("windows",  "Win Key"),
-                }
-                service_type, display_name = SERVICE_MAP.get(
-                    raw_service,
-                    (detected_service, detected_display)  # fallback to auto-detected
-                )
+                raw_svc      = parts[2].lower() if len(parts) > 2 else detected_service
+                svc, disp    = SERVICE_MAP.get(raw_svc, (detected_service, detected_display))
             else:
-                key_id       = line
-                remaining    = 999
-                service_type = detected_service
-                display_name = detected_display
+                key_id    = line
+                remaining = 999
+                svc       = detected_service
+                disp      = detected_display
 
             if not key_id:
                 continue
@@ -532,9 +677,9 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             payload = {
                 "key_id":       key_id,
                 "remaining":    remaining,
-                "service_type": service_type,
+                "service_type": svc,
                 "status":       "active",
-                "display_name": display_name,
+                "display_name": disp,
             }
 
             success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
@@ -542,14 +687,22 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 imported += 1
             else:
                 skipped += 1
-                errors.append(f"Line {line_num}: Failed to upsert")
+                errors.append(
+                    f"❌ Line {line_num} skipped\n"
+                    f"   Key: {key_id[:30]}...\n"
+                    f"   Service: {svc}\n"
+                    f"   Reason: Supabase upsert rejected"
+                )
 
         except Exception as e:
             skipped += 1
-            errors.append(f"Line {line_num}: {str(e)[:100]}")
+            errors.append(
+                f"❌ Line {line_num} skipped\n"
+                f"   Raw: {line[:30]}...\n"
+                f"   Error: {str(e)[:80]}"
+            )
 
     return imported, skipped, errors
-
 
 async def handle_document(update: Update):
     """Handles TXT file upload from admin — now supports Netflix cookie files"""
@@ -590,8 +743,10 @@ async def handle_document(update: Update):
         f"📦 <b>Skipped:</b> {skipped} keys\n\n"
         f"🧹 Redis cache flushed — inventory is now fresh!\n\n"
     )
-    if errors:
-        result += f"⚠️ <b>Errors:</b> {len(errors)} issues"
+    if skipped > 0 and errors:
+        result += f"⚠️ <b>Skipped Details:</b>\n"
+        for err in errors[:10]:  # show max 10
+            result += f"• {err}\n"
 
     await loading.edit_caption(result, parse_mode="HTML")
 
