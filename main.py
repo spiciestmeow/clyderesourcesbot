@@ -1628,7 +1628,7 @@ def kb_main_menu():
             InlineKeyboardButton("❓ Guidance", callback_data="help"),
             InlineKeyboardButton("ℹ️ Lore",     callback_data="about"),
         ],
-        [InlineKeyboardButton("🌲 Invite Friends • Earn XP", callback_data="invite_friends")],
+        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
     ])
 
@@ -1640,7 +1640,7 @@ def kb_first_time_menu():
         [InlineKeyboardButton("🌿 Check Forest Inventory",  callback_data="check_vamt")],
         [InlineKeyboardButton("🌲 The Whispering Forest",   url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("ℹ️ Lore",                    callback_data="about")],
-        [InlineKeyboardButton("🌲 Invite Friends • Earn XP", callback_data="invite_friends")],
+        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind",  url="https://t.me/caydigitals")],
     ])
 
@@ -1856,6 +1856,9 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     else:
         streak_txt = "🌱 <b>First steps in the forest!</b>"
 
+    # ── NEW: Referral hint (only shown to existing users) ──
+    referral_hint = "\n🌲 Invite friends → +25 XP each!" if not is_first_time else ""
+
     # ── Check for active event ──
     event = await get_active_event()
     event_banner = ""
@@ -1885,7 +1888,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         caption = (
             f"{icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
-            f"{level_info} • {streak_txt}\n"
+            f"{level_info} • {streak_txt}{referral_hint}\n"
             f"{event_banner}"
             "Beneath the whispering ancient trees, many paths lie before you...\n\n"
             "🌱 <b>New wanderer?</b> We recommend starting with <b>Guidance</b> first.\n\n"
@@ -2810,66 +2813,43 @@ async def handle_caretaker(chat_id: int, first_name: str):
 # INVITE HANDLER (used by both /invite and menu button)
 # ──────────────────────────────────────────────
 async def handle_invite(chat_id: int, first_name: str):
-    """Show referral link to caretaker or 'coming soon' to regular users."""
+    """🌲 Full Referral System — now available to everyone"""
     profile = await get_user_profile(chat_id)
     if not profile:
         await tg_app.bot.send_message(chat_id, "🌿 Start your journey first with /start!")
         return
 
-    # ── ONLY THE FOREST CARETAKER gets the real invite link ──
-    if chat_id == OWNER_ID:
-        link = await get_referral_link(chat_id)
-        count = profile.get("referral_count", 0)
+    link = await get_referral_link(chat_id)
+    count = profile.get("referral_count", 0)
 
-        caption = (
-            f"🌲 Your Personal Invite Link\n\n"
-            f"✨ Invite a friend → both get rewards!\n\n"
-            f"🌿 You earn +{REFERRAL_XP} XP per successful referral\n"
-            f"🌱 Friend gets +{NEW_USER_WELCOME_BONUS_IF_REFERRED} XP welcome bonus\n\n"
-            f"🔗 {link}\n\n"
-            f"📊 You have invited {count} wanderers so far\n\n"
-            f"Share the magic of the Enchanted Clearing, {html.escape(first_name)}! 🍃"
-        )
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "🔗 Share Invite Link 🌲",
-                    url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!%0A%0AGet%20premium%20resources%20%2B%20XP%20bonuses%20%F0%9F%8C%BF"
-                )
-            ],
-            [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")]
-        ])
-
-        await tg_app.bot.send_animation(
-            chat_id=chat_id,
-            caption=caption,
-            animation=INVITE_GIF,
-            parse_mode="HTML",
-            reply_markup=keyboard,
-        )
-        return
-
-    # ── REGULAR USERS see the "Coming Soon" message ──
     caption = (
-        f"🌲 The Referral Grove is Still Growing...\n\n"
-        f"Hey {html.escape(first_name)},\n\n"
-        "We’re preparing a beautiful new feature for you:\n\n"
-        "• Bring a new friend → you earn 25 XP Forest Energy\n"
-        "• Your friend gets a +40 XP welcome bonus on their first daily login\n"
-        "• Only counts when they claim their first daily bonus\n"
-        "• Max 8 referrals per day (to keep the forest fair)\n\n"
-        "The ancient trees are quietly preparing this path.\n"
-        "Thank you for your patience, kind wanderer.\n\n"
-        "Something wonderful is growing in the clearing... 🍃✨"
+        f"🌲 <b>Your Personal Invite Link</b>\n\n"
+        f"✨ Invite a friend → both get rewards!\n\n"
+        f"🌿 You earn <b>+{REFERRAL_XP} XP</b> per successful referral\n"
+        f"🌱 Your friend gets <b>+{NEW_USER_WELCOME_BONUS_IF_REFERRED} XP</b> welcome bonus\n\n"
+        f"🔗 <code>{link}</code>\n\n"
+        f"📊 You have invited <b>{count}</b> wanderers so far\n\n"
+        f"Share the magic of the Enchanted Clearing, {html.escape(first_name)}! 🍃"
     )
 
-    await tg_app.bot.send_message(
-        chat_id,
-        caption,
-        parse_mode="HTML"
-    )
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "🔗 Share Invite Link 🌲",
+                url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!%0A%0AGet%20premium%20resources%20%2B%20XP%20bonuses%20%F0%9F%8C%BF"
+            )
+        ],
+        [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")]
+    ])
 
+    await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        caption=caption,
+        animation=INVITE_GIF,
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+    return
 
 async def handle_toggle_maintenance(chat_id: int):
     if chat_id != OWNER_ID:
@@ -3879,8 +3859,14 @@ async def process_update(update_data: dict):
                                 "🌿 Nice try, wanderer!\n\n"
                                 "You can't refer yourself in the forest 🍃\n"
                                 "The trees are watching 👀",
-                                duration=10
+                                duration=8
                             )
+                        )
+                    elif not profile:
+                        await send_temporary_message(
+                            chat_id,
+                            "✨ Someone invited you! You'll get +40 XP on your first daily bonus 🌱",
+                            duration=8
                         )
                 except:
                     pass
