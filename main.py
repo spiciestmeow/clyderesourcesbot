@@ -486,8 +486,25 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             match = re.split(r"#\s*copy the cookies from here\s*:?", content, flags=re.IGNORECASE)
             cookie_block = match[-1].strip() if len(match) > 1 else content.strip()
         else:
-            # No marker — use entire content as cookie
-            cookie_block = content.strip()
+            # Try to extract only Netscape-format cookie lines
+            # These always start with a domain like .netflix.com or .amazon.com
+            COOKIE_DOMAINS = (
+                ".netflix.com",
+                ".amazon.com",
+                ".primevideo.com",
+                ".hotstar.com",
+                ".disneyplus.com",
+                ".hulu.com",
+            )
+            cookie_lines = [
+                line for line in content.splitlines()
+                if line.strip() and line.strip().lower().startswith(COOKIE_DOMAINS)
+            ]
+            if cookie_lines:
+                cookie_block = "\n".join(cookie_lines)
+            else:
+                # No recognizable cookie lines found — fallback to full content
+                cookie_block = content.strip()
 
         if not cookie_block:
             errors.append(f"❌ {filename}: Cookie block was empty after extraction")
@@ -765,6 +782,17 @@ async def _flush_txt_batch(chat_id: int):
             + "\n\n".join(lines) +
             f"\n\n🧹 Cache refreshed!"
         )
+
+    # ── ADD HERE ──
+    all_errors = []
+    for r in records:
+        if r["skipped"] > 0 and r["errors"]:
+            for err in r["errors"]:
+                all_errors.append(f"• {err}")
+
+    if all_errors:
+        result += f"\n\n⚠️ <b>Skipped Details:</b>\n" + "\n".join(all_errors[:10])
+
 
     # Chunk if needed
     if len(result) <= 4000:
