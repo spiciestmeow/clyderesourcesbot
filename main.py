@@ -953,18 +953,18 @@ async def handle_document(update: Update):
     await redis_client.delete("vamt_cache")     
 
     if imported > 0:
-            temp_key = f"pending_broadcast:{chat_id}"
-            
-            existing = await redis_client.get(temp_key)
-            if existing:
-                existing_counts = json.loads(existing)
-                for k, v in added_counts.items():
-                    existing_counts[k] = existing_counts.get(k, 0) + v
-                added_counts = existing_counts
+        temp_key = f"pending_broadcast:{chat_id}"
+        
+        existing = await redis_client.get(temp_key)
+        if existing:
+            existing_counts = json.loads(existing)
+            for k, v in added_counts.items():
+                existing_counts[k] = existing_counts.get(k, 0) + v
+            added_counts = existing_counts
 
-            await redis_client.setex(temp_key, 5, json.dumps(added_counts))
+        await redis_client.setex(temp_key, 15, json.dumps(added_counts))
 
-            asyncio.create_task(_debounced_broadcast(chat_id))
+        asyncio.create_task(_debounced_broadcast(chat_id))
 
     # Immediate result for single file (no 4-second wait)
     result = (
@@ -1154,8 +1154,8 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
 # EVENT COUNTDOWN HELPER (reused in menu + viewevent)
 # ──────────────────────────────────────────────
 async def _debounced_broadcast(chat_id: int):
-    """Wait 5 seconds and send only ONE combined notification"""
-    await asyncio.sleep(5.2)
+    """Wait 3 seconds and send only ONE combined notification"""
+    await asyncio.sleep(3.0)
     temp_key = f"pending_broadcast:{chat_id}"
     
     data = await redis_client.get(temp_key)
