@@ -3,6 +3,7 @@ import json
 import asyncio
 import re
 import json
+import random
 import zipfile
 import io
 import html
@@ -389,7 +390,7 @@ async def handle_flushcache(chat_id: int):
         )
 
 async def broadcast_new_resources(added_counts: dict):
-    """Ultra-clean, more reliable notification-bar-only broadcast"""
+    """Flash notification (push only) — message is deleted after delivery"""
     if not added_counts or not any(added_counts.values()):
         return
 
@@ -400,7 +401,7 @@ async def broadcast_new_resources(added_counts: dict):
     service_names = DISPLAY_NAME_MAP.copy()
     service_names["steam"] = "Steam Account"
 
-    # Build one clean line
+    # Build clean message
     parts = []
     for svc, count in added_counts.items():
         if count > 0:
@@ -430,11 +431,13 @@ async def broadcast_new_resources(added_counts: dict):
             break
         offset += limit
 
-    print(f"📣 Notification-bar broadcast started → {len(all_users)} users")
+    print(f"📣 Flash broadcast started → {len(all_users)} users")
 
     sem = asyncio.Semaphore(20)
+    success_count = 0
 
     async def safe_notify(uid: int):
+        nonlocal success_count
         async with sem:
             try:
                 msg = await tg_app.bot.send_message(
@@ -446,30 +449,33 @@ async def broadcast_new_resources(added_counts: dict):
                     protect_content=True
                 )
                 
-                # ← INCREASED TO 2.3 SECONDS (most reliable)
-                await asyncio.sleep(2.3)
+                # 🔥 FIXED: 7.5 seconds + small random jitter
+                # This gives Telegram enough time to deliver the push on almost all devices
+                await asyncio.sleep(7.5 + random.uniform(0.0, 1.0))
                 
                 await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
-                print(f"   ✓ Notified & cleaned: {uid}")
+                success_count += 1
+                print(f"   ✓ Push delivered & cleaned: {uid}")
                 
             except Exception as e:
-                print(f"   ⚠️ Notification failed for {uid}: {e}")
-                pass
+                print(f"   ⚠️ Push failed for {uid}: {e}")
 
+    # Run the broadcast
     await asyncio.gather(*(safe_notify(int(u.get("chat_id"))) for u in all_users), return_exceptions=True)
 
-    # Owner summary
+    # Owner summary with REAL success rate
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
             f"📣 <b>Notification Broadcast Sent</b>\n\n"
             f"{final_line}\n\n"
-            f"👥 Reached <b>{len(all_users)}</b> wanderers",
+            f"👥 Reached <b>{len(all_users)}</b> wanderers\n"
+            f"✅ Push delivered to <b>{success_count}</b> users",
             parse_mode="HTML",
         )
     except:
         pass
-
+    
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN KEY UPLOAD (TXT → Supabase vamt_keys)
 # ══════════════════════════════════════════════════════════════════════════════
