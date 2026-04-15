@@ -1035,15 +1035,17 @@ async def get_bot_uptime() -> str:
         raw = config.get("last_updated", "").strip()
         if not raw or raw == "Not set yet":
             return "Not set yet 🌱"
-        clean = raw.replace("•", "·").strip()
+        
+        # Support both · and - separator
+        clean = raw.replace("•", "·").replace("-", "·").strip()
         dt = datetime.strptime(clean, "%B %d, %Y · %I:%M %p")
         dt = pytz.timezone("Asia/Manila").localize(dt)
+        
         delta = datetime.now(pytz.timezone("Asia/Manila")) - dt
         total_h = delta.days * 24 + delta.seconds // 3600
-        mins    = (delta.seconds % 3600) // 60
+        mins = (delta.seconds % 3600) // 60
         return f"{total_h}h {mins}m"
-    except Exception as e:
-        print(f"⚠️ Uptime error: {e}")
+    except Exception:
         return "Unknown 🌿"
 
 
@@ -4351,7 +4353,7 @@ async def process_update(update_data: dict):
         custom_datetime = f"{date_str} · {time_str}"
 
         await set_bot_info(version, custom_datetime, chat_id)
-        
+
     elif text.startswith("/addupdate"):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the caretaker can add updates.")
