@@ -1,22 +1,21 @@
 import os
 import json
 import asyncio
-import html
-from collections import Counter
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
-from io import BytesIO
-
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 import re
 import json
 import zipfile
 import io
+import html
 import httpx
 import pytz
 import redis.asyncio as aioredis
+from collections import Counter
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from io import BytesIO
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.responses import PlainTextResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -131,7 +130,7 @@ INVITE_GIF = "https://images.gr-assets.com/hostedimages/1489696457ra/22241153.gi
 # ══════════════════════════════════════════════════════════════════════════════
 tg_app: Application = None
 http:   httpx.AsyncClient = None
-redis:  aioredis.Redis = None
+redis_client: aioredis.Redis = None
 db_sem  = asyncio.Semaphore(10)   # cap concurrent Supabase calls
 forest_memory: dict[int, list[int]] = {}  # fallback only — Redis is primary
 BOT_START_TIME = datetime.now(pytz.utc)
@@ -142,7 +141,7 @@ BOT_USERNAME: str | None = None
 # ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global tg_app, http, redis
+    global tg_app, http, redis_client
 
     # Shared HTTP connection pool (20 connections max)
     http = httpx.AsyncClient(
@@ -151,8 +150,7 @@ async def lifespan(app: FastAPI):
     )
 
     # Redis for cooldowns + VAMT cache
-    redis = aioredis.from_url(REDIS_URL, decode_responses=True)
-
+    redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
     # Telegram application
     tg_app = Application.builder().token(TOKEN).build()
     await tg_app.initialize()
@@ -171,7 +169,7 @@ async def lifespan(app: FastAPI):
     await tg_app.stop()
     await tg_app.shutdown()
     await http.aclose()
-    await redis.aclose()
+    await redis_client.aclose()
     print("🌿 Bot shut down cleanly")
 
 app = FastAPI(lifespan=lifespan)
@@ -325,7 +323,7 @@ async def _sb_delete(path: str) -> bool:
 # VAMT CACHE  (Redis)
 # ──────────────────────────────────────────────
 async def get_vamt_data() -> list | None:
-    cached = await redis.get("vamt_cache")
+    cached = await redis_client.get("vamt_cache")
     if cached:
         print("⚡ [CACHE] VAMT from Redis")
         return json.loads(cached)
@@ -333,7 +331,7 @@ async def get_vamt_data() -> list | None:
     print("📡 [SUPABASE] Fetching fresh VAMT data…")
     data = await _sb_get("vamt_keys", select="*", order="service_type.asc")
     if data is not None:
-        await redis.setex("vamt_cache", CACHE_TTL, json.dumps(data))
+        await redis_client.setex("vamt_cache", CACHE_TTL, json.dumps(data))
         print(f"✅ VAMT cached — {len(data)} items")
     else:
         print("🔴 Supabase returned nothing for vamt_keys")
@@ -370,7 +368,7 @@ async def handle_flushcache(chat_id: int):
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can refresh the forest cache.")
         return
 
-    deleted = await redis.delete("vamt_cache")
+    deleted = await redis_client.delete("vamt_cache")
     if deleted:
         await tg_app.bot.send_message(
             chat_id,
@@ -722,92 +720,6 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
 
     return imported, skipped, errors
 
-# ── TXT BATCH ACCUMULATOR (Redis-backed, 3s window) ──────────────────────────
-TXT_BATCH_TTL = 4  # seconds to wait for more files before flushing
-
-async def _flush_txt_batch(chat_id: int):
-    """Called after TXT_BATCH_TTL seconds of no new uploads — sends one combined result."""
-    await asyncio.sleep(TXT_BATCH_TTL)
-
-    # Check if we're still the latest flush task
-    task_id = await redis.get(f"txt_batch_task:{chat_id}")
-    task = asyncio.current_task()
-    my_id = str(task.get_name()) if task else ""
-    if task_id != my_id:
-        return  # a newer file arrived, a newer task will flush
-
-    # Collect all buffered results
-    raw = await redis.lrange(f"txt_batch:{chat_id}", 0, -1)
-    await redis.delete(f"txt_batch:{chat_id}")
-    await redis.delete(f"txt_batch_task:{chat_id}")
-
-    if not raw:
-        return
-
-    records = [json.loads(r) for r in raw]
-    total_imported = sum(r["imported"] for r in records)
-    total_skipped  = sum(r["skipped"]  for r in records)
-
-    if len(records) == 1:
-        # Single file — original one-message format
-        r = records[0]
-        result = (
-            f"✅ <b>Import Complete!</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"📄 <b>File:</b> <code>{r['filename']}</code>\n"
-            f"🔍 <b>Detected as:</b> {r['display']}\n\n"
-            f"🌱 <b>Imported:</b> {r['imported']}\n"
-            f"📦 <b>Skipped:</b> {r['skipped']}\n\n"
-            f"🧹 Cache refreshed!\n"
-        )
-        if r["skipped"] > 0 and r["errors"]:
-            result += f"\n⚠️ <b>Skipped Details:</b>\n"
-            for err in r["errors"][:5]:
-                result += f"• {err}\n"
-    else:
-        # Multiple files — combined summary
-        lines = []
-        for r in records:
-            icon = "✅" if r["imported"] > 0 else "⚠️"
-            lines.append(
-                f"{icon} <code>{r['filename']}</code>\n"
-                f"   → {r['display']} · +{r['imported']} imported"
-                + (f" · {r['skipped']} skipped" if r["skipped"] else "")
-            )
-
-        result = (
-            f"✅ <b>Batch Import Complete!</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"📁 <b>Files:</b> {len(records)}\n"
-            f"🌱 <b>Total Imported:</b> {total_imported}\n"
-            f"📦 <b>Total Skipped:</b> {total_skipped}\n\n"
-            + "\n\n".join(lines) +
-            f"\n\n🧹 Cache refreshed!"
-        )
-
-    # ── ADD HERE ──
-    all_errors = []
-    for r in records:
-        if r["skipped"] > 0 and r["errors"]:
-            for err in r["errors"]:
-                all_errors.append(f"• {err}")
-
-    if all_errors:
-        result += f"\n\n⚠️ <b>Skipped Details:</b>\n" + "\n".join(all_errors[:10])
-
-
-    # Chunk if needed
-    if len(result) <= 4000:
-        await tg_app.bot.send_message(chat_id, result, parse_mode="HTML")
-    else:
-        await tg_app.bot.send_message(
-            chat_id,
-            f"✅ <b>Batch Import Complete!</b>\n\n"
-            f"📁 {len(records)} files · 🌱 {total_imported} imported · ⚠️ {total_skipped} skipped\n"
-            f"🧹 Cache refreshed!",
-            parse_mode="HTML"
-        )
-
 async def handle_document(update: Update):
     """Handle document uploads (.txt or .zip) - Fast single file + Batch for multiple"""
     message = update.message
@@ -892,7 +804,7 @@ async def handle_document(update: Update):
             await loading.edit_caption(f"❌ Failed to extract ZIP: {e}")
             return
 
-        await redis.delete("vamt_cache")
+        await redis_client.delete("vamt_cache")
 
         # Build result message
         files_summary = "\n".join(processed_files[:20])
@@ -943,7 +855,7 @@ async def handle_document(update: Update):
 
     detected_service, detected_display = detect_service_type(content, filename)
     imported, skipped, errors = await parse_and_import_keys(content, filename)
-    await redis.delete("vamt_cache")
+    await redis_client.delete("vamt_cache")
 
     # Immediate result for single file (no 4-second wait)
     result = (
@@ -977,19 +889,19 @@ async def handle_document(update: Update):
 # MAINTENANCE_MODE CONFIG
 # ──────────────────────────────────────────────
 async def get_maintenance_mode() -> bool:
-    val = await redis.get("maintenance_mode")
+    val = await redis_client.get("maintenance_mode")
     return val == "1"
 
 async def set_maintenance_mode(enabled: bool):
-    await redis.set("maintenance_mode", "1" if enabled else "0")
+    await redis_client.set("maintenance_mode", "1" if enabled else "0")
 
 async def has_seen_winoffice_guide(chat_id: int) -> bool:
     # Returns True if this user has already seen the guide
-    return bool(await redis.get(f"seen_winoffice_guide:{chat_id}"))
+    return bool(await redis_client.get(f"seen_winoffice_guide:{chat_id}"))
 
 async def mark_winoffice_guide_seen(chat_id: int):
     # Permanently marks guide as seen — no TTL, never expires
-    await redis.set(f"seen_winoffice_guide:{chat_id}", 1)
+    await redis_client.set(f"seen_winoffice_guide:{chat_id}", 1)
 
 # ──────────────────────────────────────────────
 # BOT CONFIG
@@ -1173,14 +1085,14 @@ async def check_xp_cooldown(chat_id: int, action: str) -> bool:
     Returns True if XP is allowed, False if still on cooldown."""
     seconds = COOLDOWN_SECONDS.get(action, 8)
     key = f"xpcd:{chat_id}:{action}"
-    if await redis.exists(key):
+    if await redis_client.exists(key):
         return False
-    await redis.setex(key, seconds, 1)
+    await redis_client.setex(key, seconds, 1)
     return True
 
 async def check_rate_limit(chat_id: int) -> bool:
     key = f"rl:{chat_id}"
-    pipe = redis.pipeline()
+    pipe = redis_client.pipeline()
     pipe.incr(key)
     pipe.expire(key, 60)
     results = await pipe.execute()
@@ -1202,7 +1114,7 @@ async def try_consume_reveal_cap(chat_id: int, service_type: str) -> bool:
     ttl = int((midnight - now).total_seconds())
 
     # Execute Lua script atomically
-    result = await redis.eval(
+    result = await redis_client.eval(
         REVEAL_CAP_SCRIPT,
         1,                    # number of keys
         key,                  # KEYS[1]
@@ -1225,7 +1137,7 @@ async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tu
     # ATOMIC: only one concurrent request wins this SET
     # nx=True means "only set if key does NOT exist"
     # If the key already exists, set() returns None → bonus already claimed
-    claimed = await redis.set(key, 1, ex=ttl, nx=True)
+    claimed = await redis_client.set(key, 1, ex=ttl, nx=True)
     if not claimed:
         return 0, ""  # already claimed today — bonus not available
 
@@ -1258,15 +1170,15 @@ async def store_pending_referral(new_chat_id: int, referrer_id: int) -> bool:
     """Store pending referral. Returns True if stored, False if self-referral."""
     if referrer_id == new_chat_id:
         return False
-    await redis.setex(f"pending_ref:{new_chat_id}", 86400, str(referrer_id))
+    await redis_client.setex(f"pending_ref:{new_chat_id}", 86400, str(referrer_id))
     return True
 
 
 async def get_pending_referrer(chat_id: int) -> int | None:
     key = f"pending_ref:{chat_id}"
-    val = await redis.get(key)
+    val = await redis_client.get(key)
     if val:
-        await redis.delete(key)
+        await redis_client.delete(key)
         return int(val)
     return None
 
@@ -1279,7 +1191,7 @@ async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name
     midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     ttl = int((midnight - now).total_seconds())
 
-    count = await redis.get(key) or "0"
+    count = await redis_client.get(key) or "0"
     if int(count) >= MAX_REFERRALS_PER_DAY:
         return
 
@@ -1311,7 +1223,7 @@ async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name
     })
 
     if ok:
-        await redis.setex(key, ttl, int(count) + 1)
+        await redis_client.setex(key, ttl, int(count) + 1)
         await _log_xp_history(
             referrer_id, "Forest Wanderer", "referral", REFERRAL_XP,
             old_xp, new_xp, old_level, new_level
@@ -1338,7 +1250,7 @@ async def _try_award_referral(chat_id: int):
     lock_key = f"ref_awarding:{chat_id}"
     # nx=True: only one concurrent task can process this referral
     # ex=60: lock expires after 60s so it's not permanently stuck on crash
-    lock = await redis.set(lock_key, 1, ex=60, nx=True)
+    lock = await redis_client.set(lock_key, 1, ex=60, nx=True)
     if not lock:
         return  # another task is already processing this referral
 
@@ -1365,7 +1277,7 @@ async def _try_award_referral(chat_id: int):
         # Now safely give XP — worst case: marked but no XP (not re-awardable)
         await award_referral_bonus(referrer_id, chat_id, new_name)
     finally:
-        await redis.delete(lock_key)
+        await redis_client.delete(lock_key)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
@@ -1498,7 +1410,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
 
         if daily_bonus > 0:
             if ok:
-                await redis.delete(f"streak:{chat_id}")
+                await redis_client.delete(f"streak:{chat_id}")
                 asyncio.create_task(_announce_daily_bonus(chat_id, daily_bonus, daily_label))
                 asyncio.create_task(
                     _log_xp_history(
@@ -1508,7 +1420,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
                 )
                 asyncio.create_task(_try_award_referral(chat_id))
             else:
-                await redis.delete(f"daily_bonus:{chat_id}")
+                await redis_client.delete(f"daily_bonus:{chat_id}")
 
         # ✅ prev = base, new = after action only — not inflated by bonus
         if action_xp > 0:
@@ -1588,7 +1500,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
                 asyncio.create_task(_try_award_referral(chat_id))
                 xp_cursor += daily_bonus
             else:
-                await redis.delete(f"daily_bonus:{chat_id}")
+                await redis_client.delete(f"daily_bonus:{chat_id}")
 
         if action_xp > 0 and ok:
             asyncio.create_task(
@@ -1820,8 +1732,8 @@ async def _announce_daily_bonus(chat_id: int, bonus: int, label: str):
 
 async def _remember(chat_id: int, message_id: int):
     try:
-        await redis.lpush(f"mem:{chat_id}", message_id)
-        await redis.expire(f"mem:{chat_id}", 86400)  # 24 hours TTL
+        await redis_client.lpush(f"mem:{chat_id}", message_id)
+        await redis_client.expire(f"mem:{chat_id}", 86400)  # 24 hours TTL
     except Exception as e:
         print(f"⚠️ Redis remember failed: {e}")
         forest_memory.setdefault(chat_id, []).append(message_id)  # fallback to RAM
@@ -1832,7 +1744,7 @@ async def _remember(chat_id: int, message_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 async def calculate_streak(chat_id: int) -> int:
     # ── Check Redis cache first ──
-    cached = await redis.get(f"streak:{chat_id}")
+    cached = await redis_client.get(f"streak:{chat_id}")
     if cached is not None:
         return int(cached)
 
@@ -1863,7 +1775,7 @@ async def calculate_streak(chat_id: int) -> int:
             continue
             
     # ── Cache result for 5 minutes ──
-    await redis.setex(f"streak:{chat_id}", 300, streak)
+    await redis_client.setex(f"streak:{chat_id}", 300, streak)
     return streak
 
 
@@ -1894,7 +1806,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     title      = get_level_title(level)
     level_info = f"🏷️ {title} • ⭐ Level {level}"
     if profile:
-        await redis.delete(f"streak:{chat_id}")
+        await redis_client.delete(f"streak:{chat_id}")
     streak = await calculate_streak(chat_id) if profile else 0
     if streak >= 2:
         streak_txt = f"🔥 <b>{streak}-day streak!</b> The forest fire burns bright!"
@@ -2026,13 +1938,16 @@ async def show_paginated_cookie_list(
     data = await get_vamt_data()
 
     if not data:
+        try:
+            await loading.delete()
+        except Exception:
+            pass
         await send_supabase_error(chat_id)
         await query.message.edit_caption(
             "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
             parse_mode="HTML",
             reply_markup=kb_back_inventory(),
         )
-        await loading.delete()
         return
 
     filtered = [
@@ -2116,42 +2031,16 @@ async def show_paginated_cookie_list(
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
 
-    # Prevent button spam on reveal
-    spam_key = f"reveal_spam:{chat_id}:{service_type}"
-    if await redis.exists(spam_key):
-        await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
-        return
-    await redis.setex(spam_key, 3, 1)
-    
-    if not await try_consume_reveal_cap(chat_id, service_type):
-        await query.answer(
-            "🌿 You've revealed enough cookies for today.\n"
-            "The forest needs to rest — come back tomorrow! 🍃",
-            show_alert=True
-        )
-        return
-    
-    loading = await send_loading(
-        chat_id,
-        f"{emoji} <i>Searching deep within the glowing glade for your cookie...</i>"
-    )
-        
-    await asyncio.sleep(1.3)
-    await loading.edit_caption(
-        f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
-        parse_mode="HTML"
-    )
-    await asyncio.sleep(1.5)
-
+    # ── Validate data BEFORE touching the cap ──
     profile = await get_user_profile(chat_id)
     user_level = profile.get("level", 1) if profile else 1
-    event      = await get_active_event()  
-    max_items  = get_max_items(service_type, user_level, event)
+    event = await get_active_event()
+    max_items = get_max_items(service_type, user_level, event)
     data = await get_vamt_data()
+
     if not data:
         await query.answer("🌫️ The forest is unreachable right now. Please try again shortly.", show_alert=True)
-        await loading.delete()
-        return
+        return 
 
     filtered = [
         item for item in data
@@ -2164,24 +2053,50 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         filtered = filtered[-max_items:]
     else:
         filtered = filtered[:max_items]
-
+        
     if idx < 1 or idx > len(filtered):
         await query.answer("❌ Cookie no longer available", show_alert=True)
-        await loading.delete()
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
 
     item = filtered[idx - 1]
     if str(item.get("status", "")).lower() != "active" or int(item.get("remaining", 0)) <= 0:
         await query.answer("⚠️ This cookie has expired.", show_alert=True)
-        await loading.delete()
         await show_paginated_cookie_list(service_type, chat_id, query, page)
         return
+
+    # ── Spam guard ──
+    spam_key = f"reveal_spam:{chat_id}:{service_type}"
+    if await redis_client.exists(spam_key):
+        await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
+        return
+    await redis_client.setex(spam_key, 3, 1)
+    
+    # ── Consume cap — item is confirmed valid ──
+    if not await try_consume_reveal_cap(chat_id, service_type):
+        await query.answer(
+            "🌿 You've revealed enough cookies for today.\n"
+            "The forest needs to rest — come back tomorrow! 🍃",
+            show_alert=True
+        )
+        return
+    
+    # ── Show loading (cap is now committed) ──
+    loading = await send_loading(
+        chat_id,
+        f"{emoji} <i>Searching deep within the glowing glade for your cookie...</i>"
+    )
+        
+    await asyncio.sleep(1.3)
+    await loading.edit_caption(
+        f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
+        parse_mode="HTML"
+    )
+    await asyncio.sleep(1.5)
 
     # ── Validate item is still good FIRST ──
     cookie = str(item.get("key_id", "")).strip()
     display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
-
     action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
 
     caption = (
@@ -2214,7 +2129,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
     file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
 
     # Store key_id in Redis so we can retrieve it from the short idx reference
-    await redis.setex(f"reveal_key:{chat_id}:{service_type}:{idx}", 3600, cookie)
+    await redis_client.setex(f"reveal_key:{chat_id}:{service_type}:{idx}", 3600, cookie)
 
     kb = InlineKeyboardMarkup([
         [
@@ -2241,11 +2156,18 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         )
     except Exception as e:
         await query.answer("🌿 Delivery failed, please try again.", show_alert=True)
-        await loading.delete()
+        try:
+            await loading.delete()
+        except Exception:
+            pass
         print(f"🔴 Document send failed for {chat_id}: {e}")
+        # Safe refund: cap was consumed but delivery failed
+        key = f"daily_reveals:{chat_id}:{service_type}"
+        current = await redis_client.get(key)
+        if current and int(current) > 0:
+            await redis_client.decr(key)
         return
-    
-    # Cleanup loading
+
     try:
         await loading.delete()
     except Exception:
@@ -2257,7 +2179,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
     # Store message ID for later cleanup
-    await redis.setex(
+    await redis_client.setex(
         f"reveal_msg:{chat_id}:{service_type}",
         3600,
         str(doc_msg.message_id)
@@ -2265,8 +2187,8 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 
     # Optional success message (auto-deletes)
     asyncio.create_task(send_temporary_message(
-            chat_id, f"✨ <i>{display_name} successfully delivered!</i>", duration=3
-        ))
+        chat_id, f"✨ <i>{display_name} successfully delivered!</i>", duration=3
+    ))
 
     try:
         await query.message.delete()
@@ -2394,19 +2316,11 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     title_str   = get_level_title(level)
 
     manila = pytz.timezone("Asia/Manila")
-    today_start_utc = (
-        datetime.now(manila)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .astimezone(pytz.utc)
+    today_utc = (
+        datetime.now(manila).replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     )
 
-    def _parse_dt(s: str):
-        try:
-            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-            return dt.astimezone(pytz.utc)  # normalize to pytz.utc explicitly
-        except Exception:
-            return None
-        
     # ── single Supabase call, everything filtered in Python ──
     all_logs = await _sb_get(
         "xp_history",
@@ -2433,7 +2347,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     # xp earned today (filter in Python)
     xp_today = sum(
         r.get("xp_earned", 0) for r in all_logs
-        if (dt := _parse_dt(r.get("created_at", ""))) and dt >= today_start_utc
+        if r.get("created_at", "") >= today_utc
     )
 
     streak = await calculate_streak(chat_id)
@@ -2564,8 +2478,8 @@ async def handle_leaderboard(chat_id: int):
 async def handle_feedback(chat_id: int, first_name: str, feedback_text: str):
     # ── Rate limit: 3 per day ──
     key = f"feedback_limit:{chat_id}"
-    count = await redis.incr(key)
-    await redis.expire(key, 86400)  # 24 hours
+    count = await redis_client.incr(key)
+    await redis_client.expire(key, 86400)  # 24 hours
 
     if count > 3:
         await tg_app.bot.send_message(
@@ -2674,14 +2588,14 @@ async def handle_updates(chat_id: int):
 # EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
 async def get_active_event() -> dict | None:
-    cached = await redis.get("active_event")
+    cached = await redis_client.get("active_event")
     if cached:
         result = json.loads(cached)
     else:
         data = await _sb_get("events", **{"is_active": "eq.true", "order": "created_at.desc", "limit": 1})
         result = data[0] if data else None
         if result:
-            await redis.setex("active_event", 300, json.dumps(result))
+            await redis_client.setex("active_event", 300, json.dumps(result))
 
     if result:
         # ── Auto-expire check ──
@@ -2692,7 +2606,7 @@ async def get_active_event() -> dict | None:
             expires_at = event_dt + timedelta(days=1)
             if datetime.now(manila) >= expires_at:
                 await _sb_patch("events?is_active=eq.true", {"is_active": False})
-                await redis.delete("active_event")
+                await redis_client.delete("active_event")
                 return None
         except Exception:
             pass  # unparseable date — just show event normally
@@ -2724,7 +2638,7 @@ async def handle_add_event(chat_id: int, title: str, description: str, event_dat
             f"<i>Event is now live and visible to all wanderers.</i> 🌿",
             parse_mode="HTML",
         )
-        await redis.delete("active_event")
+        await redis_client.delete("active_event")
     else:
         await tg_app.bot.send_message(chat_id, "❌ Failed to save event.")
     
@@ -2750,7 +2664,7 @@ async def handle_end_event(chat_id: int):
             "<i>No active events running.</i> 🍃",
             parse_mode="HTML",
         )
-        await redis.delete("active_event")
+        await redis_client.delete("active_event")
     else:
         await tg_app.bot.send_message(chat_id, "❌ Failed to end event.")
 
@@ -2932,8 +2846,8 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
 
     # ── fetch from Redis first, fallback to RAM ──
     try:
-        message_ids = await redis.lrange(f"mem:{chat_id}", 0, -1)
-        await redis.delete(f"mem:{chat_id}")
+        message_ids = await redis_client.lrange(f"mem:{chat_id}", 0, -1)
+        await redis_client.delete(f"mem:{chat_id}")
     except Exception as e:
         print(f"⚠️ Redis clear failed: {e}")
         message_ids = forest_memory.get(chat_id, [])
@@ -2967,9 +2881,9 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
 async def handle_status(chat_id: int):
     async def check_redis():
         try:
-            info = await asyncio.wait_for(redis.info("memory"), timeout=3.0)
+            info = await asyncio.wait_for(redis_client.info("memory"), timeout=3.0)
             used = round(info["used_memory"] / 1024 / 1024, 2)
-            key_count = await asyncio.wait_for(redis.dbsize(), timeout=3.0)
+            key_count = await asyncio.wait_for(redis_client.dbsize(), timeout=3.0)
             return f"✅ OK ({used} MB, {key_count} keys)"
         except Exception as e:
             return f"❌ {e}"
@@ -3195,6 +3109,10 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         ]
 
     if not filtered:
+        try:
+            await loading.delete()
+        except Exception:
+            pass
         await query.message.edit_caption(
             caption=f"🍃 No {cat_label} keys available right now. Check back later!",
             parse_mode="HTML",
@@ -3229,7 +3147,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         svc = str(item.get("service_type", pending_cat)).strip()
         short = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
         token = f"{chat_id}:{raw_key[:40]}"
-        await redis.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
+        await redis_client.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
         buttons.append([
             InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
             InlineKeyboardButton(f"❌", callback_data=f"wkfb_bad|{token}"),
@@ -3485,6 +3403,8 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
 
 async def handle_callback(update: Update):
     query     = update.callback_query
+    if not query or not query.data:
+        return
     chat_id   = update.effective_chat.id
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
     data      = query.data
@@ -3622,11 +3542,13 @@ async def handle_callback(update: Update):
             "office": "view_office", "netflix": "view_netflix", "prime": "view_prime",
         }
 
-        action = action_map.get(category)
-        if action:
-            action_xp, _ = await add_xp(chat_id, first_name, action)
-            if action_xp:
-                asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+        # Only award XP immediately for netflix/prime/steam — win/office handles it later
+        if category not in ("win", "windows", "office"):
+            action = action_map.get(category)
+            if action:
+                action_xp, _ = await add_xp(chat_id, first_name, action)
+                if action_xp:
+                    asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
         await query.message.edit_caption(
             caption=f"✨ <i>Searching the glade for {category.upper()}...</i>", parse_mode="HTML"
@@ -3657,31 +3579,35 @@ async def handle_callback(update: Update):
         
         # ── NEW: First-time guide for Windows / Office ──────────────────
         if category in ("win", "windows", "office"):
-            if not await has_seen_winoffice_guide(chat_id):
-                cat_label = "Windows" if category in ("win", "windows") else "Office"
-                cat_emoji = "🪟" if category in ("win", "windows") else "📑"
-
-                await redis.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
-        
-                await query.message.edit_caption(
-                    caption=(
-                        f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
-                        "━━━━━━━━━━━━━━━━━━\n\n"
-                        "🔵 <b>What is a VAMT Key?</b>\n"
-                        "It is a <b>Volume Activation</b> key. Instead of a standard code that only works for one person, these are official Microsoft keys designed to activate multiple PCs. We share them so everyone in the clearing can benefit.\n\n"
-                        "━━━━━━━━━━━━━━━━━━\n\n"
-                        "📦 <b>What does \"Remaining\" mean?</b>\n"
-                        "Because these keys are shared, they have a strict activation limit.\n\n"
-                        "• <b>Remaining: 5</b> = Works on exactly 5 more devices.\n"
-                        "• <b>Remaining: 0</b> = The key is fully exhausted.\n\n"
-                        "<i>Apply them swiftly! The highest remaining keys vanish fast.</i> 🍃\n\n"
-                        "━━━━━━━━━━━━━━━━━━"
-                    ),
-                    parse_mode="HTML",
-                    reply_markup=kb_winoffice_guide(),
-                )
-                return
-            else:
+                seen = await has_seen_winoffice_guide(chat_id)
+                if not seen:
+                    cat_label = "Windows" if category in ("win", "windows") else "Office"
+                    cat_emoji = "🪟" if category in ("win", "windows") else "📑"
+                    await redis_client.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
+            
+                    await query.message.edit_caption(
+                        caption=(
+                            f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
+                            "━━━━━━━━━━━━━━━━━━\n\n"
+                            "🔵 <b>What is a VAMT Key?</b>\n"
+                            "It is a <b>Volume Activation</b> key. Instead of a standard code that only works for one person, these are official Microsoft keys designed to activate multiple PCs. We share them so everyone in the clearing can benefit.\n\n"
+                            "━━━━━━━━━━━━━━━━━━\n\n"
+                            "📦 <b>What does \"Remaining\" mean?</b>\n"
+                            "Because these keys are shared, they have a strict activation limit.\n\n"
+                            "• <b>Remaining: 5</b> = Works on exactly 5 more devices.\n"
+                            "• <b>Remaining: 0</b> = The key is fully exhausted.\n\n"
+                            "<i>Apply them swiftly! The highest remaining keys vanish fast.</i> 🍃\n\n"
+                            "━━━━━━━━━━━━━━━━━━"
+                        ),
+                        parse_mode="HTML",
+                        reply_markup=kb_winoffice_guide(),
+                    )
+                    return
+            
+                action_xp, _ = await add_xp(chat_id, first_name,
+                    "view_windows" if category in ("win","windows") else "view_office")
+                if action_xp:
+                    asyncio.create_task(send_xp_feedback(chat_id, action_xp))
                 await show_winoffice_keys(chat_id, category, profile, query)
 
     elif data.startswith("key_feedback_ok|") or data.startswith("key_feedback_bad|"):
@@ -3697,7 +3623,7 @@ async def handle_callback(update: Update):
         if len(parts) == 3:
             _, service_type, idx_str = parts
             is_working = data.startswith("kfb_ok|")
-            real_key = await redis.get(f"reveal_key:{chat_id}:{service_type}:{idx_str}")
+            real_key = await redis_client.get(f"reveal_key:{chat_id}:{service_type}:{idx_str}")
             key_id = real_key if real_key else idx_str
             await handle_key_feedback(chat_id, first_name, key_id, service_type, is_working, query)
 
@@ -3707,7 +3633,7 @@ async def handle_callback(update: Update):
         if len(parts) == 2:
             _, token = parts
             is_working = data.startswith("wkfb_ok|")
-            stored = await redis.get(f"winkey:{token}")
+            stored = await redis_client.get(f"winkey:{token}")
             if stored:
                 real_key, svc = stored.split("||", 1)
             else:
@@ -3881,13 +3807,13 @@ async def handle_callback(update: Update):
             page = 0
 
         # NEW — fetch from Redis, delete from Telegram, clean up key
-        stored_msg_id = await redis.get(f"reveal_msg:{chat_id}:{service_type}")
+        stored_msg_id = await redis_client.get(f"reveal_msg:{chat_id}:{service_type}")
         if stored_msg_id:
             try:
                 await tg_app.bot.delete_message(chat_id, int(stored_msg_id))
             except Exception:
                 pass
-            await redis.delete(f"reveal_msg:{chat_id}:{service_type}")
+            await redis_client.delete(f"reveal_msg:{chat_id}:{service_type}")
 
         # Show fresh list
         loading = await tg_app.bot.send_animation(
@@ -4043,8 +3969,8 @@ async def handle_callback(update: Update):
         await mark_winoffice_guide_seen(chat_id)
         
         # Read which category triggered the guide
-        pending_cat = await redis.get(f"winoffice_pending_cat:{chat_id}") or "win"
-        await redis.delete(f"winoffice_pending_cat:{chat_id}")
+        pending_cat = await redis_client.get(f"winoffice_pending_cat:{chat_id}") or "win"
+        await redis_client.delete(f"winoffice_pending_cat:{chat_id}")
         await show_winoffice_keys(chat_id, pending_cat, profile, query)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4272,8 +4198,8 @@ async def process_update(update_data: dict):
             return
         try:
             target_id = int(text.split()[1]) if len(text.split()) > 1 else chat_id
-            deleted1 = await redis.delete(f"seen_winoffice_guide:{target_id}")
-            deleted2 = await redis.delete(f"winoffice_pending_cat:{target_id}")
+            deleted1 = await redis_client.delete(f"seen_winoffice_guide:{target_id}")
+            deleted2 = await redis_client.delete(f"winoffice_pending_cat:{target_id}")
             await tg_app.bot.send_message(
                 chat_id,
                 f"✅ Guide reset for <code>{target_id}</code>\n\n"
@@ -4308,7 +4234,7 @@ async def process_update(update_data: dict):
                 f"pending_ref:{target_id}",
                 f"ref_awarding:{target_id}",
             ]
-            deleted = await redis.delete(*keys)
+            deleted = await redis_client.delete(*keys)
 
             await tg_app.bot.send_message(
                 chat_id,
