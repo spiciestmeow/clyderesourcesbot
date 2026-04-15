@@ -2964,7 +2964,7 @@ async def handle_status(chat_id: int):
     async def check_telegram():
         try:
             me = await asyncio.wait_for(tg_app.bot.get_me(), timeout=5.0)
-            return f"✅ OK (@{me.username})"
+            return f"✅ OK"
         except Exception as e:
             return f"❌ {e}"
 
