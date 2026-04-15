@@ -1,21 +1,19 @@
 import os
 import json
 import asyncio
-import re
-import json
-import zipfile
-import io
 import html
-import httpx
-import pytz
-import redis.asyncio as aioredis
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from io import BytesIO
+
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+
+import httpx
+import pytz
+import redis.asyncio as aioredis
 from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.responses import PlainTextResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -484,6 +482,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
         # Try to extract only the cookie block
         if "# copy the cookies from here" in content.lower():
             # Find the marker regardless of exact spacing/casing
+            import re
             match = re.split(r"#\s*copy the cookies from here\s*:?", content, flags=re.IGNORECASE)
             cookie_block = match[-1].strip() if len(match) > 1 else content.strip()
         else:
@@ -539,6 +538,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     stripped = content.strip()
     if stripped.startswith("{") or stripped.startswith("["):
         try:
+            import json
             data = json.loads(stripped)
             if isinstance(data, dict):
                 data = [data]
@@ -851,6 +851,8 @@ async def handle_document(update: Update):
     # ZIP HANDLING (unchanged - bulk)
     # ══════════════════════════════════════
     if is_zip:
+        import zipfile
+        import io
         total_imported = 0
         total_skipped = 0
         all_errors = []
