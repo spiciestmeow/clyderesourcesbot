@@ -389,7 +389,7 @@ async def handle_flushcache(chat_id: int):
         )
 
 async def broadcast_new_resources(added_counts: dict):
-    """Ultra-minimal 1-line broadcast — clean, beautiful, and auto-deletes."""
+    """Ultra-clean notification-bar-only broadcast for new uploads"""
     if not added_counts or not any(added_counts.values()):
         return
 
@@ -400,7 +400,7 @@ async def broadcast_new_resources(added_counts: dict):
     service_names = DISPLAY_NAME_MAP.copy()
     service_names["steam"] = "Steam Account"
 
-    # Build ONE single clean line
+    # Build one clean line
     parts = []
     for svc, count in added_counts.items():
         if count > 0:
@@ -411,12 +411,12 @@ async def broadcast_new_resources(added_counts: dict):
     if not parts:
         return
 
-    final_line = " • ".join(parts) + " just added! 🌱"
+    final_line = "🌱 " + " • ".join(parts) + " just added to the forest!"
 
+    # Get all users (same as before)
     all_users = []
-    limit = 1000 
+    limit = 1000
     offset = 0
-
     while True:
         batch = await _sb_get(
             "user_profiles",
@@ -430,40 +430,43 @@ async def broadcast_new_resources(added_counts: dict):
             break
         offset += limit
 
-    print(f"📣 1-line broadcast to {len(all_users)} users — auto-delete in 45s")
+    print(f"📣 Notification-bar broadcast to {len(all_users)} users")
 
     sem = asyncio.Semaphore(30)
 
-    async def safe_send(uid: int):
+    async def safe_notify(uid: int):
         async with sem:
             try:
-                msg = await tg_app.bot.send_animation(
+                # Send short message → triggers notification bar
+                msg = await tg_app.bot.send_message(
                     chat_id=uid,
-                    animation=NEW_UPLOAD_GIF,
-                    caption=final_line,
+                    text=final_line,
                     parse_mode="HTML",
-                    disable_notification=True,
+                    disable_notification=False,
+                    disable_web_page_preview=True
                 )
-                await asyncio.sleep(45)
+                
+                # ← BEST DURATION: 1.5 seconds
+                await asyncio.sleep(1.5)
+                
+                # Immediately delete so chat stays perfectly clean
                 await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
             except Exception:
-                pass
+                pass  # user blocked bot, etc.
 
-    await asyncio.gather(*(safe_send(int(u.get("chat_id"))) for u in all_users), return_exceptions=True)
+    await asyncio.gather(*(safe_notify(int(u.get("chat_id"))) for u in all_users), return_exceptions=True)
 
-    # Owner summary
+    # Owner summary (unchanged)
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
-            f"📣 <b>1-Line Broadcast Sent</b>\n\n"
+            f"📣 <b>Notification Broadcast Sent</b>\n\n"
             f"{final_line}\n\n"
-            f"👥 Reached <b>{len(all_users)}</b> wanderers\n"
-            f"⏳ Auto-deleted after 45 seconds",
+            f"👥 Reached <b>{len(all_users)}</b> wanderers",
             parse_mode="HTML",
         )
     except:
         pass
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN KEY UPLOAD (TXT → Supabase vamt_keys)
