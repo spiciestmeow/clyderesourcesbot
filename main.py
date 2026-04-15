@@ -125,6 +125,8 @@ GUIDANCE_GIF  = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tu
 HELLO_GIF     = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
 CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef75e9aeb09.gif"
 INVITE_GIF = "https://images.gr-assets.com/hostedimages/1489696457ra/22241153.gif"
+NEW_UPLOAD_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExejlsMjBxanUwOWhzYXMxZjZkM29yeHY0Mmt3bHY5OGF2bnhleGw5MCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Lo6BKNnNjKFy4A0Gc8/giphy.gif"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -387,6 +389,7 @@ async def handle_flushcache(chat_id: int):
         )
 
 async def broadcast_new_resources(added_counts: dict):
+    """Ultra-minimal 1-line broadcast — clean, beautiful, and auto-deletes."""
     if not added_counts or not any(added_counts.values()):
         return
 
@@ -397,22 +400,21 @@ async def broadcast_new_resources(added_counts: dict):
     service_names = DISPLAY_NAME_MAP.copy()
     service_names["steam"] = "Steam Account"
 
-    msg_lines = []
+    # Build ONE single clean line
+    parts = []
     for svc, count in added_counts.items():
         if count > 0:
             emoji = service_emojis.get(svc.lower(), "✨")
             name = service_names.get(svc.lower(), svc.title())
-            msg_lines.append(f"{emoji} +{count} {name}s just added!")
+            parts.append(f"{emoji} +{count} {name}{'s' if count > 1 else ''}")
 
-    if not msg_lines:
+    if not parts:
         return
 
-    final_msg = "\n".join(msg_lines)
-    final_msg += "\n\n🌱 Freshly added to the forest — check them out quick! 🍃"
+    final_line = " • ".join(parts) + " just added! 🌱"
 
-    # ── Fetch ALL users, no date filter ──
     all_users = []
-    limit = 1000
+    limit = 1000 
     offset = 0
 
     while True:
@@ -428,56 +430,40 @@ async def broadcast_new_resources(added_counts: dict):
             break
         offset += limit
 
-    print(f"📣 Broadcasting to {len(all_users)} total users")
+    print(f"📣 1-line broadcast to {len(all_users)} users — auto-delete in 45s")
 
-    if not all_users:
-        print("📣 No users found in database")
-        return
-
-    sent = 0
-    failed = 0
-    sem = asyncio.Semaphore(25)
-
-    results = []
+    sem = asyncio.Semaphore(30)
 
     async def safe_send(uid: int):
         async with sem:
             try:
-                await tg_app.bot.send_message(
+                msg = await tg_app.bot.send_animation(
                     chat_id=uid,
-                    text=final_msg,
+                    animation=NEW_UPLOAD_GIF,
+                    caption=final_line,
                     parse_mode="HTML",
                     disable_notification=True,
                 )
-                results.append("ok")
-            except Exception as e:
-                results.append("fail")
-                print(f"⚠️ Failed to send to {uid}: {e}")
+                await asyncio.sleep(45)
+                await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
+            except Exception:
+                pass
 
-    await asyncio.gather(
-        *(safe_send(int(u["chat_id"])) for u in all_users),
-        return_exceptions=True
-    )
+    await asyncio.gather(*(safe_send(int(u.get("chat_id"))) for u in all_users), return_exceptions=True)
 
-    sent = results.count("ok")
-    failed = results.count("fail")
-
-    print(f"📣 Broadcast done — ✅ {sent} sent, ❌ {failed} failed")
-
-    # ── Notify owner with summary ──
+    # Owner summary
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
-            f"📣 <b>Broadcast Complete</b>\n\n"
-            f"{final_msg}\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"✅ Sent: <b>{sent}</b>\n"
-            f"❌ Failed: <b>{failed}</b>\n"
-            f"👥 Total: <b>{len(all_users)}</b>",
+            f"📣 <b>1-Line Broadcast Sent</b>\n\n"
+            f"{final_line}\n\n"
+            f"👥 Reached <b>{len(all_users)}</b> wanderers\n"
+            f"⏳ Auto-deleted after 45 seconds",
             parse_mode="HTML",
         )
-    except Exception as e:
-        print(f"⚠️ Owner summary failed: {e}")
+    except:
+        pass
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN KEY UPLOAD (TXT → Supabase vamt_keys)
