@@ -4259,13 +4259,32 @@ async def process_update(update_data: dict):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
             return
+
+        parts = text.split()
+        if len(parts) < 2:
+            await tg_app.bot.send_message(
+                chat_id,
+                "🔧 <b>Usage:</b> <code>/testdaily &lt;user_id&gt;</code>\n\n"
+                "Example:\n"
+                "<code>/testdaily 123456789</code>\n\n"
+                "Resets the daily bonus (so the user can claim it again today).",
+                parse_mode="HTML"
+            )
+            return
+
         try:
-            target_id = int(text.split()[1]) if len(text.split()) > 1 else chat_id
+            target_id = int(parts[1])
             deleted = await redis.delete(f"daily_bonus:{target_id}")
             await tg_app.bot.send_message(
                 chat_id,
                 f"✅ Daily bonus key for <code>{target_id}</code> has been reset.\n\n"
                 f"Deleted: {deleted} key(s)",
+                parse_mode="HTML"
+            )
+        except ValueError:
+            await tg_app.bot.send_message(
+                chat_id,
+                "❌ Invalid user ID.\nPlease send a valid numeric Telegram ID.",
                 parse_mode="HTML"
             )
         except Exception as e:
