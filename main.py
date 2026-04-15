@@ -3247,7 +3247,6 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         else:
             raise
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4102,8 +4101,11 @@ async def process_update(update_data: dict):
 
     # ── Command dispatch ──
     if text.startswith("/start"):
-        referral_stored = True  # default
+        # ── Fetch profile first so we know if user is new or existing
+        profile = await get_user_profile(chat_id)
+        is_new_user = profile is None
 
+        referral_stored = True  # default
         if " " in raw:
             payload = raw.split(maxsplit=1)[1]
             if payload.startswith("ref_"):
@@ -4112,7 +4114,7 @@ async def process_update(update_data: dict):
                     referral_stored = await store_pending_referral(chat_id, referrer_id)
 
                     if not referral_stored:
-                        # Self-referral → show temporary message
+                        # Self-referral
                         asyncio.create_task(
                             send_temporary_message(
                                 chat_id,
@@ -4122,11 +4124,23 @@ async def process_update(update_data: dict):
                                 duration=8
                             )
                         )
-                    elif not profile:
+                    elif is_new_user:
+                        # New user who was referred
                         await send_temporary_message(
                             chat_id,
-                            "✨ Someone invited you! You'll get +40 XP on your first daily bonus 🌱",
+                            "✨ Someone invited you! You'll get **+40 XP** on your first daily bonus 🌱",
                             duration=8
+                        )
+                    else:
+                        # ← NEW: Already claimed referral
+                        asyncio.create_task(
+                            send_temporary_message(
+                                chat_id,
+                                "🌿 <b>You've already claimed a referral!</b>\n\n"
+                                "The forest remembers your previous invitation.\n"
+                                "No extra bonus this time, but you're always welcome back! 🍃",
+                                duration=6
+                            )
                         )
                 except:
                     pass
