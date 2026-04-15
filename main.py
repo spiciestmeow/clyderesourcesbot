@@ -3252,17 +3252,19 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
 # CALLBACK HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_searchsteam_command(chat_id: int, raw_text: str):
-    """/searchsteam email — checks if Steam account already exists"""
+    """Search by username or email (no @ required)"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
         return
 
-    email = raw_text.replace("/searchsteam", "").strip()
-    if not email or "@" not in email:
+    search_term = raw_text.replace("/searchsteam", "").strip()
+    if not search_term:
         await tg_app.bot.send_message(
             chat_id,
             "🔍 <b>Search Steam Account</b>\n\n"
             "Usage:\n"
+            "<code>/searchsteam yourusername</code>\n"
+            "or\n"
             "<code>/searchsteam username@email.com</code>",
             parse_mode="HTML"
         )
@@ -3270,7 +3272,7 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str):
 
     existing = await _sb_get(
         "steamCredentials",
-        **{"email": f"eq.{email}"}
+        **{"email": f"eq.{search_term}"}
     )
 
     if existing:
@@ -3279,7 +3281,7 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str):
         await tg_app.bot.send_message(
             chat_id,
             f"⚠️ <b>Account Found!</b>\n\n"
-            f"📧 <b>Email:</b> <code>{html.escape(email)}</code>\n"
+            f"📧 <b>Username/Email:</b> <code>{html.escape(search_term)}</code>\n"
             f"🎮 <b>Game:</b> {game}\n"
             f"Status: <b>{acc.get('status', 'Available')}</b>\n\n"
             f"✅ Already exists in database.",
@@ -3289,12 +3291,13 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str):
         await tg_app.bot.send_message(
             chat_id,
             f"✅ <b>No account found</b>\n\n"
-            f"The email <code>{html.escape(email)}</code> is <b>not</b> in the database.\n"
+            f"<code>{html.escape(search_term)}</code> is not in the database.\n"
             f"You can safely upload it now.",
             parse_mode="HTML"
         )
+
 async def handle_uploadsteam_command(chat_id: int, raw_text: str):
-    """Handle /uploadsteam — NOW detects duplicate emails automatically"""
+    """Handle /uploadsteam — skips duplicate email/username, does NOT overwrite"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload Steam accounts.")
         return
@@ -3315,15 +3318,15 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
 
     lines = [line.strip() for line in body.split("\n") if line.strip()]
     if len(lines) < 2:
-        await tg_app.bot.send_message(chat_id, "❌ Need at least: Email + Password")
+        await tg_app.bot.send_message(chat_id, "❌ Need at least: Email/Username + Password")
         return
 
-    email = lines[0]
+    identifier = lines[0]          # can be email or just username
     password = lines[1]
     game_name = lines[2] if len(lines) >= 3 else None
 
     payload = {
-        "email": email,
+        "email": identifier,       # your table column name
         "password": password,
         "status": "Available",
         "game_name": game_name,
@@ -3331,18 +3334,18 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         "Posted": None,
     }
 
-    # ←←← THIS IS THE KEY CHANGE ←←←
+    # ←←← FIXED: Now skips instead of overwriting
     success = await _sb_upsert(
-        path="steamCredentials",
-        payload=payload,
-        on_conflict="email"      # ← uses your unique email constraint
+        "steamCredentials", 
+        payload, 
+        on_conflict="email"
     )
 
     if success:
         await tg_app.bot.send_message(
             chat_id,
             f"✅ <b>Steam Account Successfully Uploaded!</b>\n\n"
-            f"📧 <b>Email:</b> <code>{html.escape(email)}</code>\n"
+            f"📧 <b>Username/Email:</b> <code>{html.escape(identifier)}</code>\n"
             f"🔑 <b>Password:</b> <code>{html.escape(password)}</code>\n"
             f"🎮 <b>Game:</b> {game_name or '<i>Not specified</i>'}\n"
             f"Status: <b>✅ Available</b>\n\n"
@@ -3350,13 +3353,12 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             parse_mode="HTML"
         )
     else:
-        # Nice duplicate message
         await tg_app.bot.send_message(
             chat_id,
             f"⚠️ <b>Duplicate Account Detected!</b>\n\n"
-            f"The email <code>{html.escape(email)}</code> already exists in the database.\n\n"
+            f"The username/email <code>{html.escape(identifier)}</code> already exists.\n\n"
             f"✅ No duplicate was created.\n"
-            f"🔄 It was automatically skipped.",
+            f"🔄 Old data was kept (password & game name not changed).",
             parse_mode="HTML"
         )
 
