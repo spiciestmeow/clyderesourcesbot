@@ -390,7 +390,7 @@ async def handle_flushcache(chat_id: int):
         )
 
 async def broadcast_new_resources(added_counts: dict):
-    """Flash notification (push only) — message is deleted after delivery"""
+    """Pure notification-bar only (no message left in chat history)"""
     if not added_counts or not any(added_counts.values()):
         return
 
@@ -401,7 +401,6 @@ async def broadcast_new_resources(added_counts: dict):
     service_names = DISPLAY_NAME_MAP.copy()
     service_names["steam"] = "Steam Account"
 
-    # Build clean message
     parts = []
     for svc, count in added_counts.items():
         if count > 0:
@@ -431,7 +430,7 @@ async def broadcast_new_resources(added_counts: dict):
             break
         offset += limit
 
-    print(f"📣 Flash broadcast started → {len(all_users)} users")
+    print(f"📣 Pure notification-bar broadcast started → {len(all_users)} users")
 
     sem = asyncio.Semaphore(20)
     success_count = 0
@@ -449,33 +448,32 @@ async def broadcast_new_resources(added_counts: dict):
                     protect_content=True
                 )
                 
-                # 🔥 FIXED: 7.5 seconds + small random jitter
-                # This gives Telegram enough time to deliver the push on almost all devices
-                await asyncio.sleep(7.5 + random.uniform(0.0, 1.0))
+                # 🔥 UPDATED: 10 seconds duration → users have plenty of time to read
+                await asyncio.sleep(10.0 + random.uniform(0.0, 1.0))
                 
                 await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
                 success_count += 1
-                print(f"   ✓ Push delivered & cleaned: {uid}")
+                print(f"   ✓ Push only sent & cleaned: {uid}")
                 
             except Exception as e:
-                print(f"   ⚠️ Push failed for {uid}: {e}")
+                print(f"   ⚠️ Failed for {uid}: {e}")
 
-    # Run the broadcast
     await asyncio.gather(*(safe_notify(int(u.get("chat_id"))) for u in all_users), return_exceptions=True)
 
-    # Owner summary with REAL success rate
+    # Owner summary
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
             f"📣 <b>Notification Broadcast Sent</b>\n\n"
             f"{final_line}\n\n"
             f"👥 Reached <b>{len(all_users)}</b> wanderers\n"
-            f"✅ Push delivered to <b>{success_count}</b> users",
+            f"✅ Push delivered to <b>{success_count}</b> users\n\n"
+            f"<i>Users see it only in notification bar — nothing in chat history.</i>",
             parse_mode="HTML",
         )
     except:
         pass
-    
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN KEY UPLOAD (TXT → Supabase vamt_keys)
 # ══════════════════════════════════════════════════════════════════════════════
