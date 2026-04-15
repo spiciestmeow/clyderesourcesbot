@@ -10,7 +10,10 @@ from io import BytesIO
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-
+import re
+import json
+import zipfile
+import io
 import httpx
 import pytz
 import redis.asyncio as aioredis
@@ -271,7 +274,7 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
             print(f"🟢 SB UPSERT {path}: status={r.status_code}")
 
             if r.status_code not in (200, 201):
-                error_body = await r.text() if r.text else "No body"
+                error_body = r.text if r.text else "No body"
                 print(f"🔴 SB UPSERT ERROR {r.status_code}: {error_body}")
                 return False
 
@@ -482,7 +485,6 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
         # Try to extract only the cookie block
         if "# copy the cookies from here" in content.lower():
             # Find the marker regardless of exact spacing/casing
-            import re
             match = re.split(r"#\s*copy the cookies from here\s*:?", content, flags=re.IGNORECASE)
             cookie_block = match[-1].strip() if len(match) > 1 else content.strip()
         else:
@@ -538,7 +540,6 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     stripped = content.strip()
     if stripped.startswith("{") or stripped.startswith("["):
         try:
-            import json
             data = json.loads(stripped)
             if isinstance(data, dict):
                 data = [data]
@@ -730,7 +731,8 @@ async def _flush_txt_batch(chat_id: int):
 
     # Check if we're still the latest flush task
     task_id = await redis.get(f"txt_batch_task:{chat_id}")
-    my_id = str(asyncio.current_task().get_name())
+    task = asyncio.current_task()
+    my_id = str(task.get_name()) if task else ""
     if task_id != my_id:
         return  # a newer file arrived, a newer task will flush
 
@@ -850,8 +852,6 @@ async def handle_document(update: Update):
     # ZIP HANDLING (unchanged - bulk)
     # ══════════════════════════════════════
     if is_zip:
-        import zipfile
-        import io
         total_imported = 0
         total_skipped = 0
         all_errors = []
@@ -1712,6 +1712,7 @@ def kb_winoffice_guide():
 # KEYBOARDS (final version)
 # ══════════════════════════════════════════════════════════════════════════════
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
+    """Always await this — it fetches the active event from Redis/Supabase."""
     event = await get_active_event()
     
     row1 = [
@@ -1789,14 +1790,19 @@ async def send_temporary_message(chat_id: int, text: str, duration: int = 2):
     except Exception:
         pass
 
-async def send_loading(chat_id: int, caption: str = "🌫️ <i>The ancient mist begins to stir...</i>"):
+async def send_loading(
+    chat_id: int,
+    caption: str = "🌫️ <i>The ancient mist begins to stir...</i>",
+    remember: bool = False,
+):
     msg = await tg_app.bot.send_animation(
         chat_id=chat_id,
         animation=LOADING_GIF,
         caption=caption,
         parse_mode="HTML"
     )
-    await _remember(chat_id, msg.message_id)
+    if remember:
+        await _remember(chat_id, msg.message_id)
     return msg
 
 async def _announce_daily_bonus(chat_id: int, bonus: int, label: str):
@@ -2388,11 +2394,19 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     title_str   = get_level_title(level)
 
     manila = pytz.timezone("Asia/Manila")
-    today_utc = (
-        datetime.now(manila).replace(hour=0, minute=0, second=0, microsecond=0)
-        .astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    today_start_utc = (
+        datetime.now(manila)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(pytz.utc)
     )
 
+    def _parse_dt(s: str):
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            return dt.astimezone(pytz.utc)  # normalize to pytz.utc explicitly
+        except Exception:
+            return None
+        
     # ── single Supabase call, everything filtered in Python ──
     all_logs = await _sb_get(
         "xp_history",
@@ -2419,7 +2433,7 @@ async def handle_history(chat_id: int, first_name: str, page: int = 0):
     # xp earned today (filter in Python)
     xp_today = sum(
         r.get("xp_earned", 0) for r in all_logs
-        if r.get("created_at", "") >= today_utc
+        if (dt := _parse_dt(r.get("created_at", ""))) and dt >= today_start_utc
     )
 
     streak = await calculate_streak(chat_id)
@@ -2947,8 +2961,7 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
 
     action_xp, _ = await add_xp(chat_id, first_name, "clear")
     if action_xp:
-        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
-
+        await send_xp_feedback(chat_id, action_xp,duration=1) 
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
 async def handle_status(chat_id: int):
@@ -4013,7 +4026,17 @@ async def handle_callback(update: Update):
         elif data == "caretaker_resetfirst":
             await handle_reset_first_time(chat_id)
         elif data == "caretaker_uploadsteam":
-            await handle_uploadsteam_command(chat_id, "/uploadsteam")
+            await tg_app.bot.send_message(
+                chat_id,
+                "🎮 <b>Upload Steam Account</b>\n\n"
+                "Send the command manually in this format:\n\n"
+                "<code>/uploadsteam\n"
+                "username@email.com\n"
+                "yourpassword123\n"
+                "Game Name (optional)</code>\n\n"
+                "<i>Tip: Use /searchsteam first to check for duplicates.</i>",
+                parse_mode="HTML"
+            )
         elif data == "caretaker_searchsteam":
             await handle_searchsteam_command(chat_id, "/searchsteam")
     elif data == "winoffice_got_it":
@@ -4034,18 +4057,16 @@ async def process_update(update_data: dict):
     update = Update.de_json(update_data, tg_app.bot)
 
     # ── COLD START CUTE MESSAGE (only once after Render spin-down) ──
-    if COLD_START:
+    if COLD_START and update.message:
         chat_id = update.effective_chat.id if update.effective_chat else None
         if chat_id:
             try:
                 await tg_app.bot.send_message(
                     chat_id=chat_id,
                     text="Yawnnn~ 😴💤\nThe forest just woke me up!\nReady for you now, wanderer ✨🍃",
-                    parse_mode="HTML"
                 )
             except Exception as e:
                 print(f"⚠️ Cold-start message failed: {e}")
-        
         COLD_START = False
 
     # ── Maintenance mode ──
@@ -4084,7 +4105,8 @@ async def process_update(update_data: dict):
     msg_id    = update.message.message_id
     first_name = update.effective_user.first_name if update.effective_user else "Traveler"
 
-    await _remember(chat_id, msg_id)
+    if not text.startswith("/clear"):
+        await _remember(chat_id, msg_id)
 
     # Registration guard (except /start)
     if not text.startswith("/start"):
@@ -4130,10 +4152,12 @@ async def process_update(update_data: dict):
                         )
                     elif is_new_user:
                         # New user who was referred
-                        await send_temporary_message(
-                            chat_id,
-                            "✨ Someone invited you! You'll get **+40 XP** on your first daily bonus 🌱",
-                            duration=8
+                        asyncio.create_task(
+                            send_temporary_message(
+                                chat_id,
+                                "✨ <b>Someone invited you!</b>\n\nYou'll receive <b>+40 XP</b> on your first daily bonus 🌱",
+                                duration=8
+                            )
                         )
                     else:
                         # ← NEW: Already claimed referral
@@ -4327,23 +4351,47 @@ async def process_update(update_data: dict):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can change forest info.")
             return
-        
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        if len(lines) < 4:
+
+        # Support BOTH formats:
+        # Format A (multi-line):
+        #   /setforestinfo
+        #   1.4.5
+        #   April 15, 2026
+        #   02:58 PM
+        #
+        # Format B (single-line):
+        #   /setforestinfo 1.4.5 April 15, 2026 · 02:58 PM
+
+        body = raw[len("/setforestinfo"):].strip()
+
+        if "\n" in body:
+            lines = [l.strip() for l in body.splitlines() if l.strip()]
+            if len(lines) < 3:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "📝 Multi-line usage:\n\n"
+                    "<code>/setforestinfo\n1.4.5\nApril 15, 2026\n02:58 PM</code>",
+                    parse_mode="HTML"
+                )
+                return
+            version = lines[0]
+            custom_datetime = f"{lines[1]} · {lines[2]}"
+        elif body:
+            # Single-line: version is first word, rest is datetime
+            parts = body.split(" ", 1)
+            if len(parts) < 2:
+                await tg_app.bot.send_message(chat_id, "❌ Please include version and datetime.")
+                return
+            version = parts[0]
+            custom_datetime = parts[1].strip()
+        else:
             await tg_app.bot.send_message(
                 chat_id,
                 "📝 Usage:\n\n"
-                "<code>/setforestinfo\n"
-                "1.4.5\n"
-                "April 15, 2026\n"
-                "02:58 PM</code>"
+                "<code>/setforestinfo\n1.4.5\nApril 15, 2026\n02:58 PM</code>",
+                parse_mode="HTML"
             )
             return
-
-        version = lines[1]
-        date_str = lines[2]
-        time_str = lines[3]
-        custom_datetime = f"{date_str} · {time_str}"
 
         await set_bot_info(version, custom_datetime, chat_id)
 
