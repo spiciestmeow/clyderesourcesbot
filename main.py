@@ -1036,7 +1036,6 @@ async def get_bot_uptime() -> str:
         if not raw or raw == "Not set yet":
             return "Not set yet 🌱"
         
-        # Support both · and - separator
         clean = raw.replace("•", "·").replace("-", "·").strip()
         dt = datetime.strptime(clean, "%B %d, %Y · %I:%M %p")
         dt = pytz.timezone("Asia/Manila").localize(dt)
@@ -1047,7 +1046,6 @@ async def get_bot_uptime() -> str:
         return f"{total_h}h {mins}m"
     except Exception:
         return "Unknown 🌿"
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # USER PROFILE
@@ -3578,14 +3576,9 @@ async def handle_callback(update: Update):
     # ── WIN/OFFICE GUIDE ALTER ──
     elif data == "winoffice_help":
         await query.answer(
-            "📜 THE ANCIENT SCROLLS GUIDE\n\n"
-            "🔵 VAMT: Official Microsoft 'Volume' keys. One key can activate multiple different PCs at once.\n\n"
-            "📦 REMAINING: This shows exactly how many activations are left. \n"
-            "Example: 'Remaining: 10' means 10 more people can use it!\n\n"
-            "⚠️ Tips: Use them quickly before the magic runs out! 🍃",
+            "📜 Ancient Scrolls Guide\n\n🔵 VAMT: Official Microsoft Volume keys. One key activates multiple PCs.\n\n📦 REMAINING: Shows exactly how many uses left.\nEx: 'Remaining: 10' = 10 more people can use it!\n\n⚠️ Use fast before magic runs out! 🍃",
             show_alert=True,
         )
-
     # ── INVITE COPY LINK ──
     elif data.startswith("copy_ref_link|"):
         try:
