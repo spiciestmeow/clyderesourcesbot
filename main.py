@@ -1006,16 +1006,25 @@ async def set_bot_info(new_version: str, custom_datetime: str, chat_id: int):
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can change forest info.")
         return
 
-    ok = await _sb_post(
-        "bot_info",
-        [{"id": 1, "current_version": new_version.strip(), "last_updated": custom_datetime.strip()}],
-    )
-    msg = (
-        f"✅ <b>Forest info updated!</b>\n\n📜 Version: <b>{new_version}</b>\n🔄 Last Updated: <b>{custom_datetime}</b>"
-        if ok else "❌ Failed to save."
-    )
-    await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
+    payload = {
+        "id": 1,
+        "current_version": new_version.strip(),
+        "last_updated": custom_datetime.strip()
+    }
 
+    # Use _sb_upsert instead of _sb_post
+    ok = await _sb_upsert("bot_info", payload, on_conflict="id")
+
+    if ok:
+        msg = (
+            f"✅ <b>Forest info updated!</b>\n\n"
+            f"📜 Version: <b>{new_version}</b>\n"
+            f"🔄 Last Updated: <b>{custom_datetime}</b>"
+        )
+    else:
+        msg = "❌ Failed to save. Check server logs for details."
+
+    await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
 
 # ──────────────────────────────────────────────
 # UPTIME
@@ -2964,7 +2973,7 @@ async def handle_status(chat_id: int):
     async def check_telegram():
         try:
             me = await asyncio.wait_for(tg_app.bot.get_me(), timeout=5.0)
-            return f"✅ OK"
+            return f"✅ OK (@{me.username})"
         except Exception as e:
             return f"❌ {e}"
 
@@ -4265,28 +4274,35 @@ async def process_update(update_data: dict):
             await tg_app.bot.send_message(
                 chat_id,
                 "🔧 <b>Usage:</b> <code>/testdaily &lt;user_id&gt;</code>\n\n"
-                "Example:\n"
-                "<code>/testdaily 123456789</code>\n\n"
-                "Resets the daily bonus (so the user can claim it again today).",
+                "Example:\n<code>/testdaily 123456789</code>\n\n"
+                "Fully resets daily bonus + referral state for clean re-testing.",
                 parse_mode="HTML"
             )
             return
 
         try:
             target_id = int(parts[1])
-            deleted = await redis.delete(f"daily_bonus:{target_id}")
+
+            # ← NEW: Clears everything needed for perfect re-test
+            keys = [
+                f"daily_bonus:{target_id}",
+                f"pending_ref:{target_id}",
+                f"ref_awarding:{target_id}",
+            ]
+            deleted = await redis.delete(*keys)
+
             await tg_app.bot.send_message(
                 chat_id,
-                f"✅ Daily bonus key for <code>{target_id}</code> has been reset.\n\n"
-                f"Deleted: {deleted} key(s)",
+                f"✅ <b>Fully reset for user {target_id}</b>\n\n"
+                f"• Daily bonus → now available again\n"
+                f"• Pending referral → cleared\n"
+                f"• Referral lock → cleared\n\n"
+                f"Deleted {deleted} Redis key(s)\n\n"
+                f"You can now click the referral link again for a **clean** test.",
                 parse_mode="HTML"
             )
         except ValueError:
-            await tg_app.bot.send_message(
-                chat_id,
-                "❌ Invalid user ID.\nPlease send a valid numeric Telegram ID.",
-                parse_mode="HTML"
-            )
+            await tg_app.bot.send_message(chat_id, "❌ Invalid user ID. Must be a number.")
         except Exception as e:
             await tg_app.bot.send_message(chat_id, f"❌ Error: {e}")
 
@@ -4316,16 +4332,26 @@ async def process_update(update_data: dict):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can change forest info.")
             return
-        parts = raw[14:].strip().split(maxsplit=1)
-        if len(parts) < 2:
+        
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        if len(lines) < 4:
             await tg_app.bot.send_message(
                 chat_id,
-                "📝 Usage:\n`/setforestinfo 1.4.5 April 10, 2026 · 03:58 PM`\n\n"
-                "• First word = version\n• Everything after = date & time",
+                "📝 Usage:\n\n"
+                "<code>/setforestinfo\n"
+                "1.4.5\n"
+                "April 15, 2026\n"
+                "02:58 PM</code>"
             )
             return
-        await set_bot_info(parts[0].strip(), parts[1].strip(), chat_id)
 
+        version = lines[1]
+        date_str = lines[2]
+        time_str = lines[3]
+        custom_datetime = f"{date_str} · {time_str}"
+
+        await set_bot_info(version, custom_datetime, chat_id)
+        
     elif text.startswith("/addupdate"):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the caretaker can add updates.")
