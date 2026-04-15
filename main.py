@@ -3252,47 +3252,128 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
 # CALLBACK HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_searchsteam_command(chat_id: int, raw_text: str):
-    """Search by username or email (no @ required)"""
+    """Final Clean Steam Search - Single or Batch (NOT FOUND shown only once)"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
         return
-
-    search_term = raw_text.replace("/searchsteam", "").strip()
-    if not search_term:
+    body = raw_text.replace("/searchsteam", "").strip()
+    if not body:
         await tg_app.bot.send_message(
             chat_id,
-            "🔍 <b>Search Steam Account</b>\n\n"
-            "Usage:\n"
-            "<code>/searchsteam yourusername</code>\n"
-            "or\n"
-            "<code>/searchsteam username@email.com</code>",
+            "🔍 <b>Steam Account Search</b>\n\n"
+            "Single or Batch supported:\n\n"
+            "<b>Single:</b> <code>/searchsteam email@example.com</code>\n\n"
+            "<b>Batch:</b>\n<code>/searchsteam\n"
+            "line1@email.com\n"
+            "username2\n"
+            "line3@proton.me</code>",
             parse_mode="HTML"
         )
         return
-
-    existing = await _sb_get(
+    lines = [line.strip() for line in body.split("\n") if line.strip()]
+    if not lines:
+        await tg_app.bot.send_message(chat_id, "❌ No search terms provided.")
+        return
+    # Fetch all accounts once
+    all_accounts = await _sb_get(
         "steamCredentials",
-        **{"email": f"eq.{search_term}"}
+        **{"select": "email,password,game_name,status", "limit": 2000}
+    ) or []
+    account_map = {
+        str(acc.get("email", "")).lower().strip(): acc
+        for acc in all_accounts if acc.get("email")
+    }
+    found_details = []      # ← CHANGED: only the details (no repeated "FOUND" label)
+    not_found_list = []
+    found_count = 0
+    for term in lines:
+        term_lower = term.lower().strip()
+        if term_lower in account_map:
+            acc = account_map[term_lower]
+            found_count += 1
+            game = acc.get("game_name") or "Not specified"
+            status = acc.get("status", "Available")
+            password = acc.get("password", "HIDDEN")
+            found_details.append(
+                f"📧 <code>{html.escape(term)}</code>\n"
+                f"🎮 Game: {game}\n"
+                f"Status: <b>{status}</b>\n"
+                f"🔑 Password: <code>{html.escape(password)}</code>"
+            )
+        else:
+            not_found_list.append(term)
+    # ── SINGLE SEARCH ── (kept exactly the same as before)
+    if len(lines) == 1:
+        if found_details:
+            # Re-add the single "FOUND" label for single searches
+            single_text = (
+                f"✅ <b>FOUND</b>\n"
+                f"{found_details[0]}"
+            )
+            await tg_app.bot.send_message(chat_id, single_text, parse_mode="HTML")
+        else:
+            text = f"❌ <b>NOT FOUND</b>\n📧 <code>{html.escape(lines[0])}</code>\n\n💡 You can safely upload this account now."
+            await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
+        return
+    # ── BATCH SEARCH ──
+    summary = (
+        f"🎮 <b>Batch Steam Search Results</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔎 Searched: <b>{len(lines)}</b> accounts\n"
+        f"✅ Found: <b>{found_count}</b>\n"
+        f"❌ Not found: <b>{len(not_found_list)}</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
     )
-
-    if existing:
-        acc = existing[0]
-        game = acc.get("game_name") or "Not specified"
-        await tg_app.bot.send_message(
-            chat_id,
-            f"⚠️ <b>Account Found!</b>\n\n"
-            f"📧 <b>Username/Email:</b> <code>{html.escape(search_term)}</code>\n"
-            f"🎮 <b>Game:</b> {game}\n"
-            f"Status: <b>{acc.get('status', 'Available')}</b>\n\n"
-            f"✅ Already exists in database.",
-            parse_mode="HTML"
+    # Prepare the FOUND block (ONLY ONE label at the very top)
+    found_block = ""
+    if found_details:
+        found_block = (
+            f"✅ <b>FOUND Accounts</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            + "\n\n".join(found_details)   # each found account listed cleanly below
         )
-    else:
+    # Prepare the NOT FOUND block (unchanged)
+    not_found_block = ""
+    if not_found_list:
+        not_found_block = (
+            f"❌ <b>NOT FOUND Accounts</b>\n"
+            + "\n".join(f"📧 <code>{html.escape(term)}</code>" for term in not_found_list)
+        )
+    # All content to display
+    all_content = []
+    if found_block:
+        all_content.append(found_block)
+    if not_found_block:
+        all_content.append(not_found_block)
+    # Split into Telegram-friendly chunks
+    chunks = []
+    current_chunk = []
+    current_len = len(summary) + 100
+    for item in all_content:
+        item_len = len(item) + 6
+        if current_len + item_len > 3800 and current_chunk:
+            chunks.append(current_chunk)
+            current_chunk = [item]
+            current_len = len(item) + 100
+        else:
+            current_chunk.append(item)
+            current_len += item_len
+    if current_chunk:
+        chunks.append(current_chunk)
+    total_pages = len(chunks)
+    for page_num, chunk in enumerate(chunks, 1):
+        page_header = f"📄 Page {page_num}/{total_pages}\n\n" if total_pages > 1 else ""
+       
+        if page_num == 1:
+            full_text = summary + page_header + "\n\n".join(chunk)
+        else:
+            full_text = page_header + "\n\n".join(chunk)
+        # Add upload tip only on the LAST message
+        if page_num == total_pages and not_found_list:
+            full_text += "\n\n💡 Any accounts marked as NOT FOUND can be safely uploaded now."
         await tg_app.bot.send_message(
-            chat_id,
-            f"✅ <b>No account found</b>\n\n"
-            f"<code>{html.escape(search_term)}</code> is not in the database.\n"
-            f"You can safely upload it now.",
+            chat_id=chat_id,
+            text=full_text,
             parse_mode="HTML"
         )
 
