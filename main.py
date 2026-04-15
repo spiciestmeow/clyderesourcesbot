@@ -1035,18 +1035,18 @@ async def get_bot_uptime() -> str:
         raw = config.get("last_updated", "").strip()
         if not raw or raw == "Not set yet":
             return "Not set yet 🌱"
-        
-        clean = raw.replace("•", "·").replace("-", "·").strip()
-        dt = datetime.strptime(clean, "%B %d, %Y · %I:%M %p")
+
+        # Just grab the date part before any separator
+        date_only = raw.split("·")[0].strip()
+        dt = datetime.strptime(date_only, "%B %d, %Y")
         dt = pytz.timezone("Asia/Manila").localize(dt)
-        
+
         delta = datetime.now(pytz.timezone("Asia/Manila")) - dt
         total_h = delta.days * 24 + delta.seconds // 3600
         mins = (delta.seconds % 3600) // 60
         return f"{total_h}h {mins}m"
-    except Exception:
-        return "Unknown 🌿"
-
+    except Exception as e:
+        return f"Unknown ({e})"
 # ══════════════════════════════════════════════════════════════════════════════
 # USER PROFILE
 # ══════════════════════════════════════════════════════════════════════════════
