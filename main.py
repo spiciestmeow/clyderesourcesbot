@@ -389,7 +389,7 @@ async def handle_flushcache(chat_id: int):
         )
 
 async def broadcast_new_resources(added_counts: dict):
-    """Ultra-clean notification-bar-only broadcast for new uploads"""
+    """Ultra-clean, more reliable notification-bar-only broadcast"""
     if not added_counts or not any(added_counts.values()):
         return
 
@@ -411,9 +411,9 @@ async def broadcast_new_resources(added_counts: dict):
     if not parts:
         return
 
-    final_line = "🌱 " + " • ".join(parts) + " just added to the forest!"
+    final_line = f"🌱 New resources just added! {' • '.join(parts)}"
 
-    # Get all users (same as before)
+    # Get all users
     all_users = []
     limit = 1000
     offset = 0
@@ -430,33 +430,35 @@ async def broadcast_new_resources(added_counts: dict):
             break
         offset += limit
 
-    print(f"📣 Notification-bar broadcast to {len(all_users)} users")
+    print(f"📣 Notification-bar broadcast started → {len(all_users)} users")
 
-    sem = asyncio.Semaphore(30)
+    sem = asyncio.Semaphore(20)
 
     async def safe_notify(uid: int):
         async with sem:
             try:
-                # Send short message → triggers notification bar
                 msg = await tg_app.bot.send_message(
                     chat_id=uid,
                     text=final_line,
                     parse_mode="HTML",
                     disable_notification=False,
-                    disable_web_page_preview=True
+                    disable_web_page_preview=True,
+                    protect_content=True
                 )
                 
-                # ← BEST DURATION: 1.5 seconds
-                await asyncio.sleep(1.5)
+                # ← INCREASED TO 2.3 SECONDS (most reliable)
+                await asyncio.sleep(2.3)
                 
-                # Immediately delete so chat stays perfectly clean
                 await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
-            except Exception:
-                pass  # user blocked bot, etc.
+                print(f"   ✓ Notified & cleaned: {uid}")
+                
+            except Exception as e:
+                print(f"   ⚠️ Notification failed for {uid}: {e}")
+                pass
 
     await asyncio.gather(*(safe_notify(int(u.get("chat_id"))) for u in all_users), return_exceptions=True)
 
-    # Owner summary (unchanged)
+    # Owner summary
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
