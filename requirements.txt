@@ -1713,7 +1713,6 @@ def kb_winoffice_guide():
 # KEYBOARDS (final version)
 # ══════════════════════════════════════════════════════════════════════════════
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
-    """Always await this — it fetches the active event from Redis/Supabase."""
     event = await get_active_event()
     
     row1 = [
