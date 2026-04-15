@@ -3297,7 +3297,7 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str):
         )
 
 async def handle_uploadsteam_command(chat_id: int, raw_text: str):
-    """Handle /uploadsteam — skips duplicate email/username, does NOT overwrite"""
+    """Handle /uploadsteam — TRUE duplicate protection (skip, no overwrite)"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload Steam accounts.")
         return
@@ -3318,15 +3318,15 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
 
     lines = [line.strip() for line in body.split("\n") if line.strip()]
     if len(lines) < 2:
-        await tg_app.bot.send_message(chat_id, "❌ Need at least: Email/Username + Password")
+        await tg_app.bot.send_message(chat_id, "❌ Need at least: Username/Email + Password")
         return
 
-    identifier = lines[0]          # can be email or just username
+    identifier = lines[0]
     password = lines[1]
     game_name = lines[2] if len(lines) >= 3 else None
 
     payload = {
-        "email": identifier,       # your table column name
+        "email": identifier,
         "password": password,
         "status": "Available",
         "game_name": game_name,
@@ -3334,33 +3334,52 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         "Posted": None,
     }
 
-    # ←←← FIXED: Now skips instead of overwriting
-    success = await _sb_upsert(
-        "steamCredentials", 
-        payload, 
-        on_conflict="email"
-    )
+    # ─────────────────────────────────────
+    # DIRECT CALL WITH IGNORE-DUPLICATES
+    # ─────────────────────────────────────
+    async with db_sem:
+        try:
+            r = await asyncio.wait_for(
+                http.post(
+                    f"{SUPABASE_URL}/rest/v1/steamCredentials",
+                    headers=_supabase_headers({
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=ignore-duplicates,return=minimal",
+                    }),
+                    json=payload,
+                ),
+                timeout=10.0,
+            )
 
-    if success:
-        await tg_app.bot.send_message(
-            chat_id,
-            f"✅ <b>Steam Account Successfully Uploaded!</b>\n\n"
-            f"📧 <b>Username/Email:</b> <code>{html.escape(identifier)}</code>\n"
-            f"🔑 <b>Password:</b> <code>{html.escape(password)}</code>\n"
-            f"🎮 <b>Game:</b> {game_name or '<i>Not specified</i>'}\n"
-            f"Status: <b>✅ Available</b>\n\n"
-            "🔄 Automatically synced to Notion!",
-            parse_mode="HTML"
-        )
-    else:
-        await tg_app.bot.send_message(
-            chat_id,
-            f"⚠️ <b>Duplicate Account Detected!</b>\n\n"
-            f"The username/email <code>{html.escape(identifier)}</code> already exists.\n\n"
-            f"✅ No duplicate was created.\n"
-            f"🔄 Old data was kept (password & game name not changed).",
-            parse_mode="HTML"
-        )
+            print(f"🟢 STEAM UPLOAD: status={r.status_code}")
+
+            if r.status_code in (200, 201):
+                # New account inserted
+                await tg_app.bot.send_message(
+                    chat_id,
+                    f"✅ <b>Steam Account Successfully Uploaded!</b>\n\n"
+                    f"📧 <b>Username/Email:</b> <code>{html.escape(identifier)}</code>\n"
+                    f"🔑 <b>Password:</b> <code>{html.escape(password)}</code>\n"
+                    f"🎮 <b>Game:</b> {game_name or '<i>Not specified</i>'}\n"
+                    f"Status: <b>✅ Available</b>\n\n"
+                    "🔄 Automatically synced to Notion!",
+                    parse_mode="HTML"
+                )
+            else:
+                # Duplicate → ignored by Supabase
+                await tg_app.bot.send_message(
+                    chat_id,
+                    f"⚠️ <b>Duplicate Account Detected!</b>\n\n"
+                    f"The username/email <code>{html.escape(identifier)}</code> already exists.\n\n"
+                    f"✅ No duplicate was created.\n"
+                    f"🔄 Old password & game name were kept.",
+                    parse_mode="HTML"
+                )
+                return
+
+        except Exception as e:
+            print(f"🔴 STEAM UPLOAD ERROR: {e}")
+            await tg_app.bot.send_message(chat_id, "❌ Failed to save to Supabase.", parse_mode="HTML")
 
 async def handle_callback(update: Update):
     query     = update.callback_query
