@@ -386,6 +386,63 @@ async def handle_flushcache(chat_id: int):
             parse_mode="HTML",
         )
 
+async def broadcast_new_resources(added_counts: dict):
+    """SUPER MINIMAL version - short & clean notification (Option 2)"""
+    if not added_counts or not any(added_counts.values()):
+        return
+
+    service_emojis = {
+        "netflix": "🍿", "prime": "🎥", "windows": "🪟", "win": "🪟",
+        "office": "📑", "steam": "🎮",
+    }
+    service_names = DISPLAY_NAME_MAP.copy()
+    service_names["steam"] = "Steam Account"
+
+    msg_lines = []
+    for svc, count in added_counts.items():
+        if count > 0:
+            emoji = service_emojis.get(svc.lower(), "✨")
+            name = service_names.get(svc.lower(), svc.title())
+            msg_lines.append(f"{emoji} +{count} {name}s just added!")
+            
+    final_msg = "\n".join(msg_lines)
+
+    # ← This line makes it feel fresh & exciting without being spammy
+    final_msg += "\n\n🌱 Freshly added to the forest — check them out quick! 🍃"
+
+    # Only notify users active in the last 14 days
+    manila = pytz.timezone("Asia/Manila")
+    cutoff = (datetime.now(manila) - timedelta(days=14)).astimezone(pytz.utc).isoformat()
+
+    users = await _sb_get(
+        "user_profiles",
+        **{"last_active": f"gte.{cutoff}", "select": "chat_id"}
+    ) or []
+
+    if not users:
+        print("📣 No recent users to notify")
+        return
+
+    print(f"📣 Broadcasting MINIMAL message to {len(users)} users")
+
+    sem = asyncio.Semaphore(25)
+
+    async def safe_send(uid: int):
+        async with sem:
+            try:
+                await tg_app.bot.send_message(
+                    chat_id=uid,
+                    text=final_msg,
+                    parse_mode="HTML",
+                    disable_notification=True,
+                )
+            except Exception:
+                pass
+
+    await asyncio.gather(
+        *(safe_send(int(u["chat_id"])) for u in users),
+        return_exceptions=True
+    )
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN KEY UPLOAD (TXT → Supabase vamt_keys)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -457,10 +514,11 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     # ── Fallback ──
     return "unknown", "Netflix Cookie"
 
-async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, list[str]]:
+async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, list[str], dict]:
     imported = 0
     skipped = 0
     errors = []
+    added_counts = Counter()
 
     detected_service, detected_display = detect_service_type(content, filename)
 
@@ -521,6 +579,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
         success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
         if success:
             imported += 1
+            added_counts[detected_service] += 1
         else:
             skipped += 1
             errors.append(
@@ -529,7 +588,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 f"   Service: {detected_service}\n"
                 f"   Reason: Supabase upsert rejected"
             )
-        return imported, skipped, errors
+        return imported, skipped, errors, dict(added_counts)
 
     # ══════════════════════════════════════
     # FORMAT 2 — JSON format
@@ -555,13 +614,14 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
                 if success:
                     imported += 1
+                    added_counts[item.get("service_type", detected_service)] += 1
                 else:
                     skipped += 1
                     errors.append(f"❌ JSON item {i+1} skipped: Supabase rejected")
         except Exception as e:
             errors.append(f"❌ JSON parse failed: {str(e)[:100]}")
             skipped += 1
-        return imported, skipped, errors
+        return imported, skipped, errors, dict(added_counts)
 
     # ══════════════════════════════════════
     # FORMAT 3 — Key:Value block format
@@ -604,10 +664,11 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
             if success:
                 imported += 1
+                added_counts[detected_service] += 1
             else:
                 skipped += 1
                 errors.append(f"❌ Block {i+1} skipped: Supabase rejected")
-        return imported, skipped, errors
+        return imported, skipped, errors, dict(added_counts)
 
     # ══════════════════════════════════════
     # FORMAT 4 — CSV format
@@ -650,10 +711,11 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
                 if success:
                     imported += 1
+                    added_counts[svc] += 1
                 else:
                     skipped += 1
                     errors.append(f"❌ CSV line {line_num} skipped: {key_id[:30]}")
-            return imported, skipped, errors
+            return imported, skipped, errors, dict(added_counts)
 
     # ══════════════════════════════════════
     # FORMAT 5 — Pipe separated OR plain keys
@@ -701,6 +763,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
             if success:
                 imported += 1
+                added_counts[svc] += 1
             else:
                 skipped += 1
                 errors.append(
@@ -718,7 +781,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 f"   Error: {str(e)[:80]}"
             )
 
-    return imported, skipped, errors
+    return imported, skipped, errors, dict(added_counts)
 
 async def handle_document(update: Update):
     """Handle document uploads (.txt or .zip) - Fast single file + Batch for multiple"""
@@ -768,6 +831,7 @@ async def handle_document(update: Update):
         total_skipped = 0
         all_errors = []
         processed_files = []
+        total_added = Counter()
 
         try:
             with zipfile.ZipFile(io.BytesIO(bytes(file_bytes))) as zf:
@@ -786,7 +850,8 @@ async def handle_document(update: Update):
                         raw_bytes = zf.read(txt_name)
                         content = raw_bytes.decode("utf-8", errors="replace")
                         basename = txt_name.split("/")[-1]
-                        imported, skipped, errors = await parse_and_import_keys(content, basename)
+                        imported, skipped, errors, file_added = await parse_and_import_keys(content, basename)
+                        total_added.update(file_added)
                         total_imported += imported
                         total_skipped += skipped
                         all_errors.extend(errors)
@@ -805,6 +870,8 @@ async def handle_document(update: Update):
             return
 
         await redis_client.delete("vamt_cache")
+        if sum(total_added.values()) > 0:
+            asyncio.create_task(broadcast_new_resources(dict(total_added)))
 
         # Build result message
         files_summary = "\n".join(processed_files[:20])
@@ -854,8 +921,10 @@ async def handle_document(update: Update):
         return
 
     detected_service, detected_display = detect_service_type(content, filename)
-    imported, skipped, errors = await parse_and_import_keys(content, filename)
+    imported, skipped, errors, added_counts = await parse_and_import_keys(content, filename)
     await redis_client.delete("vamt_cache")
+    if imported > 0:
+        asyncio.create_task(broadcast_new_resources(added_counts))
 
     # Immediate result for single file (no 4-second wait)
     result = (
@@ -3385,6 +3454,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
                     "🔄 Automatically synced to Notion!",
                     parse_mode="HTML"
                 )
+                asyncio.create_task(broadcast_new_resources({"steam": 1}))
             else:
                 # Duplicate → ignored by Supabase
                 await tg_app.bot.send_message(
