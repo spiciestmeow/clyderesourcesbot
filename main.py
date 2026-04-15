@@ -404,7 +404,7 @@ async def broadcast_new_resources(added_counts: dict):
             emoji = service_emojis.get(svc.lower(), "✨")
             name = service_names.get(svc.lower(), svc.title())
             msg_lines.append(f"{emoji} +{count} {name}s just added!")
-            
+
     final_msg = "\n".join(msg_lines)
 
     # ← This line makes it feel fresh & exciting without being spammy
@@ -922,9 +922,22 @@ async def handle_document(update: Update):
 
     detected_service, detected_display = detect_service_type(content, filename)
     imported, skipped, errors, added_counts = await parse_and_import_keys(content, filename)
-    await redis_client.delete("vamt_cache")
+
+    await redis_client.delete("vamt_cache")     
+
     if imported > 0:
-        asyncio.create_task(broadcast_new_resources(added_counts))
+            temp_key = f"pending_broadcast:{chat_id}"
+            
+            existing = await redis_client.get(temp_key)
+            if existing:
+                existing_counts = json.loads(existing)
+                for k, v in added_counts.items():
+                    existing_counts[k] = existing_counts.get(k, 0) + v
+                added_counts = existing_counts
+
+            await redis_client.setex(temp_key, 5, json.dumps(added_counts))
+
+            asyncio.create_task(_debounced_broadcast(chat_id))
 
     # Immediate result for single file (no 4-second wait)
     result = (
@@ -1113,6 +1126,21 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
 # ──────────────────────────────────────────────
 # EVENT COUNTDOWN HELPER (reused in menu + viewevent)
 # ──────────────────────────────────────────────
+async def _debounced_broadcast(chat_id: int):
+    """Wait 5 seconds and send only ONE combined notification"""
+    await asyncio.sleep(5.2)
+    temp_key = f"pending_broadcast:{chat_id}"
+    
+    data = await redis_client.get(temp_key)
+    if not data:
+        return
+        
+    added_counts = json.loads(data)
+    await redis_client.delete(temp_key)
+    
+    if any(added_counts.values()):
+        await broadcast_new_resources(added_counts)
+
 async def get_event_countdown(event: dict) -> str:
     """Returns a nice countdown string like '⏳ Ends in 14h 32m' or empty if expired."""
     if not event or not event.get("event_date"):
