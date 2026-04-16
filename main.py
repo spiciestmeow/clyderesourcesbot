@@ -1084,7 +1084,8 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "*,has_seen_menu,created_at,total_xp_earned,"
                 "windows_views,office_views,netflix_views,netflix_reveals,"
                 "prime_views,prime_reveals,times_cleared,guidance_reads,"
-                "lore_reads,profile_views"
+                "lore_reads,profile_views,"
+                "total_wheel_spins,wheel_xp_earned,legendary_spins"
             ),
         },
     )
@@ -1690,8 +1691,8 @@ async def _log_wheel_spin(
     got_fresh_cookie: bool = False,
     cookie_service: str | None = None,
 ):
-    """Log every wheel spin + update user summary stats"""
-    # Detailed record
+    """Log every wheel spin + update user summary stats (reliable version)"""
+    # 1. Save detailed record
     await _sb_post("wheel_spins", {
         "chat_id": chat_id,
         "first_name": first_name,
@@ -1702,15 +1703,18 @@ async def _log_wheel_spin(
         "cookie_service": cookie_service,
     })
 
-    # Update summary in user_profiles (for fast leaderboard)
-    update_payload = {
-        "total_wheel_spins": "total_wheel_spins + 1",
-        "wheel_xp_earned": f"wheel_xp_earned + {xp_earned}",
-    }
-    if rarity == "Legendary":
-        update_payload["legendary_spins"] = "legendary_spins + 1"
+    # 2. Update summary stats reliably
+    profile = await get_user_profile(chat_id)
+    if profile:
+        new_spins = (profile.get("total_wheel_spins") or 0) + 1
+        new_xp = (profile.get("wheel_xp_earned") or 0) + xp_earned
+        new_legendary = (profile.get("legendary_spins") or 0) + (1 if rarity == "Legendary" else 0)
 
-    await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", update_payload)
+        await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {
+            "total_wheel_spins": new_spins,
+            "wheel_xp_earned": new_xp,
+            "legendary_spins": new_legendary,
+        })
 
 # ══════════════════════════════════════════════════════════════════════════════
 # KEYBOARDS
@@ -2642,11 +2646,10 @@ async def handle_leaderboard(chat_id: int):
 
 async def handle_wheel_leaderboard(chat_id: int):
     """🏆 Wheel of Whispers Leaderboard - Top Spinners"""
-    # Get top 10 by total spins
     top_data = await _sb_get(
         "user_profiles",
         **{
-            "select": "first_name,total_wheel_spins,wheel_xp_earned,legendary_spins,level",
+            "select": "chat_id,first_name,total_wheel_spins,wheel_xp_earned,legendary_spins,level",  # ← Added chat_id
             "total_wheel_spins": "gt.0",
             "order": "total_wheel_spins.desc",
             "limit": 10
@@ -2682,7 +2685,7 @@ async def handle_wheel_leaderboard(chat_id: int):
             f"   ✨ {wheel_xp:,} Wheel XP\n\n"
         )
 
-    # Show user's own stats
+    # Show your own stats
     profile = await get_user_profile(chat_id)
     if profile and profile.get("total_wheel_spins", 0) > 0:
         text += "━━━━━━━━━━━━━━━━━━\n"
@@ -4590,11 +4593,7 @@ async def process_update(update_data: dict):
         except Exception as e:
             await tg_app.bot.send_message(chat_id, f"❌ Error: {e}")
 
-    elif text.startswith("/testdaily"):
-        if chat_id != OWNER_ID:
-            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
-            return
-
+    # ── RESET WHEEL (Safe - only removes daily cooldown) ──
     elif text.startswith("/resetwheel"):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can reset the wheel.")
@@ -4613,13 +4612,18 @@ async def process_update(update_data: dict):
             parse_mode="HTML"
         )
 
+    # ── TEST DAILY (Full test reset) ──
+    elif text.startswith("/testdaily"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+            return
+        
         parts = text.split()
         if len(parts) < 2:
             await tg_app.bot.send_message(
                 chat_id,
                 "🔧 <b>Usage:</b> <code>/testdaily &lt;user_id&gt;</code>\n\n"
-                "Example:\n<code>/testdaily 123456789</code>\n\n"
-                "Fully resets daily bonus + referral state for clean re-testing.",
+                "Example:\n<code>/testdaily 7399488750</code>",
                 parse_mode="HTML"
             )
             return
@@ -4627,7 +4631,7 @@ async def process_update(update_data: dict):
         try:
             target_id = int(parts[1])
 
-            # ← NEW: Clears everything needed for perfect re-test
+            # Reset everything needed for clean testing
             keys = [
                 f"daily_bonus:{target_id}",
                 f"pending_ref:{target_id}",
@@ -4642,7 +4646,7 @@ async def process_update(update_data: dict):
                 f"• Pending referral → cleared\n"
                 f"• Referral lock → cleared\n\n"
                 f"Deleted {deleted} Redis key(s)\n\n"
-                f"You can now click the referral link again for a **clean** test.",
+                f"You can now test daily bonus or referral link cleanly.",
                 parse_mode="HTML"
             )
         except ValueError:
