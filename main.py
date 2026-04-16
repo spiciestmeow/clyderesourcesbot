@@ -900,6 +900,133 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
 
     return imported, skipped, errors, dict(added_counts)
 
+async def edit_notion_availability(chat_id: int, page_id: str):
+    options = ["Available", "Expired"]
+    buttons = []
+    for opt in options:
+        buttons.append([InlineKeyboardButton(opt, callback_data=f"set_notion_availability|{page_id}|{opt}")])
+    buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="view_notion_steam")])
+
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text="🔄 <b>Change Availability</b>\n\nChoose new status:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def set_notion_availability(chat_id: int, page_id: str, new_status: str):
+    headers = {
+        "Authorization": f"Bearer {os.getenv('NOTION_TOKEN')}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28"
+    }
+
+    payload = {
+        "properties": {
+            "Availability": {"select": {"name": new_status}},
+            "Updated": {"date": {"start": datetime.now(pytz.utc).isoformat()}}
+        }
+    }
+
+    try:
+        r = await http.patch(f"https://api.notion.com/v1/pages/{page_id}", headers=headers, json=payload)
+        if r.status_code in (200, 201):
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ Availability changed to <b>{new_status}</b> successfully!",
+                parse_mode="HTML"
+            )
+            await asyncio.sleep(1)
+            await view_notion_steam_library(chat_id, page=0)
+    except Exception as e:
+        await tg_app.bot.send_message(chat_id, f"❌ Failed: {e}")
+
+async def view_notion_steam_library(chat_id: int, page: int = 0):
+    """Shows exactly 4 columns from your Notion table:
+    Game Name | Availability | Display (formula) | Updated (clock emoji formula)"""
+    database_id = os.getenv("NOTION_DATABASE_ID")
+    if not database_id:
+        await tg_app.bot.send_message(chat_id, "❌ Notion database not configured.")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv('NOTION_TOKEN')}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28"
+    }
+
+    try:
+        r = await http.post(
+            f"https://api.notion.com/v1/databases/{database_id}/query",
+            headers=headers,
+            json={
+                "page_size": 20,
+                "sorts": [{"property": "Game Name", "direction": "ascending"}]
+            }
+        )
+        results = r.json().get("results", [])
+    except Exception as e:
+        await tg_app.bot.send_message(chat_id, f"❌ Could not load Notion data: {e}")
+        return
+
+    if not results:
+        await tg_app.bot.send_message(chat_id, "🌫️ No games found in STEAM LIBRARY.")
+        return
+
+    start = page * 8
+    page_items = results[start:start + 8]
+
+    text = "📋 <b>Notion STEAM LIBRARY</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    buttons = []
+
+    for item in page_items:
+        props = item.get("properties", {})
+
+        # 1. Game Name
+        game_name = props.get("Game Name", {}).get("title", [{}])[0].get("text", {}).get("content", "Unknown")
+
+        # 2. Availability
+        availability = props.get("Availability", {}).get("select", {}).get("name", "—")
+
+        # 3. Display (formula column)
+        display = props.get("Display", {}).get("formula", {}).get("string", "—")
+
+        # 4. Updated (clock emoji formula column)
+        # Try common keys because the column name is only the clock emoji
+        updated_prop = (
+            props.get("Updated", {}) or
+            props.get("🕒", {}) or
+            props.get("Clock", {})
+        )
+        updated = updated_prop.get("formula", {}).get("string", "—")
+
+        text += f"🎮 <b>{game_name}</b>\n"
+        text += f"   Availability: <b>{availability}</b>\n"
+        text += f"   Display: {display}\n"
+        text += f"   Updated: {updated}\n\n"
+
+        page_id = item["id"]
+        buttons.append([
+            InlineKeyboardButton(f"✏️ Change {game_name[:22]}", callback_data=f"edit_notion_availability|{page_id}")
+        ])
+
+    # Navigation
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"notion_page_{page-1}"))
+    if start + 8 < len(results):
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"notion_page_{page+1}"))
+    if nav:
+        buttons.append(nav)
+    buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_menu")])
+
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
 async def handle_document(update: Update):
     """Handle document uploads (.txt or .zip) - Fast single file + Batch for multiple"""
     message = update.message
@@ -2032,6 +2159,9 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("🎮 Search Steam", callback_data="caretaker_searchsteam"),
             InlineKeyboardButton("🎮 Upload Steam", callback_data="caretaker_uploadsteam"),
+        ],
+        [
+            InlineKeyboardButton("📋 View & Edit Notion Steam Library", callback_data="view_notion_steam"),
         ],
         [
             InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu"),
@@ -3908,6 +4038,21 @@ async def handle_callback(update: Update):
             ),
             parse_mode="HTML", reply_markup=kb_inventory(),
         )
+
+    elif data == "view_notion_steam":
+        await view_notion_steam_library(chat_id)
+
+    elif data.startswith("notion_page_"):
+        page = int(data.split("_")[2])
+        await view_notion_steam_library(chat_id, page=page)
+
+    elif data.startswith("edit_notion_availability|"):
+        page_id = data.split("|")[1]
+        await edit_notion_availability(chat_id, page_id)
+
+    elif data.startswith("set_notion_availability|"):
+        _, page_id, new_status = data.split("|")
+        await set_notion_availability(chat_id, page_id, new_status)
 
     # ── WHEEL OF WHISPERS ──
     elif data == "show_wheel_menu":
