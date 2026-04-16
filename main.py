@@ -1284,30 +1284,42 @@ async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool,
         return True, max_reveals - int(result) + 1   # +1 because result is after increment
 
 async def get_remaining_reveals_and_views(chat_id: int) -> dict:
-    """Returns current remaining for all categories"""
-    profile = await get_user_profile(chat_id)
-    if not profile:
+    """Returns current remaining for all categories with robust error handling"""
+    try:
+        profile = await get_user_profile(chat_id)
+        if not profile:
+            return {"netflix": 0, "prime": 0, "windows": 0, "office": 0}
+        
+        level = profile.get("level", 1)
+        remaining = {}
+
+        # Netflix & Prime (reveals)
+        for svc in ["netflix", "prime"]:
+            try:
+                key = f"daily_reveals:{chat_id}:{svc}"
+                used = int(await redis_client.get(key) or 0)
+                max_allowed = get_max_daily_reveals(level, svc)
+                remaining[svc] = max(0, max_allowed - used)
+            except Exception as e:
+                print(f"🔴 Redis error getting {svc} remaining for {chat_id}: {e}")
+                remaining[svc] = 0
+
+        # Windows & Office (views)
+        for cat in ["windows", "office"]:
+            try:
+                key = f"daily_views:{chat_id}:{cat}"
+                used = int(await redis_client.get(key) or 0)
+                max_allowed = get_max_daily_views(level, cat)
+                remaining[cat] = max(0, max_allowed - used)
+            except Exception as e:
+                print(f"🔴 Redis error getting {cat} remaining for {chat_id}: {e}")
+                remaining[cat] = 0
+
+        return remaining
+
+    except Exception as e:
+        print(f"🔴 Critical error in get_remaining_reveals_and_views({chat_id}): {e}")
         return {"netflix": 0, "prime": 0, "windows": 0, "office": 0}
-    
-    level = profile.get("level", 1)
-    
-    remaining = {}
-    
-    # Netflix & Prime (reveals)
-    for svc in ["netflix", "prime"]:
-        key = f"daily_reveals:{chat_id}:{svc}"
-        used = int(await redis_client.get(key) or 0)
-        max_allowed = get_max_daily_reveals(level, svc)
-        remaining[svc] = max(0, max_allowed - used)
-    
-    # Windows & Office (views)
-    for cat in ["windows", "office"]:
-        key = f"daily_views:{chat_id}:{cat}"
-        used = int(await redis_client.get(key) or 0)
-        max_allowed = get_max_daily_views(level, cat)
-        remaining[cat] = max(0, max_allowed - used)
-    
-    return remaining
 
 async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
     """
