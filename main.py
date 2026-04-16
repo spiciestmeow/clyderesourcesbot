@@ -1691,15 +1691,16 @@ def kb_start():
 
 def kb_main_menu():
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌟 Wheel of Whispers", callback_data="show_wheel_menu")],
         [
-            InlineKeyboardButton("🪄 Spirit Treasures",  url="https://clyderesourcehub.short.gy/steam-account"),
-            InlineKeyboardButton("📜 Ancient Scrolls",   url="https://clyderesourcehub.short.gy/learn-and-guides"),
+            InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
+            InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides"),
         ],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
-        [InlineKeyboardButton("🌲 The Whispering Forest",  url="https://clyderesourcehub.short.gy/")],
+        [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
             InlineKeyboardButton("❓ Guidance", callback_data="help"),
-            InlineKeyboardButton("ℹ️ Lore",     callback_data="about"),
+            InlineKeyboardButton("ℹ️ Lore", callback_data="about"),
         ],
         [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
@@ -1707,14 +1708,15 @@ def kb_main_menu():
 
 def kb_first_time_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❓ Start Here → Guidance",   callback_data="help")],
-        [InlineKeyboardButton("🪄 Spirit Treasures",        url="https://clyderesourcehub.short.gy/steam-account")],
-        [InlineKeyboardButton("📜 Ancient Scrolls",         url="https://clyderesourcehub.short.gy/learn-and-guides")],
-        [InlineKeyboardButton("🌿 Check Forest Inventory",  callback_data="check_vamt")],
-        [InlineKeyboardButton("🌲 The Whispering Forest",   url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("ℹ️ Lore",                    callback_data="about")],
+        [InlineKeyboardButton("❓ Start Here → Guidance", callback_data="help")],
+        [InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account")],
+        [InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
+        [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
+        [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
+        [InlineKeyboardButton("ℹ️ Lore", callback_data="about")],
         [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
-        [InlineKeyboardButton("🕊️ Messenger of the Wind",  url="https://t.me/caydigitals")],
+        [InlineKeyboardButton("🌟 Wheel of Whispers", callback_data="show_wheel_menu")],
+        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
     ])
 
 def kb_inventory():
@@ -2200,14 +2202,22 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         return
     await redis_client.setex(spam_key, 3, 1)
     
-    # ── Consume cap — item is confirmed valid ──
-    if not await try_consume_reveal_cap(chat_id, service_type):
-        await query.answer(
-            "🌿 You've revealed enough cookies for today.\n"
-            "The forest needs to rest — come back tomorrow! 🍃",
-            show_alert=True
-        )
-        return
+    # ── Check bonus slots first (from Wheel of Whispers) ──
+    bonus_key = f"daily_reveals_bonus:{chat_id}"
+    bonus_slots = int(await redis_client.get(bonus_key) or 0)
+
+    if bonus_slots > 0:
+        await redis_client.decr(bonus_key)
+        # Bonus slot used
+    else:
+        # Normal daily cap
+        if not await try_consume_reveal_cap(chat_id, service_type):
+            await query.answer(
+                "🌿 You've revealed enough cookies for today.\n"
+                "The forest needs to rest — come back tomorrow! 🍃",
+                show_alert=True
+            )
+            return
     
     # ── Show loading (cap is now committed) ──
     loading = await send_loading(
@@ -3028,7 +3038,7 @@ async def handle_status(chat_id: int):
     async def check_telegram():
         try:
             me = await asyncio.wait_for(tg_app.bot.get_me(), timeout=5.0)
-            return f"✅ OK (@{me.username})"
+            return f"✅ OK"
         except Exception as e:
             return f"❌ {e}"
 
@@ -3607,6 +3617,102 @@ async def handle_callback(update: Update):
             ),
             parse_mode="HTML", reply_markup=kb_inventory(),
         )
+
+    # ── WHEEL OF WHISPERS ──
+    elif data == "show_wheel_menu":
+        await query.answer()
+        caption = (
+            "🌟 <b>Wheel of Whispers</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "The ancient wooden wheel, glowing with runes and floating leaves, awaits your touch.\n\n"
+            "You may spin **once per day**.\n"
+            "Each spin brings a blessing from the forest spirits.\n\n"
+            "<i>Would you like to test your luck?</i> ✨"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
+            [InlineKeyboardButton("ℹ️ About the Wheel", callback_data="about_wheel")],
+            [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+        ])
+        await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=LOADING_GIF,
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        return
+
+    # ── ACTUAL SPIN ──
+    elif data == "spin_now":
+        await query.answer()
+        if await redis_client.get(f"wheel_spin:{chat_id}"):
+            await tg_app.bot.send_message(chat_id=chat_id, text="🌿 <b>The Wheel of Whispers is resting...</b>\n\nYou have already spun today.\nCome back tomorrow after midnight (Manila time) ✨", parse_mode="HTML")
+            return
+
+        reward_table = [
+            {"rarity": "Common",    "xp": 13,  "text": "🌿 <b>Common Reward</b>\n\n+13 XP"},
+            {"rarity": "Uncommon",  "xp": 30,  "text": "🍃 <b>Uncommon Reward</b>\n\n+30 XP"},
+            {"rarity": "Rare",      "xp": 55,  "text": "🌟 <b>Rare Reward!</b>\n\n+55 XP\n+1 Extra Reveal Slot"},
+            {"rarity": "Epic",      "xp": 75,  "text": "✨ <b>Epic Reward!</b>\n\n+75 XP"},
+            {"rarity": "Legendary", "xp": 0,   "text": "🌠 <b>Legendary Jackpot!</b>"},
+            {"rarity": "Secret",    "xp": 45,  "text": "🪄 <b>Secret Reward!</b>\n\n+45 XP"},
+        ]
+        weights = [50, 28, 12, 6, 3, 1]
+        selected = random.choices(reward_table, weights=weights, k=1)[0]
+        rarity = selected["rarity"]
+
+        loading = await tg_app.bot.send_animation(chat_id=chat_id, animation=LOADING_GIF, caption="🌟 <b>The ancient Wheel of Whispers is spinning...</b>\n\nLeaves and fireflies dance in the wind...", parse_mode="HTML")
+        await asyncio.sleep(3.0)
+
+        action_xp, _ = await add_xp(chat_id, first_name, "wheel_spin")
+
+        if rarity in ["Rare", "Epic", "Legendary"]:
+            await redis_client.incr(f"daily_reveals_bonus:{chat_id}")
+            await redis_client.expire(f"daily_reveals_bonus:{chat_id}", 86400)
+
+        if rarity == "Legendary":
+            vamt_data = await get_vamt_data()
+            if vamt_data:
+                fresh = [item for item in vamt_data if item.get("service_type") in ["netflix", "prime"] and int(item.get("remaining", 0)) > 0]
+                if fresh:
+                    item = fresh[-1]
+                    service_type = item["service_type"]
+                    cookie = str(item.get("key_id", "")).strip()
+                    display = str(item.get("display_name", f"{service_type.title()} Cookie"))
+                    file_content = f"🌟 Legendary Wheel Reward — Fresh {service_type.title()} Cookie 🌟\n════════════════════════════════\nDate: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n{cookie}\n════════════════════════════════"
+                    file_bytes = BytesIO(file_content.encode("utf-8"))
+                    file_bytes.name = f"{display.replace(' ', '_')}.txt"
+                    await tg_app.bot.send_document(chat_id=chat_id, document=file_bytes, caption=f"🌠 <b>Legendary Jackpot!</b>\n\nHere is your fresh {service_type.title()} cookie!\n\nEnjoy, wanderer 🍃", parse_mode="HTML")
+
+        if action_xp > 0:
+            asyncio.create_task(send_xp_feedback(chat_id, action_xp, duration=3))
+
+        caption = selected["text"] + "\n\nThe forest smiles upon you, wanderer. 🍃"
+        await loading.edit_caption(caption=caption, parse_mode="HTML")
+        await redis_client.setex(f"wheel_spin:{chat_id}", 86400, "1")
+        return
+
+    # ── ABOUT WHEEL OF WHISPERS ──
+    elif data == "about_wheel":
+        await query.answer()
+        text = (
+            "🌟 <b>About the Wheel of Whispers</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Every wanderer gets <b>1 free spin per day</b>.\n\n"
+            "🎁 <b>Rewards:</b>\n"
+            "• Common (50%)   → +13 XP\n"
+            "• Uncommon (28%) → +30 XP\n"
+            "• Rare (12%)     → +55 XP + 1 Extra Reveal Slot\n"
+            "• Epic (6%)      → +75 XP\n"
+            "• Legendary (3%) → Fresh Netflix or Prime Cookie\n"
+            "• Secret (1%)    → Special surprise +45 XP\n\n"
+            "Extra Reveal Slots can be used when revealing Netflix or Prime cookies.\n\n"
+            "The wheel resets every midnight (Manila time).\n\n"
+            "<i>May the forest bless your spins, wanderer.</i> ✨"
+        )
+        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        return
 
     # ── NOOP (disabled button)
     elif data == "noop":
@@ -4491,6 +4597,15 @@ async def process_update(update_data: dict):
     elif text.startswith("/invite"):
         await handle_invite(chat_id, first_name)
 
+    elif text.startswith("/spin"):
+        await handle_callback(Update.de_json({
+            "callback_query": {
+                "data": "spin_wheel",
+                "from": update.effective_user.to_dict() if update.effective_user else {}
+            }
+        }, tg_app.bot))
+        return
+    
     elif text.startswith(("/updates", "/update")):
         await handle_updates(chat_id)
 
