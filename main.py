@@ -4126,12 +4126,20 @@ async def handle_callback(update: Update):
                 allowed, remaining = await try_consume_view_cap(chat_id, category)
                 if not allowed:
                     cat_label = "Windows" if category in ("win", "windows") else "Office"
-                    await query.answer(
-                        f"🌿 You've viewed all your {cat_label} keys for today.\n"
-                        f"You have <b>{remaining}</b> left.\n"
-                        "The forest needs to rest — come back tomorrow! 🍃",
-                        show_alert=True
+                    cat_emoji = "🪟" if category in ("win", "windows") else "📑"
+                    max_daily = get_max_daily_views(profile.get("level", 1), category)
+                    
+                    await query.message.edit_caption(
+                        caption=(
+                            f"{cat_emoji} <b>{cat_label} Daily Limit Reached</b>\n\n"
+                            f"🌿 You have already viewed your maximum <b>{max_daily}</b> keys today.\n\n"
+                            f"Come back tomorrow after midnight (Manila time) for fresh keys 🍃\n\n"
+                            f"<i>Remaining views today: <b>{remaining}</b></i>"
+                        ),
+                        parse_mode="HTML",
+                        reply_markup=kb_back_inventory(),
                     )
+                    await query.answer("Daily view limit reached", show_alert=False)
                     return
                 
                 # Award XP now that we're actually showing the keys
