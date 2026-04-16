@@ -2332,7 +2332,6 @@ async def show_paginated_cookie_list(
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
-
     loading = None
 
     try:
@@ -2387,7 +2386,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
             # Normal daily cap
             allowed, remaining = await try_consume_reveal_cap(chat_id, service_type)
             if not allowed:
-                # ← Improved: nice full-screen message instead of popup
+                # ← This is the important part that fixes the "returns to 10 remaining" bug
                 await query.message.edit_caption(
                     caption=(
                         f"{emoji} <b>Daily Reveal Limit Reached</b>\n\n"
@@ -2414,7 +2413,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         )
         await asyncio.sleep(1.5)
 
-        # ── Deliver cookie ──
+        # ── Deliver the cookie ──
         cookie = str(item.get("key_id", "")).strip()
         display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
         action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
@@ -2477,7 +2476,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         except Exception:
             pass
 
-        # ── Success only ──
+        # Success only
         action_xp, _ = await add_xp(chat_id, first_name, action_name)
         if action_xp:
             asyncio.create_task(send_xp_feedback(chat_id, action_xp))
@@ -2505,6 +2504,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
                 await loading.delete()
             except:
                 pass
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
