@@ -41,7 +41,6 @@ MAINTENANCE_MESSAGE = (
 
 CACHE_TTL            = 300
 NETFLIX_ITEMS_PER_PAGE = 8
-MAX_DAILY_REVEALS = 999
 
 DISPLAY_NAME_MAP = {
     "netflix": "Netflix Cookie",
@@ -1160,6 +1159,29 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
 
     return 0
 
+# ══════════════════════════════════════════════════════════════════════════════
+# DAILY CAP HELPERS (Level-based)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_max_daily_reveals(level: int, service_type: str) -> int:
+    """Daily REVEAL limit for Netflix and Prime cookies"""
+    level = int(level)
+    if service_type == "netflix":
+        tiers = {1: 15, 2: 20, 3: 25, 4: 32, 5: 40, 6: 50, 7: 65, 8: 85, 9: 110, 10: 999}
+        return tiers.get(level, 999)
+    else:  # prime
+        tiers = {1: 12, 2: 16, 3: 20, 4: 26, 5: 32, 6: 40, 7: 52, 8: 68, 9: 90, 10: 999}
+        return tiers.get(level, 999)
+
+
+def get_max_daily_views(level: int, category: str) -> int:
+    """Daily VIEW limit for Windows and Office keys"""
+    level = int(level)
+    if category in ("win", "windows", "office"):
+        tiers = {1: 12, 2: 16, 3: 20, 4: 25, 5: 32, 6: 40, 7: 50, 8: 65, 9: 90, 10: 999}
+        return tiers.get(level, 999)
+    return 999
+
 # ──────────────────────────────────────────────
 # EVENT COUNTDOWN HELPER (reused in menu + viewevent)
 # ──────────────────────────────────────────────
@@ -1232,31 +1254,62 @@ async def check_rate_limit(chat_id: int) -> bool:
     results = await pipe.execute()
     return results[0] <= MAX_ACTIONS_PER_MINUTE
 
-async def try_consume_reveal_cap(chat_id: int, service_type: str) -> bool:
+async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool, int]:
     """
-    Atomically consume one daily reveal slot using a Lua script.
-    Completely eliminates the TOCTOU race condition.
-    Returns True if the reveal is allowed, False if daily cap is reached.
+    Atomic daily REVEAL cap → returns (allowed: bool, remaining_today: int)
     """
+    profile = await get_user_profile(chat_id)
+    user_level = profile.get("level", 1) if profile else 1
+    
+    max_reveals = get_max_daily_reveals(user_level, service_type)
+    
     key = f"daily_reveals:{chat_id}:{service_type}"
     
     manila = pytz.timezone("Asia/Manila")
     now = datetime.now(manila)
-    midnight = (now + timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     ttl = int((midnight - now).total_seconds())
-
-    # Execute Lua script atomically
+    
     result = await redis_client.eval(
         REVEAL_CAP_SCRIPT,
-        1,                    # number of keys
-        key,                  # KEYS[1]
-        MAX_DAILY_REVEALS,    # ARGV[1]
-        ttl                   # ARGV[2]
+        1, key, max_reveals, ttl
     )
+    
+    if result == 0:
+        # Cap reached → return current count to show remaining = 0
+        current = await redis_client.get(key) or 0
+        return False, 0
+    else:
+        # Still allowed
+        return True, max_reveals - int(result) + 1   # +1 because result is after increment
 
-    return result != 0
+
+async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
+    """
+    Atomic daily VIEW cap → returns (allowed: bool, remaining_today: int)
+    """
+    profile = await get_user_profile(chat_id)
+    user_level = profile.get("level", 1) if profile else 1
+    
+    max_views = get_max_daily_views(user_level, category)
+    
+    key = f"daily_views:{chat_id}:{category}"
+    
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    ttl = int((midnight - now).total_seconds())
+    
+    result = await redis_client.eval(
+        REVEAL_CAP_SCRIPT,
+        1, key, max_views, ttl
+    )
+    
+    if result == 0:
+        current = await redis_client.get(key) or 0
+        return False, 0
+    else:
+        return True, max_views - int(result) + 1
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
@@ -2240,7 +2293,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
     if await redis_client.exists(spam_key):
         await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
         return
-    await redis_client.setex(spam_key, 3, 1)
+    await redis_client.setex(spam_key, 8, 1)
     
     # ── Check bonus slots first (from Wheel of Whispers) ──
     bonus_key = f"daily_reveals_bonus:{chat_id}"
@@ -2251,9 +2304,11 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         # Bonus slot used
     else:
         # Normal daily cap
-        if not await try_consume_reveal_cap(chat_id, service_type):
+        allowed, remaining = await try_consume_reveal_cap(chat_id, service_type)
+        if not allowed:
             await query.answer(
-                "🌿 You've revealed enough cookies for today.\n"
+                f"🌿 You've revealed all your cookies for today.\n"
+                f"You have <b>{remaining}</b> left.\n"
                 "The forest needs to rest — come back tomorrow! 🍃",
                 show_alert=True
             )
@@ -3322,6 +3377,17 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     await asyncio.sleep(0.8)
 
     user_level = profile.get("level", 1)
+    # ── NEW: Daily view cap for Windows / Office ──
+    allowed, remaining = await try_consume_view_cap(chat_id, category)
+    if not allowed:
+        await query.answer(
+            f"🌿 You've viewed all your {cat_label} keys for today.\n"
+            f"You have <b>{remaining}</b> left.\n"
+            "The forest needs to rest — come back tomorrow! 🍃",
+            show_alert=True
+        )
+        return
+
     vamt = await get_vamt_data()
     if not vamt:
         await send_supabase_error(chat_id, query)
@@ -3966,6 +4032,18 @@ async def handle_callback(update: Update):
             await show_paginated_cookie_list(category, chat_id, query, page=0)
             return
         
+        if category in ("win", "windows", "office"):
+            allowed, remaining = await try_consume_view_cap(chat_id, category)
+            if not allowed:
+                cat_label = "Windows" if category in ("win", "windows") else "Office"
+                await query.answer(
+                    f"🌿 You've viewed all your {cat_label} keys for today.\n"
+                    f"You have <b>{remaining}</b> left.\n"
+                    "The forest needs to rest — come back tomorrow! 🍃",
+                    show_alert=True
+                )
+                return
+            
         # ── NEW: First-time guide for Windows / Office ──────────────────
         if category in ("win", "windows", "office"):
                 seen = await has_seen_winoffice_guide(chat_id)
