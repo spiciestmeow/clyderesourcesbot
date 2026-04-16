@@ -1336,31 +1336,46 @@ async def get_remaining_reveals_and_views(chat_id: int) -> dict:
 
 async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
     """
-    Atomic daily VIEW cap → returns (allowed: bool, remaining_today: int)
+    Atomic daily VIEW cap with FULL debug logging + error handling
+    (exact same pattern as try_consume_reveal_cap)
     """
-    profile = await get_user_profile(chat_id)
-    user_level = profile.get("level", 1) if profile else 1
-    
-    max_views = get_max_daily_views(user_level, category)
-    
-    key = f"daily_views:{chat_id}:{category}"
-    
-    manila = pytz.timezone("Asia/Manila")
-    now = datetime.now(manila)
-    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    ttl = int((midnight - now).total_seconds())
-    
-    result = await redis_client.eval(
-        REVEAL_CAP_SCRIPT,
-        1, key, max_views, ttl
-    )
-    
-    if result == 0:
-        current = await redis_client.get(key) or 0
-        return False, 0
-    else:
-        return True, max_views - int(result) + 1
+    try:
+        profile = await get_user_profile(chat_id)
+        user_level = profile.get("level", 1) if profile else 1
+        max_views = get_max_daily_views(user_level, category)
 
+        key = f"daily_views:{chat_id}:{category}"
+
+        manila = pytz.timezone("Asia/Manila")
+        now = datetime.now(manila)
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        ttl = int((midnight - now).total_seconds())
+
+        print(f"[DEBUG VIEW CAP] {chat_id} | {category} | Lv{user_level} | Max={max_views} | TTL={ttl}s")
+
+        result = await redis_client.eval(
+            REVEAL_CAP_SCRIPT,
+            1, key, max_views, ttl
+        )
+
+        print(f"[DEBUG VIEW RESULT] Raw Lua result = {result}")
+
+        if result == 0:
+            current = int(await redis_client.get(key) or 0)
+            print(f"[DEBUG] VIEW CAP REACHED for {category}. Currently used = {current}")
+            return False, 0
+        else:
+            used_after = int(result)
+            remaining = max_views - used_after + 1
+            print(f"[DEBUG] VIEW SUCCESS → Used now = {used_after} | Remaining = {remaining}")
+            return True, remaining
+
+    except Exception as e:
+        print(f"🔴 CRITICAL Redis error in try_consume_view_cap({chat_id}, {category}): {e}")
+        import traceback
+        traceback.print_exc()
+        return False, 0   # safe fallback
+    
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
 # ══════════════════════════════════════════════════════════════════════════════
