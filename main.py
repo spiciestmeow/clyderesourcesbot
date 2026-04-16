@@ -3437,129 +3437,116 @@ async def handle_confirm_toggle_maintenance(chat_id: int):
         reply_markup=confirm_kb,
     )
 
-
 async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query):
-    """Shared key display logic for Windows and Office."""
+    """Shared key display logic for Windows and Office — guaranteed loading cleanup"""
     pending_cat = category
     cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
     cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
 
-    loading = await send_loading(
-        chat_id,
-        f"{cat_emoji} <i>Opening the {cat_label} key scroll from the ancient library...</i>"
-    )
+    loading = None
+    try:
+        # Start loading
+        loading = await send_loading(
+            chat_id,
+            f"{cat_emoji} <i>Opening the {cat_label} key scroll from the ancient library...</i>"
+        )
 
-    await query.message.edit_caption(
-        caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
-        parse_mode="HTML",
-    )
-    await asyncio.sleep(0.8)
-
-    user_level = profile.get("level", 1)
-    internal_cat = normalize_view_category(category)
-
-    # Get remaining views
-    rem = await get_remaining_reveals_and_views(chat_id)
-    views_left = rem.get(internal_cat, 0)
-
-    vamt = await get_vamt_data()
-    if not vamt:
-        await send_supabase_error(chat_id, query)
-        await loading.delete()
-        return
-
-    if pending_cat in ("win", "windows"):
-        filtered = [
-            item for item in vamt
-            if any(x in str(item.get("service_type", "")).lower() for x in ("windows", "win"))
-            and int(item.get("remaining") or 0) > 0
-        ]
-    else:
-        filtered = [
-            item for item in vamt
-            if "office" in str(item.get("service_type", "")).lower()
-            and int(item.get("remaining") or 0) > 0
-        ]
-
-    if not filtered:
-        try:
-            await loading.delete()
-        except Exception:
-            pass
         await query.message.edit_caption(
-            caption=f"🍃 No {cat_label} keys available right now. Check back later!",
+            caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
             parse_mode="HTML",
-            reply_markup=kb_back_inventory(),
         )
-        return
+        await asyncio.sleep(0.8)
 
-    max_items = get_max_items(pending_cat, user_level)
-    filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
-    display_items = filtered[:max_items]
+        user_level = profile.get("level", 1)
+        internal_cat = normalize_view_category(category)
 
-    report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-    report += f"🌿 You have <b>{views_left}</b> views left today (Level {user_level})\n\n"
-    report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
+        # Get remaining views (read only)
+        rem = await get_remaining_reveals_and_views(chat_id)
+        views_left = rem.get(internal_cat, 0)
 
-    for item in display_items:
-        stock = str(item.get("remaining", 0))
+        vamt = await get_vamt_data()
+        if not vamt:
+            await send_supabase_error(chat_id, query)
+            return
+
+        if pending_cat in ("win", "windows"):
+            filtered = [
+                item for item in vamt
+                if any(x in str(item.get("service_type", "")).lower() for x in ("windows", "win"))
+                and int(item.get("remaining") or 0) > 0
+            ]
+        else:
+            filtered = [
+                item for item in vamt
+                if "office" in str(item.get("service_type", "")).lower()
+                and int(item.get("remaining") or 0) > 0
+            ]
+
+        if not filtered:
+            await query.message.edit_caption(
+                caption=f"🍃 No {cat_label} keys available right now. Check back later!",
+                parse_mode="HTML",
+                reply_markup=kb_back_inventory(),
+            )
+            return
+
+        max_items = get_max_items(pending_cat, user_level)
+        filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
+        display_items = filtered[:max_items]
+
+        report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        report += f"🌿 You have <b>{views_left}</b> views left today (Level {user_level})\n\n"
+        report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
+
+        for item in display_items:
+            stock = str(item.get("remaining", 0))
+            report += (
+                f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
+                f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
+                f"└ 📦 Remaining: <b>{stock}</b>\n\n"
+            )
+
         report += (
-            f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
-            f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
-            f"└ 📦 Remaining: <b>{stock}</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🌿 Level {user_level} → Up to <b>{max_items}</b> {cat_label} keys\n\n"
+            "Tap ✅ if it worked, ❌ if it did not — Caretaker will be notified. 🍃"
         )
 
-    report += (
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🌿 Level {user_level} → Up to <b>{max_items}</b> {cat_label} keys\n\n"
-        "Tap ✅ if it worked, ❌ if it did not — Caretaker will be notified. 🍃"
-    )
+        buttons = []
+        for item in display_items:
+            raw_key = str(item.get("key_id", "")).strip()
+            svc = str(item.get("service_type", pending_cat)).strip()
+            short = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
+            token = f"{chat_id}:{raw_key[:40]}"
+            await redis_client.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
+            buttons.append([
+                InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
+                InlineKeyboardButton(f"❌", callback_data=f"wkfb_bad|{token}"),
+            ])
 
-    buttons = []
-    for item in display_items:
-        raw_key = str(item.get("key_id", "")).strip()
-        svc = str(item.get("service_type", pending_cat)).strip()
-        short = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
-        token = f"{chat_id}:{raw_key[:40]}"
-        await redis_client.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
-        buttons.append([
-            InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
-            InlineKeyboardButton(f"❌", callback_data=f"wkfb_bad|{token}"),
-        ])
+        buttons.append([InlineKeyboardButton(
+            "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
+        )])
+        buttons.append([InlineKeyboardButton(
+            "⬅️ Back to Inventory", callback_data="check_vamt"
+        )])
 
-    buttons.append([InlineKeyboardButton(
-        "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
-    )])
-    buttons.append([InlineKeyboardButton(
-        "⬅️ Back to Inventory", callback_data="check_vamt"
-    )])
-
-    try:
-        await loading.delete()
-    except Exception:
-        pass
-
-    try:
         await query.message.edit_caption(
             caption=report,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(buttons),
         )
+
     except Exception as e:
-        if "too long" in str(e).lower() or "MESSAGE_TOO_LONG" in str(e):
-            # Caption limit hit — fall back to a regular message (4096 char limit)
+        print(f"🔴 Error in show_winoffice_keys for {chat_id}: {e}")
+        await send_supabase_error(chat_id, query)
+    finally:
+        # ALWAYS remove the loading animation
+        if loading:
             try:
-                await query.message.delete()
+                await loading.delete()
             except Exception:
                 pass
-            await tg_app.bot.send_message(
-                chat_id,
-                report,
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(buttons),
-            )
-        else:
-            raise
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
