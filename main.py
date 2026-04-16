@@ -1422,6 +1422,7 @@ _XP_TABLE = {
     "profile":        6,
     "clear":          6,
     "daily_bonus":    0,
+    "wheel_spin": 0,
 }
 
 _STAT_FIELD = {
@@ -1680,6 +1681,36 @@ async def _log_xp_history(
         },
     )
 
+async def _log_wheel_spin(
+    chat_id: int,
+    first_name: str,
+    rarity: str,
+    xp_earned: int,
+    got_bonus_slot: bool = False,
+    got_fresh_cookie: bool = False,
+    cookie_service: str | None = None,
+):
+    """Log every wheel spin + update user summary stats"""
+    # Detailed record
+    await _sb_post("wheel_spins", {
+        "chat_id": chat_id,
+        "first_name": first_name,
+        "rarity": rarity,
+        "xp_earned": xp_earned,
+        "got_bonus_slot": got_bonus_slot,
+        "got_fresh_cookie": got_fresh_cookie,
+        "cookie_service": cookie_service,
+    })
+
+    # Update summary in user_profiles (for fast leaderboard)
+    update_payload = {
+        "total_wheel_spins": "total_wheel_spins + 1",
+        "wheel_xp_earned": f"wheel_xp_earned + {xp_earned}",
+    }
+    if rarity == "Legendary":
+        update_payload["legendary_spins"] = "legendary_spins + 1"
+
+    await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", update_payload)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # KEYBOARDS
@@ -3646,50 +3677,102 @@ async def handle_callback(update: Update):
     # ── ACTUAL SPIN ──
     elif data == "spin_now":
         await query.answer()
+
         if await redis_client.get(f"wheel_spin:{chat_id}"):
-            await tg_app.bot.send_message(chat_id=chat_id, text="🌿 <b>The Wheel of Whispers is resting...</b>\n\nYou have already spun today.\nCome back tomorrow after midnight (Manila time) ✨", parse_mode="HTML")
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="🌿 <b>The Wheel of Whispers is resting...</b>\n\n"
+                     "The spirits have already blessed you today.\n"
+                     "Come back tomorrow after midnight (Manila time) ✨",
+                parse_mode="HTML"
+            )
             return
 
         reward_table = [
-            {"rarity": "Common",    "xp": 13,  "text": "🌿 <b>Common Reward</b>\n\n+13 XP"},
-            {"rarity": "Uncommon",  "xp": 30,  "text": "🍃 <b>Uncommon Reward</b>\n\n+30 XP"},
-            {"rarity": "Rare",      "xp": 55,  "text": "🌟 <b>Rare Reward!</b>\n\n+55 XP\n+1 Extra Reveal Slot"},
-            {"rarity": "Epic",      "xp": 75,  "text": "✨ <b>Epic Reward!</b>\n\n+75 XP"},
-            {"rarity": "Legendary", "xp": 0,   "text": "🌠 <b>Legendary Jackpot!</b>"},
-            {"rarity": "Secret",    "xp": 45,  "text": "🪄 <b>Secret Reward!</b>\n\n+45 XP"},
+            {"rarity": "Common",      "xp": 13,  "text": "🌿 <b>Common Reward</b>\n\n+13 XP"},
+            {"rarity": "Uncommon",    "xp": 30,  "text": "🍃 <b>Uncommon Reward</b>\n\n+30 XP"},
+            {"rarity": "Rare",        "xp": 55,  "text": "🌟 <b>Rare Reward!</b>\n\n+55 XP\n+1 Extra Reveal Slot"},
+            {"rarity": "Epic",        "xp": 75,  "text": "✨ <b>Epic Reward!</b>\n\n+75 XP"},
+            {"rarity": "Legendary",   "xp": 100, "text": "🌠 <b>Legendary Jackpot!</b>"},
+            {"rarity": "Secret",      "xp": 45,  "text": "🪄 <b>Secret Reward!</b>\n\n+45 XP"},
         ]
         weights = [50, 28, 12, 6, 3, 1]
+
         selected = random.choices(reward_table, weights=weights, k=1)[0]
         rarity = selected["rarity"]
+        reward_xp = selected["xp"]
 
-        loading = await tg_app.bot.send_animation(chat_id=chat_id, animation=LOADING_GIF, caption="🌟 <b>The ancient Wheel of Whispers is spinning...</b>\n\nLeaves and fireflies dance in the wind...", parse_mode="HTML")
+        loading = await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=LOADING_GIF,
+            caption="🌟 <b>The ancient Wheel of Whispers is spinning...</b>\n\n"
+                    "Leaves and fireflies dance in the wind...",
+            parse_mode="HTML"
+        )
+
         await asyncio.sleep(3.0)
 
-        action_xp, _ = await add_xp(chat_id, first_name, "wheel_spin")
+        # Award XP + log to xp_history
+        if reward_xp > 0:
+            original = _XP_TABLE.get("wheel_spin", 0)
+            _XP_TABLE["wheel_spin"] = reward_xp
+            await add_xp(chat_id, first_name, "wheel_spin")
+            _XP_TABLE["wheel_spin"] = original
 
-        if rarity in ["Rare", "Epic", "Legendary"]:
+        got_bonus_slot = rarity in ["Rare", "Epic", "Legendary"]
+        if got_bonus_slot:
             await redis_client.incr(f"daily_reveals_bonus:{chat_id}")
             await redis_client.expire(f"daily_reveals_bonus:{chat_id}", 86400)
 
+        got_fresh_cookie = False
+        cookie_service = None
         if rarity == "Legendary":
             vamt_data = await get_vamt_data()
             if vamt_data:
-                fresh = [item for item in vamt_data if item.get("service_type") in ["netflix", "prime"] and int(item.get("remaining", 0)) > 0]
+                fresh = [item for item in vamt_data
+                         if item.get("service_type") in ["netflix", "prime"]
+                         and int(item.get("remaining", 0)) > 0]
                 if fresh:
                     item = fresh[-1]
                     service_type = item["service_type"]
                     cookie = str(item.get("key_id", "")).strip()
                     display = str(item.get("display_name", f"{service_type.title()} Cookie"))
-                    file_content = f"🌟 Legendary Wheel Reward — Fresh {service_type.title()} Cookie 🌟\n════════════════════════════════\nDate: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n{cookie}\n════════════════════════════════"
+
+                    file_content = (
+                        f"🌠 Legendary Wheel Reward — Fresh {service_type.title()} Cookie 🌠\n"
+                        "════════════════════════════════\n"
+                        f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+                        f"{cookie}\n"
+                        "════════════════════════════════"
+                    )
                     file_bytes = BytesIO(file_content.encode("utf-8"))
                     file_bytes.name = f"{display.replace(' ', '_')}.txt"
-                    await tg_app.bot.send_document(chat_id=chat_id, document=file_bytes, caption=f"🌠 <b>Legendary Jackpot!</b>\n\nHere is your fresh {service_type.title()} cookie!\n\nEnjoy, wanderer 🍃", parse_mode="HTML")
 
-        if action_xp > 0:
-            asyncio.create_task(send_xp_feedback(chat_id, action_xp, duration=3))
+                    await tg_app.bot.send_document(
+                        chat_id=chat_id,
+                        document=file_bytes,
+                        caption=f"🌠 <b>Legendary Jackpot!</b>\n\n"
+                                f"Here is your fresh {service_type.title()} cookie!\n\n"
+                                f"Enjoy, wanderer 🍃",
+                        parse_mode="HTML"
+                    )
+                    got_fresh_cookie = True
+                    cookie_service = service_type
 
-        caption = selected["text"] + "\n\nThe forest smiles upon you, wanderer. 🍃"
-        await loading.edit_caption(caption=caption, parse_mode="HTML")
+        # === LOG TO WHEEL_SPINS TABLE ===
+        await _log_wheel_spin(
+            chat_id=chat_id,
+            first_name=first_name,
+            rarity=rarity,
+            xp_earned=reward_xp,
+            got_bonus_slot=got_bonus_slot,
+            got_fresh_cookie=got_fresh_cookie,
+            cookie_service=cookie_service,
+        )
+
+        final_text = selected["text"] + "\n\nThe forest smiles upon you, wanderer. 🍃"
+        await loading.edit_caption(caption=final_text, parse_mode="HTML")
+
         await redis_client.setex(f"wheel_spin:{chat_id}", 86400, "1")
         return
 
