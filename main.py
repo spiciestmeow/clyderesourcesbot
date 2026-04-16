@@ -1256,35 +1256,46 @@ async def check_rate_limit(chat_id: int) -> bool:
 
 async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool, int]:
     """
-    Atomic daily REVEAL cap → returns (allowed: bool, remaining_today: int)
+    Atomic daily REVEAL cap with FULL debug logging + error handling
     """
-    profile = await get_user_profile(chat_id)
-    user_level = profile.get("level", 1) if profile else 1
-    
-    max_reveals = get_max_daily_reveals(user_level, service_type)
-    
-    key = f"daily_reveals:{chat_id}:{service_type}"
-    
-    manila = pytz.timezone("Asia/Manila")
-    now = datetime.now(manila)
-    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    ttl = int((midnight - now).total_seconds())
-    
-    result = await redis_client.eval(
-        REVEAL_CAP_SCRIPT,
-        1, key, max_reveals, ttl
-    )
-    
-    if result == 0:
-        # Cap reached → return current count to show remaining = 0
-        current = await redis_client.get(key) or 0
-        return False, 0
-    else:
-        # Still allowed
-        return True, max_reveals - int(result) + 1   # +1 because result is after increment
+    try:
+        profile = await get_user_profile(chat_id)
+        user_level = profile.get("level", 1) if profile else 1
+        max_reveals = get_max_daily_reveals(user_level, service_type)
+
+        key = f"daily_reveals:{chat_id}:{service_type}"
+
+        manila = pytz.timezone("Asia/Manila")
+        now = datetime.now(manila)
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        ttl = int((midnight - now).total_seconds())
+
+        print(f"[DEBUG REVEAL CAP] {chat_id} | {service_type} | Lv{user_level} | Max={max_reveals} | TTL={ttl}s")
+
+        result = await redis_client.eval(
+            REVEAL_CAP_SCRIPT,
+            1, key, max_reveals, ttl
+        )
+
+        print(f"[DEBUG REVEAL RESULT] Raw Lua result = {result}")
+
+        if result == 0:
+            current = int(await redis_client.get(key) or 0)
+            print(f"[DEBUG] CAP REACHED. Currently used = {current}")
+            return False, 0
+        else:
+            used_after = int(result)
+            remaining = max_reveals - used_after + 1
+            print(f"[DEBUG] REVEAL SUCCESS → Used now = {used_after} | Remaining = {remaining}")
+            return True, remaining
+
+    except Exception as e:
+        print(f"🔴 CRITICAL Redis error in try_consume_reveal_cap({chat_id}, {service_type}): {e}")
+        import traceback
+        traceback.print_exc()
+        return False, 0   # safe fallback
 
 async def get_remaining_reveals_and_views(chat_id: int) -> dict:
-    """Returns current remaining for all categories with robust error handling"""
     try:
         profile = await get_user_profile(chat_id)
         if not profile:
@@ -1293,32 +1304,34 @@ async def get_remaining_reveals_and_views(chat_id: int) -> dict:
         level = profile.get("level", 1)
         remaining = {}
 
-        # Netflix & Prime (reveals)
         for svc in ["netflix", "prime"]:
             try:
                 key = f"daily_reveals:{chat_id}:{svc}"
                 used = int(await redis_client.get(key) or 0)
                 max_allowed = get_max_daily_reveals(level, svc)
-                remaining[svc] = max(0, max_allowed - used)
+                left = max(0, max_allowed - used)
+                remaining[svc] = left
+                print(f"[DEBUG REMAINING] {svc} → used={used}/{max_allowed} → left={left}")
             except Exception as e:
-                print(f"🔴 Redis error getting {svc} remaining for {chat_id}: {e}")
+                print(f"🔴 Redis error reading {svc} remaining: {e}")
                 remaining[svc] = 0
 
-        # Windows & Office (views)
         for cat in ["windows", "office"]:
             try:
                 key = f"daily_views:{chat_id}:{cat}"
                 used = int(await redis_client.get(key) or 0)
                 max_allowed = get_max_daily_views(level, cat)
-                remaining[cat] = max(0, max_allowed - used)
+                left = max(0, max_allowed - used)
+                remaining[cat] = left
+                print(f"[DEBUG REMAINING] {cat} → used={used}/{max_allowed} → left={left}")
             except Exception as e:
-                print(f"🔴 Redis error getting {cat} remaining for {chat_id}: {e}")
+                print(f"🔴 Redis error reading {cat} remaining: {e}")
                 remaining[cat] = 0
 
         return remaining
 
     except Exception as e:
-        print(f"🔴 Critical error in get_remaining_reveals_and_views({chat_id}): {e}")
+        print(f"🔴 Critical error in get_remaining_reveals_and_views: {e}")
         return {"netflix": 0, "prime": 0, "windows": 0, "office": 0}
 
 async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
