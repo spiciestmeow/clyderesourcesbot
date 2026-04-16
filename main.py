@@ -3456,28 +3456,11 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     await asyncio.sleep(0.8)
 
     user_level = profile.get("level", 1)
-
-    # ←←← FIXED: Normalize category before reading remaining and consuming cap
     internal_cat = normalize_view_category(category)
 
     # Get remaining views
     rem = await get_remaining_reveals_and_views(chat_id)
     views_left = rem.get(internal_cat, 0)
-
-    # Now consume the view cap
-    allowed, remaining = await try_consume_view_cap(chat_id, internal_cat)
-    if not allowed:
-        await query.answer(
-            f"🌿 You've viewed all your {cat_label} keys for today.\n"
-            f"You have <b>{remaining}</b> left.\n"
-            "The forest needs to rest — come back tomorrow! 🍃",
-            show_alert=True
-        )
-        try:
-            await loading.delete()
-        except:
-            pass
-        return
 
     vamt = await get_vamt_data()
     if not vamt:
@@ -4083,7 +4066,6 @@ async def handle_callback(update: Update):
     # ── INVENTORY FILTERS ──
     elif data.startswith("vamt_filter_"):
         category = data.replace("vamt_filter_", "").lower()
-
         action_map = {
             "win": "view_windows", "windows": "view_windows",
             "office": "view_office", "netflix": "view_netflix", "prime": "view_prime",
@@ -4124,32 +4106,22 @@ async def handle_callback(update: Update):
             await show_paginated_cookie_list(category, chat_id, query, page=0)
             return
         
-        if category in ("win", "windows", "office"):
-            allowed, remaining = await try_consume_view_cap(chat_id, category)
-            if not allowed:
-                cat_label = "Windows" if category in ("win", "windows") else "Office"
-                await query.answer(
-                    f"🌿 You've viewed all your {cat_label} keys for today.\n"
-                    f"You have <b>{remaining}</b> left.\n"
-                    "The forest needs to rest — come back tomorrow! 🍃",
-                    show_alert=True
-                )
-                return
-            
         # ── NEW: First-time guide for Windows / Office ──────────────────
         if category in ("win", "windows", "office"):
                 seen = await has_seen_winoffice_guide(chat_id)
+
                 if not seen:
+                    # First time → show guide ONLY (no cap deduction yet)
+                    await redis_client.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
                     cat_label = "Windows" if category in ("win", "windows") else "Office"
                     cat_emoji = "🪟" if category in ("win", "windows") else "📑"
-                    await redis_client.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
             
                     await query.message.edit_caption(
                         caption=(
                             f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
                             "━━━━━━━━━━━━━━━━━━\n\n"
                             "🔵 <b>What is a VAMT Key?</b>\n"
-                            "It is a <b>Volume Activation</b> key. Instead of a standard code that only works for one person, these are official Microsoft keys designed to activate multiple PCs. We share them so everyone in the clearing can benefit.\n\n"
+                            "It is a <b>Volume Activation</b> key. These are official Microsoft keys designed to activate multiple PCs.\n\n"
                             "━━━━━━━━━━━━━━━━━━\n\n"
                             "📦 <b>What does \"Remaining\" mean?</b>\n"
                             "Because these keys are shared, they have a strict activation limit.\n\n"
@@ -4162,12 +4134,27 @@ async def handle_callback(update: Update):
                         reply_markup=kb_winoffice_guide(),
                     )
                     return
-            
+                
+                # Normal flow (guide already seen) → now consume cap
+                allowed, remaining = await try_consume_view_cap(chat_id, category)
+                if not allowed:
+                    cat_label = "Windows" if category in ("win", "windows") else "Office"
+                    await query.answer(
+                        f"🌿 You've viewed all your {cat_label} keys for today.\n"
+                        f"You have <b>{remaining}</b> left.\n"
+                        "The forest needs to rest — come back tomorrow! 🍃",
+                        show_alert=True
+                    )
+                    return
+                
+                # Award XP now that we're actually showing the keys
                 action_xp, _ = await add_xp(chat_id, first_name,
                     "view_windows" if category in ("win","windows") else "view_office")
                 if action_xp:
                     asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
                 await show_winoffice_keys(chat_id, category, profile, query)
+                return
 
     elif data.startswith("key_feedback_ok|") or data.startswith("key_feedback_bad|"):
         parts = data.split("|")
