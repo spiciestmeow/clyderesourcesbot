@@ -51,6 +51,16 @@ DISPLAY_NAME_MAP = {
 }
 
 # ──────────────────────────────────────────────
+# NEW HELPER: Fix Windows vs "win" key mismatch
+# ──────────────────────────────────────────────
+def normalize_view_category(cat: str) -> str:
+    """Make sure "win" and "windows" always use the same Redis key"""
+    c = str(cat).lower().strip()
+    if c in ("win", "windows"):
+        return "windows"
+    return c  # office stays "office"
+
+# ──────────────────────────────────────────────
 # RENDER COLD-START DETECTION (free tier spin-down)
 # ──────────────────────────────────────────────
 COLD_START = True
@@ -1337,27 +1347,27 @@ async def get_remaining_reveals_and_views(chat_id: int) -> dict:
 async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
     """
     Atomic daily VIEW cap with FULL debug logging + error handling
-    (exact same pattern as try_consume_reveal_cap)
     """
     try:
         profile = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
         max_views = get_max_daily_views(user_level, category)
-
-        key = f"daily_views:{chat_id}:{category}"
-
+        
+        # ←←← FIXED: Use normalized key
+        normalized = normalize_view_category(category)
+        key = f"daily_views:{chat_id}:{normalized}"
+        
         manila = pytz.timezone("Asia/Manila")
         now = datetime.now(manila)
         midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         ttl = int((midnight - now).total_seconds())
 
-        print(f"[DEBUG VIEW CAP] {chat_id} | {category} | Lv{user_level} | Max={max_views} | TTL={ttl}s")
+        print(f"[DEBUG VIEW CAP] {chat_id} | {category} (→{normalized}) | Lv{user_level} | Max={max_views} | TTL={ttl}s")
 
         result = await redis_client.eval(
             REVEAL_CAP_SCRIPT,
             1, key, max_views, ttl
         )
-
         print(f"[DEBUG VIEW RESULT] Raw Lua result = {result}")
 
         if result == 0:
@@ -1369,12 +1379,11 @@ async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
             remaining = max_views - used_after + 1
             print(f"[DEBUG] VIEW SUCCESS → Used now = {used_after} | Remaining = {remaining}")
             return True, remaining
-
     except Exception as e:
         print(f"🔴 CRITICAL Redis error in try_consume_view_cap({chat_id}, {category}): {e}")
         import traceback
         traceback.print_exc()
-        return False, 0   # safe fallback
+        return False, 0
     
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
@@ -3448,13 +3457,15 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
 
     user_level = profile.get("level", 1)
 
-    # Get remaining views (DO NOT consume yet)
+    # ←←← FIXED: Normalize category before reading remaining and consuming cap
+    internal_cat = normalize_view_category(category)
+
+    # Get remaining views
     rem = await get_remaining_reveals_and_views(chat_id)
-    cat_key = "windows" if category in ("win", "windows") else "office"
-    views_left = rem.get(cat_key, 0)
+    views_left = rem.get(internal_cat, 0)
 
     # Now consume the view cap
-    allowed, remaining = await try_consume_view_cap(chat_id, category)
+    allowed, remaining = await try_consume_view_cap(chat_id, internal_cat)
     if not allowed:
         await query.answer(
             f"🌿 You've viewed all your {cat_label} keys for today.\n"
@@ -3462,6 +3473,10 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             "The forest needs to rest — come back tomorrow! 🍃",
             show_alert=True
         )
+        try:
+            await loading.delete()
+        except:
+            pass
         return
 
     vamt = await get_vamt_data()
