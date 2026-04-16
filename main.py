@@ -2333,131 +2333,136 @@ async def show_paginated_cookie_list(
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
 
-    # ── Validate data BEFORE touching the cap ──
-    profile = await get_user_profile(chat_id)
-    user_level = profile.get("level", 1) if profile else 1
-    event = await get_active_event()
-    max_items = get_max_items(service_type, user_level, event)
-    data = await get_vamt_data()
+    loading = None
 
-    if not data:
-        await query.answer("🌫️ The forest is unreachable right now. Please try again shortly.", show_alert=True)
-        return 
-
-    filtered = [
-        item for item in data
-        if service_type in str(item.get("service_type", "")).lower()
-        and str(item.get("status", "")).lower() == "active"
-        and int(item.get("remaining", 0)) > 0
-    ]
-    filtered.sort(key=lambda x: x.get("last_updated", ""))
-    if user_level >= 6:
-        filtered = filtered[-max_items:]
-    else:
-        filtered = filtered[:max_items]
-        
-    if idx < 1 or idx > len(filtered):
-        await query.answer("❌ Cookie no longer available", show_alert=True)
-        await show_paginated_cookie_list(service_type, chat_id, query, page)
-        return
-
-    item = filtered[idx - 1]
-    if str(item.get("status", "")).lower() != "active" or int(item.get("remaining", 0)) <= 0:
-        await query.answer("⚠️ This cookie has expired.", show_alert=True)
-        await show_paginated_cookie_list(service_type, chat_id, query, page)
-        return
-
-    # ── Spam guard ──
-    spam_key = f"reveal_spam:{chat_id}:{service_type}"
-    if await redis_client.exists(spam_key):
-        await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
-        return
-    await redis_client.setex(spam_key, 8, 1)
-    
-    # ── Check bonus slots first (from Wheel of Whispers) ──
-    bonus_key = f"daily_reveals_bonus:{chat_id}"
-    bonus_slots = int(await redis_client.get(bonus_key) or 0)
-
-    if bonus_slots > 0:
-        await redis_client.decr(bonus_key)
-        # Bonus slot used
-    else:
-        # Normal daily cap
-        allowed, remaining = await try_consume_reveal_cap(chat_id, service_type)
-        if not allowed:
-            await query.answer(
-                f"🌿 You've revealed all your cookies for today.\n"
-                f"You have <b>{remaining}</b> left.\n"
-                "The forest needs to rest — come back tomorrow! 🍃",
-                show_alert=True
-            )
-            return
-    
-    # ── Show loading (cap is now committed) ──
-    loading = await send_loading(
-        chat_id,
-        f"{emoji} <i>Searching deep within the glowing glade for your cookie...</i>"
-    )
-        
-    await asyncio.sleep(1.3)
-    await loading.edit_caption(
-        f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
-        parse_mode="HTML"
-    )
-    await asyncio.sleep(1.5)
-
-    # ── Validate item is still good FIRST ──
-    cookie = str(item.get("key_id", "")).strip()
-    display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
-    action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
-
-    caption = (
-        f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
-        f"{emoji} <b>{display_name} Revealed</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🌿 Status: <b>✅ Awakened</b>\n"
-        f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
-        "📥 The forest has wrapped your cookie in an ancient scroll.\n"
-        "<i>Tap the file below to receive its magic.</i> 🍃"
-    )
-
-    file_content = (
-        f"🌿🍃 Clyde's Enchanted Clearing — Secret {service_type.title()} Cookie 🌿🍃\n"
-        "══════════════════════════════════════════════════════════════\n"
-        f"🌳 Cookie Spirit Awakened\n"
-        f"Name : {display_name}\n"
-        f"Status : ✅ Working\n"
-        f"Remaining: {item.get('remaining', 0)} uses\n"
-        f"Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}\n"
-        "🌲 Guard it well, wanderer.\n"
-        "══════════════════════════════════════════════════════════════\n"
-        f"{cookie}\n"
-        "══════════════════════════════════════════════════════════════\n"
-        "🍃 May this cookie bring you peaceful streams.\n"
-        "— The Caretaker of the Enchanted Clearing 🌿\n"
-    )
-
-    file_bytes = BytesIO(file_content.encode("utf-8"))
-    file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
-
-    # Store key_id in Redis so we can retrieve it from the short idx reference
-    await redis_client.setex(f"reveal_key:{chat_id}:{service_type}:{idx}", 3600, cookie)
-
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ Working", callback_data=f"kfb_ok|{service_type}|{idx}"),
-            InlineKeyboardButton("❌ Not Working", callback_data=f"kfb_bad|{service_type}|{idx}"),
-        ],
-        [
-            InlineKeyboardButton(
-                f"⬅️ Back to {service_type.title()} Cookies",
-                callback_data=f"back_to_{service_type}_list|{page}"
-            )
-        ]
-    ])
-
-    # NOW send the document
     try:
+        # ── Validate data BEFORE touching the cap ──
+        profile = await get_user_profile(chat_id)
+        user_level = profile.get("level", 1) if profile else 1
+        event = await get_active_event()
+        max_items = get_max_items(service_type, user_level, event)
+
+        data = await get_vamt_data()
+        if not data:
+            await query.answer("🌫️ The forest is unreachable right now. Please try again shortly.", show_alert=True)
+            return
+
+        filtered = [
+            item for item in data
+            if service_type in str(item.get("service_type", "")).lower()
+            and str(item.get("status", "")).lower() == "active"
+            and int(item.get("remaining", 0)) > 0
+        ]
+        filtered.sort(key=lambda x: x.get("last_updated", ""))
+        if user_level >= 6:
+            filtered = filtered[-max_items:]
+        else:
+            filtered = filtered[:max_items]
+
+        if idx < 1 or idx > len(filtered):
+            await query.answer("❌ Cookie no longer available", show_alert=True)
+            await show_paginated_cookie_list(service_type, chat_id, query, page)
+            return
+
+        item = filtered[idx - 1]
+
+        if str(item.get("status", "")).lower() != "active" or int(item.get("remaining", 0)) <= 0:
+            await query.answer("⚠️ This cookie has expired.", show_alert=True)
+            await show_paginated_cookie_list(service_type, chat_id, query, page)
+            return
+
+        # ── Spam guard ──
+        spam_key = f"reveal_spam:{chat_id}:{service_type}"
+        if await redis_client.exists(spam_key):
+            await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
+            return
+        await redis_client.setex(spam_key, 8, 1)
+
+        # ── Check bonus slots first ──
+        bonus_key = f"daily_reveals_bonus:{chat_id}"
+        bonus_slots = int(await redis_client.get(bonus_key) or 0)
+        if bonus_slots > 0:
+            await redis_client.decr(bonus_key)
+        else:
+            # Normal daily cap
+            allowed, remaining = await try_consume_reveal_cap(chat_id, service_type)
+            if not allowed:
+                # ← Improved: nice full-screen message instead of popup
+                await query.message.edit_caption(
+                    caption=(
+                        f"{emoji} <b>Daily Reveal Limit Reached</b>\n\n"
+                        f"🌿 You have already revealed your maximum cookies today.\n\n"
+                        f"Come back tomorrow after midnight (Manila time) 🍃\n\n"
+                        f"<i>Remaining reveals today: <b>{remaining}</b></i>"
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=kb_back_inventory(),
+                )
+                await query.answer("Daily limit reached", show_alert=False)
+                return
+
+        # ── Show loading (cap is now committed) ──
+        loading = await send_loading(
+            chat_id,
+            f"{emoji} <i>Searching deep within the glowing glade for your cookie...</i>"
+        )
+
+        await asyncio.sleep(1.3)
+        await loading.edit_caption(
+            f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
+            parse_mode="HTML"
+        )
+        await asyncio.sleep(1.5)
+
+        # ── Deliver cookie ──
+        cookie = str(item.get("key_id", "")).strip()
+        display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
+        action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
+
+        caption = (
+            f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
+            f"{emoji} <b>{display_name} Revealed</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🌿 Status: <b>✅ Awakened</b>\n"
+            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
+            "📥 The forest has wrapped your cookie in an ancient scroll.\n"
+            "<i>Tap the file below to receive its magic.</i> 🍃"
+        )
+
+        file_content = (
+            f"🌿🍃 Clyde's Enchanted Clearing — Secret {service_type.title()} Cookie 🌿🍃\n"
+            "══════════════════════════════════════════════════════════════\n"
+            f"🌳 Cookie Spirit Awakened\n"
+            f"Name : {display_name}\n"
+            f"Status : ✅ Working\n"
+            f"Remaining: {item.get('remaining', 0)} uses\n"
+            f"Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}\n"
+            "🌲 Guard it well, wanderer.\n"
+            "══════════════════════════════════════════════════════════════\n"
+            f"{cookie}\n"
+            "══════════════════════════════════════════════════════════════\n"
+            "🍃 May this cookie bring you peaceful streams.\n"
+            "— The Caretaker of the Enchanted Clearing 🌿\n"
+        )
+
+        file_bytes = BytesIO(file_content.encode("utf-8"))
+        file_bytes.name = f"{display_name.replace(' ', '_')}.txt"
+
+        await redis_client.setex(f"reveal_key:{chat_id}:{service_type}:{idx}", 3600, cookie)
+
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Working", callback_data=f"kfb_ok|{service_type}|{idx}"),
+                InlineKeyboardButton("❌ Not Working", callback_data=f"kfb_bad|{service_type}|{idx}"),
+            ],
+            [
+                InlineKeyboardButton(
+                    f"⬅️ Back to {service_type.title()} Cookies",
+                    callback_data=f"back_to_{service_type}_list|{page}"
+                )
+            ]
+        ])
+
         doc_msg = await tg_app.bot.send_document(
             chat_id=chat_id,
             document=file_bytes,
@@ -2466,47 +2471,40 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
             reply_markup=kb,
             filename=file_bytes.name
         )
-    except Exception as e:
-        await query.answer("🌿 Delivery failed, please try again.", show_alert=True)
+
         try:
             await loading.delete()
         except Exception:
             pass
-        print(f"🔴 Document send failed for {chat_id}: {e}")
-        # Safe refund: cap was consumed but delivery failed
-        key = f"daily_reveals:{chat_id}:{service_type}"
-        current = await redis_client.get(key)
-        if current and int(current) > 0:
-            await redis_client.decr(key)
-        return
 
-    try:
-        await loading.delete()
-    except Exception:
-        pass
+        # ── Success only ──
+        action_xp, _ = await add_xp(chat_id, first_name, action_name)
+        if action_xp:
+            asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-    # Only reached on successful send
-    action_xp, _ = await add_xp(chat_id, first_name, action_name)
-    if action_xp:
-        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+        await redis_client.setex(
+            f"reveal_msg:{chat_id}:{service_type}",
+            3600,
+            str(doc_msg.message_id)
+        )
 
-    # Store message ID for later cleanup
-    await redis_client.setex(
-        f"reveal_msg:{chat_id}:{service_type}",
-        3600,
-        str(doc_msg.message_id)
-    )
+        asyncio.create_task(send_temporary_message(
+            chat_id, f"✨ <i>{display_name} successfully delivered!</i>", duration=3
+        ))
 
-    # Optional success message (auto-deletes)
-    asyncio.create_task(send_temporary_message(
-        chat_id, f"✨ <i>{display_name} successfully delivered!</i>", duration=3
-    ))
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
 
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
-
+    except Exception as e:
+        print(f"🔴 CRITICAL error in reveal_cookie for {chat_id} ({service_type}): {e}")
+        await query.answer("🌿 Something went wrong in the forest. Please try again.", show_alert=True)
+        if loading:
+            try:
+                await loading.delete()
+            except:
+                pass
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
