@@ -2640,6 +2640,62 @@ async def handle_leaderboard(chat_id: int):
     text += "\n<i>May your roots grow deep and your light shine through the canopy.</i> 🍃✨"
     await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
+async def handle_wheel_leaderboard(chat_id: int):
+    """🏆 Wheel of Whispers Leaderboard - Top Spinners"""
+    # Get top 10 by total spins
+    top_data = await _sb_get(
+        "user_profiles",
+        **{
+            "select": "first_name,total_wheel_spins,wheel_xp_earned,legendary_spins,level",
+            "total_wheel_spins": "gt.0",
+            "order": "total_wheel_spins.desc",
+            "limit": 10
+        }
+    ) or []
+
+    if not top_data:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🌿 <b>No one has spun the wheel yet...</b>\n\n"
+            "Be the first to test your luck! ✨",
+            parse_mode="HTML"
+        )
+        return
+
+    text = (
+        "🌟 <b>Wheel of Whispers Leaderboard</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "🏆 <b>Top Spinners of the Forest</b>\n\n"
+    )
+
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    for rank, user in enumerate(top_data, 1):
+        name = "The Forest Warden" if str(user.get("chat_id", "")) == str(OWNER_ID) else html.escape(user.get("first_name", "Unknown"))
+        medal = medals.get(rank, f"{rank}.")
+        spins = user.get("total_wheel_spins", 0)
+        legendaries = user.get("legendary_spins", 0)
+        wheel_xp = user.get("wheel_xp_earned", 0)
+
+        text += (
+            f"{medal} <b>{name}</b>\n"
+            f"   🌿 {spins} spins • 🔥 {legendaries} Legendaries\n"
+            f"   ✨ {wheel_xp:,} Wheel XP\n\n"
+        )
+
+    # Show user's own stats
+    profile = await get_user_profile(chat_id)
+    if profile and profile.get("total_wheel_spins", 0) > 0:
+        text += "━━━━━━━━━━━━━━━━━━\n"
+        text += f"📍 <b>You have spun the wheel {profile.get('total_wheel_spins', 0)} times</b>\n"
+        text += f"   🔥 {profile.get('legendary_spins', 0)} Legendaries • ✨ {profile.get('wheel_xp_earned', 0):,} Wheel XP\n"
+
+    text += "\n<i>May your spins bring you great fortune, wanderer...</i> 🍃✨"
+
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML"
+    )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FEEDBACK
@@ -3662,6 +3718,7 @@ async def handle_callback(update: Update):
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
+            [InlineKeyboardButton("🏆 Wheel Leaderboard", callback_data="wheel_leaderboard")],
             [InlineKeyboardButton("ℹ️ About the Wheel", callback_data="about_wheel")],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
         ])
@@ -3795,6 +3852,12 @@ async def handle_callback(update: Update):
             "<i>May the forest bless your spins, wanderer.</i> ✨"
         )
         await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        return
+    
+    # ── WHEEL LEADERBOARD ──
+    elif data == "wheel_leaderboard":
+        await query.answer()
+        await handle_wheel_leaderboard(chat_id)
         return
 
     # ── NOOP (disabled button)
@@ -4531,6 +4594,24 @@ async def process_update(update_data: dict):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
             return
+
+    elif text.startswith("/resetwheel"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can reset the wheel.")
+            return
+        
+        parts = text.split()
+        target_id = int(parts[1]) if len(parts) > 1 else chat_id
+        
+        deleted = await redis_client.delete(f"wheel_spin:{target_id}")
+        
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Wheel spin reset for user {target_id}</b>\n\n"
+            f"The Wheel of Whispers is now ready again! ✨\n"
+            f"Deleted {deleted} cooldown key.",
+            parse_mode="HTML"
+        )
 
         parts = text.split()
         if len(parts) < 2:
