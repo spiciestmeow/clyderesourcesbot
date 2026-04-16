@@ -215,6 +215,11 @@ def _supabase_headers(extra: dict | None = None) -> dict:
         h.update(extra)
     return h
 
+def _guidance_tier_text(category: str) -> str:
+    tiers = [get_max_items(category, lvl) for lvl in range(1, 10)]
+    parts = " • ".join(f"Lv{i+1}: {v}" for i, v in enumerate(tiers))
+    return parts + " • Lv10+: Unlimited"
+
 
 async def _sb_get(path: str, **params) -> list | dict | None:
     """Safe Supabase GET with semaphore + timeout."""
@@ -1135,11 +1140,11 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
     level = int(level)
 
     if category in ("win", "windows", "office"):
-        tiers = {1: 2, 2: 3, 3: 3, 4: 4, 5: 4, 6: 6, 7: 8, 8: 10, 9: 13}
+        tiers = {1: 4, 2: 5, 3: 6, 4: 7, 5: 9, 6: 11, 7: 13, 8: 16, 9: 20}
         return tiers.get(level, 999)
 
     if category == "prime":
-        tiers = {1: 2, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5, 8: 7, 9: 9}
+        tiers = {1: 4, 2: 5, 3: 6, 4: 7, 5: 9, 6: 11, 7: 13, 8: 16, 9: 20}
         return tiers.get(level, 999)
 
     if category == "netflix":
@@ -1150,7 +1155,7 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
                 return tiers.get(level, 999)
             
         # Normal tiers
-        tiers = {1: 2, 2: 3, 3: 3, 4: 5, 5: 5, 6: 7, 7: 9, 8: 12, 9: 15}
+        tiers = {1: 5, 2: 7, 3: 9, 4: 11, 5: 14, 6: 17, 7: 21, 8: 25, 9: 35}
         return tiers.get(level, 999)
 
     return 0
@@ -4086,18 +4091,12 @@ async def handle_callback(update: Update):
             2: (
                 "<b>❓ Guidance - Page 2/3</b>\n\n"
                 "✨ <b>Forest Leveling System</b>\n\n"
-                "🪟 <b>Windows & Office Keys</b>\n"
-                "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 4\n"
-                "• Lv6: 6 • Lv7: 8 • Lv8: 10\n"
-                "• Lv9: 13 • Lv10+: Unlimited\n\n"
-                "🍿 <b>Netflix Premium Cookies</b>\n"
-                "• Lv1: 2 • Lv2-3: 3 • Lv4-5: 5\n"
-                "• Lv6: 7 • Lv7: 9 • Lv8: 12\n"
-                "• Lv9: 15 • Lv10+: Unlimited\n\n"
-                "🎥 <b>PrimeVideo Premium Cookies</b>\n"
-                "• Lv1: 2 • Lv2-3: 2 • Lv4-5: 3\n"
-                "• Lv6: 4 • Lv7: 5 • Lv8: 7\n"
-                "• Lv9: 9 • Lv10+: Unlimited\n\n"
+                f"🪟 <b>Windows & Office Keys</b>\n"
+                f"• {_guidance_tier_text('windows')}\n\n"
+                f"🍿 <b>Netflix Premium Cookies</b>\n"
+                f"• {_guidance_tier_text('netflix')}\n\n"
+                f"🎥 <b>PrimeVideo Premium Cookies</b>\n"
+                f"• {_guidance_tier_text('prime')}\n\n"
                 "<i>Tap Next → for Steam & XP Rewards</i>",
                 InlineKeyboardMarkup([
                     [
