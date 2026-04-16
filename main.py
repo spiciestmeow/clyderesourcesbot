@@ -212,6 +212,44 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(process_update, data)
     return PlainTextResponse("OK")
 
+# ──────────────────────────────────────────────
+# NOTION WEBHOOK FROM SUPABASE (when action = 'live')
+# ──────────────────────────────────────────────
+@app.post("/webhook/steam-live")
+async def steam_to_notion_webhook(request: Request):
+    secret = request.headers.get("X-Supabase-Secret")
+    if secret != WEBHOOK_SECRET:   # Reuse your existing WEBHOOK_SECRET
+        return PlainTextResponse("Unauthorized", status_code=401)
+
+    data = await request.json()
+
+    # Supabase sends the full row when action changes
+    record = data.get("record") or {}
+    
+    if record.get("action") != "live":
+        return PlainTextResponse("Ignored - action not 'live'", status_code=200)
+
+    # Call your Notion function
+    success = await send_to_notion(
+        title=record.get("game_name") or record.get("email") or "Steam Account",
+        properties={
+            "Game Name": {"title": [{"text": {"content": record.get("game_name") or record.get("email") or "Unknown"}}]},
+            "Published": {"date": {"start": datetime.utcnow().isoformat() + "Z"}},
+            "Updated": {"date": {"start": datetime.utcnow().isoformat() + "Z"}},
+            "Availability": {"select": {"name": "Available"}},
+            "Game Count": {"number": 1},
+            "Views": {"number": record.get("view_count", 0)},
+            "Feature": {"select": {"name": "Includes 1 Game"}},
+            "Display": {"select": {"name": "Includes 1 Game"}},
+            "Content": {"select": {"name": "Includes 1 Game"}},
+            "Custom Pop": {"select": {"name": "High Value"}},
+            "Posted": {"rich_text": [{"text": {"content": "Supabase Auto-Sync"}}]}
+        },
+        emoji="🎮"
+    )
+
+    return PlainTextResponse("OK" if success else "Notion failed", status_code=200)
+
 # ══════════════════════════════════════════════════════════════════════════════
 # DATABASE HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -266,6 +304,44 @@ async def _sb_post(path: str, payload: dict | list) -> bool:
         except Exception as e:
             print(f"🔴 SB POST {path}: {e}")
             return False
+        
+
+# ──────────────────────────────────────────────
+# NOTION INTEGRATION (Ready for Render)
+# ──────────────────────────────────────────────
+async def send_to_notion(title: str, properties: dict, emoji: str = "🌿"):
+    """Send data to your Notion database"""
+    notion_token = os.getenv("NOTION_TOKEN")
+    database_id = os.getenv("NOTION_DATABASE_ID")
+    
+    if not notion_token or not database_id:
+        print("⚠️ Notion not configured — check Render environment variables")
+        return False
+
+    url = "https://api.notion.com/v1/pages"
+    headers = {
+        "Authorization": f"Bearer {notion_token}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28"
+    }
+
+    payload = {
+        "parent": {"database_id": database_id},
+        "icon": {"type": "emoji", "emoji": emoji},
+        "properties": properties
+    }
+
+    try:
+        r = await http.post(url, headers=headers, json=payload, timeout=10.0)
+        if r.status_code in (200, 201):
+            print(f"✅ [Notion] Saved: {title}")
+            return True
+        else:
+            print(f"❌ Notion error {r.status_code}: {r.text}")
+            return False
+    except Exception as e:
+        print(f"❌ Notion exception: {e}")
+        return False
         
 async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
     """Upsert with FULL error logging when it fails"""
@@ -1509,11 +1585,11 @@ async def _try_award_referral(chat_id: int):
     Redis lock prevents re-processing if DB write partially failed before.
     """
     lock_key = f"ref_awarding:{chat_id}"
-    # nx=True: only one concurrent task can process this referral
-    # ex=60: lock expires after 60s so it's not permanently stuck on crash
-    lock = await redis_client.set(lock_key, 1, ex=60, nx=True)
+    # BEFORE: ex=60 — too short if DB semaphore is saturated (10 slots × 10s timeout = 100s worst case)
+    # AFTER: ex=180 — 3× the worst-case DB latency stack
+    lock = await redis_client.set(lock_key, 1, ex=180, nx=True)
     if not lock:
-        return  # another task is already processing this referral
+        return
 
     try:
         referral = await _sb_get(
@@ -1521,21 +1597,19 @@ async def _try_award_referral(chat_id: int):
             **{"referred_id": f"eq.{chat_id}", "awarded": "eq.false", "select": "*"}
         )
         if not referral:
-            return  # no pending referral — nothing to do
+            return
 
         ref = referral[0]
         referrer_id = ref["referrer_id"]
         new_name = (await get_user_profile(chat_id) or {}).get("first_name", "Wanderer")
 
-        # Mark as awarded FIRST before giving XP (fail-safe direction)
         marked = await _sb_patch(
             f"referrals?referred_id=eq.{chat_id}&awarded=eq.false",
             {"awarded": True, "awarded_at": datetime.now(pytz.utc).isoformat()}
         )
         if not marked:
-            return  # couldn't mark — don't give XP, will retry next daily login
+            return
 
-        # Now safely give XP — worst case: marked but no XP (not re-awardable)
         await award_referral_bonus(referrer_id, chat_id, new_name)
     finally:
         await redis_client.delete(lock_key)
