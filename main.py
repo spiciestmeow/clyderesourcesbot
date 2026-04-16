@@ -213,37 +213,33 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     return PlainTextResponse("OK")
 
 # ──────────────────────────────────────────────
-# NOTION WEBHOOK FROM SUPABASE (when action = 'live')
+# NOTION WEBHOOK FROM SUPABASE (Minimal version)
 # ──────────────────────────────────────────────
 @app.post("/webhook/steam-live")
 async def steam_to_notion_webhook(request: Request):
     secret = request.headers.get("X-Supabase-Secret")
-    if secret != WEBHOOK_SECRET:   # Reuse your existing WEBHOOK_SECRET
+    if secret != WEBHOOK_SECRET:
         return PlainTextResponse("Unauthorized", status_code=401)
 
     data = await request.json()
-
-    # Supabase sends the full row when action changes
     record = data.get("record") or {}
-    
+
     if record.get("action") != "live":
         return PlainTextResponse("Ignored - action not 'live'", status_code=200)
 
-    # Call your Notion function
+    # Minimal payload - only what you asked for
     success = await send_to_notion(
         title=record.get("game_name") or record.get("email") or "Steam Account",
         properties={
-            "Game Name": {"title": [{"text": {"content": record.get("game_name") or record.get("email") or "Unknown"}}]},
-            "Published": {"date": {"start": datetime.utcnow().isoformat() + "Z"}},
-            "Updated": {"date": {"start": datetime.utcnow().isoformat() + "Z"}},
-            "Availability": {"select": {"name": "Available"}},
-            "Game Count": {"number": 1},
-            "Views": {"number": record.get("view_count", 0)},
-            "Feature": {"select": {"name": "Includes 1 Game"}},
-            "Display": {"select": {"name": "Includes 1 Game"}},
-            "Content": {"select": {"name": "Includes 1 Game"}},
-            "Custom Pop": {"select": {"name": "High Value"}},
-            "Posted": {"rich_text": [{"text": {"content": "Supabase Auto-Sync"}}]}
+            "Game Name": {
+                "title": [{"text": {"content": record.get("game_name") or "Unknown"}}]
+            },
+            "Email": {
+                "rich_text": [{"text": {"content": record.get("email", "")}}]
+            },
+            "Password": {
+                "rich_text": [{"text": {"content": record.get("password", "")}}]
+            }
         },
         emoji="🎮"
     )
