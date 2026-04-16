@@ -1283,6 +1283,31 @@ async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool,
         # Still allowed
         return True, max_reveals - int(result) + 1   # +1 because result is after increment
 
+async def get_remaining_reveals_and_views(chat_id: int) -> dict:
+    """Returns current remaining for all categories"""
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return {"netflix": 0, "prime": 0, "windows": 0, "office": 0}
+    
+    level = profile.get("level", 1)
+    
+    remaining = {}
+    
+    # Netflix & Prime (reveals)
+    for svc in ["netflix", "prime"]:
+        key = f"daily_reveals:{chat_id}:{svc}"
+        used = int(await redis_client.get(key) or 0)
+        max_allowed = get_max_daily_reveals(level, svc)
+        remaining[svc] = max(0, max_allowed - used)
+    
+    # Windows & Office (views)
+    for cat in ["windows", "office"]:
+        key = f"daily_views:{chat_id}:{cat}"
+        used = int(await redis_client.get(key) or 0)
+        max_allowed = get_max_daily_views(level, cat)
+        remaining[cat] = max(0, max_allowed - used)
+    
+    return remaining
 
 async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
     """
@@ -2147,7 +2172,11 @@ async def show_paginated_cookie_list(
     user_level = profile.get("level", 1) if profile else 1
     event      = await get_active_event() 
     max_items  = get_max_items(service_type, user_level, event)
-    
+
+    # Get remaining reveals
+    rem = await get_remaining_reveals_and_views(chat_id)
+    reveals_left = rem.get(service_type, 0)
+
     event_bonus_txt = ""
     if event:
         bonus_type = event.get("bonus_type", "").strip()
@@ -2158,8 +2187,8 @@ async def show_paginated_cookie_list(
     
     title = "Netflix" if service_type == "netflix" else "PrimeVideo"
     emoji = "🍿"    if service_type == "netflix" else "🎥"
-    data = await get_vamt_data()
 
+    data = await get_vamt_data()
     if not data:
         try:
             await loading.delete()
@@ -2209,6 +2238,7 @@ async def show_paginated_cookie_list(
     report = (
         f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🌿 You have <b>{reveals_left}</b> reveals left today (Level {user_level})\n\n"
         f"{event_bonus_txt}"
         f"📦 <b>{len(filtered)} {title} available</b>\n"
         f"📄 Page {page + 1} of {total_pages}\n\n"
@@ -3377,7 +3407,13 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     await asyncio.sleep(0.8)
 
     user_level = profile.get("level", 1)
-    # ── NEW: Daily view cap for Windows / Office ──
+
+    # Get remaining views (DO NOT consume yet)
+    rem = await get_remaining_reveals_and_views(chat_id)
+    cat_key = "windows" if category in ("win", "windows") else "office"
+    views_left = rem.get(cat_key, 0)
+
+    # Now consume the view cap
     allowed, remaining = await try_consume_view_cap(chat_id, category)
     if not allowed:
         await query.answer(
@@ -3424,6 +3460,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     display_items = filtered[:max_items]
 
     report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    report += f"🌿 You have <b>{views_left}</b> views left today (Level {user_level})\n\n"
     report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
 
     for item in display_items:
