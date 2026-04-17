@@ -901,65 +901,10 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     return imported, skipped, errors, dict(added_counts)
 
 # ──────────────────────────────────────────────
-# EDIT MENU + SET AVAILABILITY (with game name)
-# ──────────────────────────────────────────────
-async def edit_notion_availability(chat_id: int, token: str):
-    data = await redis_client.get(f"notion:edit:{token}")
-    if not data:
-        await tg_app.bot.send_message(chat_id, "⚠️ This edit link has expired. Please refresh the library.")
-        return
-    token_data = json.loads(data)
-    game_name = token_data["game_name"]
-
-    options = ["Available", "Expired"]
-    buttons = [[InlineKeyboardButton(opt, callback_data=f"set_notion_availability|{token}|{opt}")] for opt in options]
-    buttons.append([InlineKeyboardButton("❌ Cancel Edit", callback_data="view_notion_steam")])
-
-    await tg_app.bot.send_message(
-        chat_id=chat_id,
-        text=f"🔄 <b>Change {game_name}</b>\n\nChoose new Availability:",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-async def set_notion_availability(chat_id: int, token: str, new_status: str):
-    data = await redis_client.get(f"notion:edit:{token}")
-    if not data:
-        await tg_app.bot.send_message(chat_id, "⚠️ Session expired.")
-        return
-    token_data = json.loads(data)
-    game_name = token_data["game_name"]
-    page_id = token_data["page_id"]
-
-    headers = {
-        "Authorization": f"Bearer {os.getenv('NOTION_TOKEN')}",
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28"
-    }
-
-    payload = {
-        "properties": {
-            "Availability": {"multi_select": [{"name": new_status}]}
-        }
-    }
-
-    try:
-        r = await http.patch(f"https://api.notion.com/v1/pages/{page_id}", headers=headers, json=payload)
-        if r.status_code in (200, 204):
-            await tg_app.bot.send_message(
-                chat_id,
-                f"✅ <b>{game_name}</b> availability changed to <b>{new_status}</b> successfully!",
-                parse_mode="HTML"
-            )
-            await asyncio.sleep(1.2)
-            await view_notion_steam_library(chat_id, page=0)
-    except Exception as e:
-        await tg_app.bot.send_message(chat_id, f"❌ Failed: {e}")
-
-# ──────────────────────────────────────────────
 # VIEW LIBRARY (newest updated first + empty name safe)
 # ──────────────────────────────────────────────
-async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
+async def view_notion_steam_library(chat_id: int, page: int = 0, query=None, filter_mode: str = "all"):
+    """Improved UX - Detailed View with inline edit buttons"""
     database_id = os.getenv("NOTION_DATABASE_ID")
     if not database_id:
         await tg_app.bot.send_message(chat_id, "❌ Notion database not configured.")
@@ -986,39 +931,32 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
         await tg_app.bot.send_message(chat_id, "🌫️ No games found.")
         return
 
-    # Separate games with/without Updated
     has_update = []
     no_update = []
 
     for item in results:
         props = item.get("properties", {})
 
-        # Safe Game Name extraction (fixes the IndexError)
+        # Game Name
         title_list = props.get("Game Name", {}).get("title", [])
-        if title_list and isinstance(title_list, list) and len(title_list) > 0:
-            game_name = title_list[0].get("text", {}).get("content", "Untitled Game")
-        else:
-            game_name = "Untitled Game"
+        game_name = title_list[0].get("text", {}).get("content", "Untitled Game") if title_list else "Untitled Game"
 
-        # Availability (multi-select)
+        # Availability
         avail_prop = props.get("Availability", {})
         if avail_prop.get("type") == "multi_select":
-            multi = avail_prop.get("multi_select", [])
-            availability = ", ".join([m.get("name", "") for m in multi]) if multi else "—"
+            availability = ", ".join([m.get("name", "") for m in avail_prop.get("multi_select", [])]) or "—"
         else:
             availability = avail_prop.get("select", {}).get("name", "—") or "—"
 
         # Display
         display = props.get("Display", {}).get("formula", {}).get("string", "—")
 
-        # Updated (formula) — works with ANY emoji-named column
+        # Updated time (emoji column)
         updated = "—"
         for prop_name, prop in props.items():
             if prop and prop.get("type") == "formula":
                 formula_str = prop.get("formula", {}).get("string", "").strip()
-                if formula_str and any(keyword in formula_str.lower() for keyword in [
-                    "ago", "day", "hour", "minute", "just now", "yesterday"
-                ]):
+                if formula_str and any(k in formula_str.lower() for k in ["ago", "just now", "minute", "hour", "day"]):
                     updated = formula_str
                     break
 
@@ -1036,46 +974,57 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
         else:
             no_update.append(item_data)
 
-    # ── SORTING: Newest → Oldest → No-update at bottom ──
+    # Sorting: Newest → Oldest → No update at bottom
     has_update.sort(key=lambda x: x["sort_key"], reverse=True)
     no_update.sort(key=lambda x: x["game_name"].lower())
+
     all_items = has_update + no_update
+
+    # Simple filter support
+    if filter_mode == "available":
+        all_items = [g for g in all_items if "Available" in g["availability"]]
+    elif filter_mode == "expired":
+        all_items = [g for g in all_items if "Expired" in g["availability"]]
+    elif filter_mode == "recent":
+        all_items = [g for g in all_items if g["updated"] != "—" and ("day" in g["updated"].lower() or "hour" in g["updated"].lower() or "just now" in g["updated"].lower())]
 
     start = page * 8
     page_items = all_items[start:start + 8]
 
+    # Build message
     text = "📋 <b>Notion STEAM LIBRARY</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+
+    # Top filter row
+    text += "🔎 <b>Filter:</b> All • ✅ Available • ❌ Expired • 🔥 Recently Updated\n\n"
+
     buttons = []
 
     for item in page_items:
         text += f"🎮 <b>{item['game_name']}</b>\n"
-        text += f" Availability: <b>{item['availability']}</b>\n"
-        text += f" Display: {item['display']}\n"
-        text += f" Updated: {item['updated']}\n\n"
+        text += f"   {'✅' if 'Available' in item['availability'] else '❌'} <b>{item['availability']}</b>\n"
+        text += f"   Display: {item['display']}\n"
+        text += f"   Updated: {item['updated']}\n\n"
 
-        short_token = secrets.token_urlsafe(8)
-        await redis_client.setex(
-            f"notion:edit:{short_token}", 1800,
-            json.dumps({"page_id": item["page_id"], "game_name": item["game_name"]})
-        )
-
+        # Inline edit buttons
         buttons.append([
-            InlineKeyboardButton(f"✏️ Change {item['game_name'][:22]}", callback_data=f"edit_notion_availability|{short_token}")
+            InlineKeyboardButton("✅ Mark Available", callback_data=f"quick_set|{item['page_id']}|Available"),
+            InlineKeyboardButton("❌ Mark Expired",  callback_data=f"quick_set|{item['page_id']}|Expired")
         ])
 
-    # Navigation
+    # Navigation + extras
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"notion_page_{page-1}"))
     if start + 8 < len(all_items):
         nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"notion_page_{page+1}"))
-    if nav:
-        buttons.append(nav)
+
+    buttons.append(nav)
+    buttons.append([InlineKeyboardButton("🔄 Refresh Library", callback_data="view_notion_steam_refresh")])
     buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_menu")])
 
-    final_text = text + f"━━━━━━━━━━━━━━━━━━\n📄 Page {page+1} • Newest updated first"
+    final_text = text + f"━━━━━━━━━━━━━━━━━━\n📄 Page {page+1} of {((len(all_items)-1)//8)+1} • {len(all_items)} games • Last synced just now"
 
-    # Edit existing message when using Next/Previous, otherwise send new
+    # Edit existing message when possible (clean UX)
     if query and query.message:
         try:
             await query.message.edit_text(
@@ -1085,7 +1034,7 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
             )
             return
         except:
-            pass  # fallback to new message if edit fails
+            pass
 
     await tg_app.bot.send_message(
         chat_id=chat_id,
@@ -4143,13 +4092,31 @@ async def handle_callback(update: Update):
         page = int(data.split("_")[2])
         await view_notion_steam_library(chat_id, page=page, query=query)
 
-    elif data.startswith("edit_notion_availability|"):
-        token = data.split("|")[1]
-        await edit_notion_availability(chat_id, token)
-
-    elif data.startswith("set_notion_availability|"):
-        _, token, new_status = data.split("|")
-        await set_notion_availability(chat_id, token, new_status)
+    # ── QUICK INLINE AVAILABILITY UPDATE (Option A)
+    elif data.startswith("quick_set|"):
+        _, page_id, new_status = data.split("|")
+        
+        headers = {
+            "Authorization": f"Bearer {os.getenv('NOTION_TOKEN')}",
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28"
+        }
+        payload = {
+            "properties": {
+                "Availability": {"multi_select": [{"name": new_status}]}
+            }
+        }
+        
+        try:
+            r = await http.patch(f"https://api.notion.com/v1/pages/{page_id}", headers=headers, json=payload)
+            if r.status_code in (200, 204):
+                await query.answer(f"✅ Changed to {new_status}", show_alert=False)
+                # Refresh the current library view
+                await view_notion_steam_library(chat_id, page=page if 'page' in locals() else 0, query=query)
+            else:
+                await query.answer("❌ Failed to update", show_alert=True)
+        except Exception as e:
+            await query.answer(f"❌ Error: {str(e)[:30]}", show_alert=True)
 
     # ── CANCEL EDIT ──
     elif data == "view_notion_steam":
