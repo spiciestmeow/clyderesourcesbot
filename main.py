@@ -93,11 +93,6 @@ def normalize_view_category(cat: str) -> str:
     return c  # office stays "office"
 
 # ──────────────────────────────────────────────
-# RENDER COLD-START DETECTION (free tier spin-down)
-# ──────────────────────────────────────────────
-COLD_START = True
-
-# ──────────────────────────────────────────────
 # REFERRAL CONFIG
 # ──────────────────────────────────────────────
 MAX_REFERRALS_PER_DAY = 8
@@ -3748,116 +3743,102 @@ async def handle_confirm_toggle_maintenance(chat_id: int):
         reply_markup=confirm_kb,
     )
 
-async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query):
-    """Shared key display logic for Windows and Office — guaranteed loading cleanup"""
-    pending_cat = category
-    cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
-    cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
+async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query, page: int = 0):
+    """Paginated Windows/Office keys — fixes 'message too long' error"""
+    cat_label = "Windows" if category in ("win", "windows") else "Office"
+    cat_emoji = "🪟" if category in ("win", "windows") else "📑"
+    internal_cat = normalize_view_category(category)
 
-    loading = None
-    try:
-        # Start loading
-        loading = await send_loading(
-            chat_id,
-            f"{cat_emoji} <i>Opening the {cat_label} key scroll from the ancient library...</i>"
-        )
+    loading = await send_loading(
+        chat_id,
+        f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>"
+    )
 
-        await query.message.edit_caption(
-            caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
-            parse_mode="HTML",
-        )
-        await asyncio.sleep(0.8)
+    user_level = profile.get("level", 1)
+    rem = await get_remaining_reveals_and_views(chat_id)
+    views_left = rem.get(internal_cat, 0)
 
-        user_level = profile.get("level", 1)
-        internal_cat = normalize_view_category(category)
-
-        # Get remaining views (read only)
-        rem = await get_remaining_reveals_and_views(chat_id)
-        views_left = rem.get(internal_cat, 0)
-
-        vamt = await get_vamt_data()
-        if not vamt:
-            await send_supabase_error(chat_id, query)
-            return
-
-        if pending_cat in ("win", "windows"):
-            filtered = [
-                item for item in vamt
-                if any(x in str(item.get("service_type", "")).lower() for x in ("windows", "win"))
-                and int(item.get("remaining") or 0) > 0
-            ]
-        else:
-            filtered = [
-                item for item in vamt
-                if "office" in str(item.get("service_type", "")).lower()
-                and int(item.get("remaining") or 0) > 0
-            ]
-
-        if not filtered:
-            await query.message.edit_caption(
-                caption=f"🍃 No {cat_label} keys available right now. Check back later!",
-                parse_mode="HTML",
-                reply_markup=kb_back_inventory(),
-            )
-            return
-
-        max_items = get_max_items(pending_cat, user_level)
-        filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
-        display_items = filtered[:max_items]
-
-        report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        report += f"🌿 You have <b>{views_left}</b> views left today (Level {user_level})\n\n"
-        report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
-
-        for item in display_items:
-            stock = str(item.get("remaining", 0))
-            report += (
-                f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
-                f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
-                f"└ 📦 Remaining: <b>{stock}</b>\n\n"
-            )
-
-        report += (
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🌿 Level {user_level} → Up to <b>{max_items}</b> {cat_label} keys\n\n"
-            "Tap ✅ if it worked, ❌ if it did not — Caretaker will be notified. 🍃"
-        )
-
-        buttons = []
-        for item in display_items:
-            raw_key = str(item.get("key_id", "")).strip()
-            svc = str(item.get("service_type", pending_cat)).strip()
-            short = raw_key[:20] + "…" if len(raw_key) > 20 else raw_key
-            token = f"{chat_id}:{raw_key[:40]}"
-            await redis_client.setex(f"winkey:{token}", 3600, f"{raw_key}||{svc}")
-            buttons.append([
-                InlineKeyboardButton(f"✅ {short}", callback_data=f"wkfb_ok|{token}"),
-                InlineKeyboardButton(f"❌", callback_data=f"wkfb_bad|{token}"),
-            ])
-
-        buttons.append([InlineKeyboardButton(
-            "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
-        )])
-        buttons.append([InlineKeyboardButton(
-            "⬅️ Back to Inventory", callback_data="check_vamt"
-        )])
-
-        await query.message.edit_caption(
-            caption=report,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
-
-    except Exception as e:
-        print(f"🔴 Error in show_winoffice_keys for {chat_id}: {e}")
+    vamt = await get_vamt_data()
+    if not vamt:
         await send_supabase_error(chat_id, query)
-    finally:
-        # ALWAYS remove the loading animation
-        if loading:
-            try:
-                await loading.delete()
-            except Exception:
-                pass
+        try: await loading.delete()
+        except: pass
+        return
+
+    # Filter keys
+    if category in ("win", "windows"):
+        filtered = [item for item in vamt 
+                    if any(x in str(item.get("service_type", "")).lower() for x in ("windows", "win"))
+                    and int(item.get("remaining") or 0) > 0]
+    else:
+        filtered = [item for item in vamt 
+                    if "office" in str(item.get("service_type", "")).lower()
+                    and int(item.get("remaining") or 0) > 0]
+
+    if not filtered:
+        await query.message.edit_caption(
+            caption=f"🍃 No {cat_label} keys available right now. Check back later!",
+            parse_mode="HTML",
+            reply_markup=kb_back_inventory()
+        )
+        try: await loading.delete()
+        except: pass
+        return
+
+    max_items = get_max_items(category, user_level)
+    filtered = filtered[:max_items]
+    filtered.sort(key=lambda x: int(x.get("remaining", 0)), reverse=True)
+
+    # Pagination
+    ITEMS_PER_PAGE = 8
+    start = page * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE
+    page_items = filtered[start:end]
+    total_pages = (len(filtered) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+
+    report = (
+        f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"🌿 You have <b>{views_left}</b> views left today (Level {user_level})\n"
+        f"📄 Page {page + 1} of {total_pages} • {len(filtered)} keys available\n\n"
+    )
+
+    buttons = []
+    for item in page_items:
+        key_id = str(item.get("key_id", "")).strip()
+        remaining = item.get("remaining", 0)
+        short_key = key_id[:20] + "…" if len(key_id) > 20 else key_id
+        token = f"{chat_id}:{key_id[:40]}"
+        await redis_client.setex(f"winkey:{token}", 3600, f"{key_id}||{category}")
+        buttons.append([
+            InlineKeyboardButton(f"✅ {short_key} ({remaining})", callback_data=f"wkfb_ok|{token}"),
+            InlineKeyboardButton("❌", callback_data=f"wkfb_bad|{token}")
+        ])
+
+    # Navigation
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"winoffice_page_{category}_{page-1}"))
+    if end < len(filtered):
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"winoffice_page_{category}_{page+1}"))
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([InlineKeyboardButton("❓ What is VAMT / Remaining?", callback_data="winoffice_help")])
+    buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+
+    report += "\n⚠️ Tap ✅ if it worked, ❌ if not — Caretaker will be notified."
+
+    await query.message.edit_caption(
+        caption=report,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+    try:
+        await loading.delete()
+    except:
+        pass
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
@@ -4294,6 +4275,15 @@ async def handle_callback(update: Update):
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
         return
+    
+    # ── VAMT PAGINATION (Windows & Office)
+    elif data.startswith("winoffice_page_"):
+        try:
+            _, category, page_str = data.split("_", 2)
+            page = int(page_str)
+            await show_winoffice_keys(chat_id, category, profile, query, page=page)
+        except:
+            await query.answer("Error loading page", show_alert=True)
 
     elif data.startswith("lang_set|"):
         lang_code = data.split("|")[1]
@@ -4559,12 +4549,19 @@ async def handle_callback(update: Update):
     elif data == "cancel_reset":
         await query.message.edit_text("❌ Reset cancelled. Your data is safe.")
 
-    # ── WIN/OFFICE GUIDE ALTER ──
+    # ── VAMT HELP POPUP (shortened - max 200 chars)
     elif data == "winoffice_help":
         await query.answer(
-            "📜 Ancient Scrolls Guide\n\n🔵 VAMT: Official Microsoft Volume keys. One key activates multiple PCs.\n\n📦 REMAINING: Shows exactly how many uses left.\nEx: 'Remaining: 10' = 10 more people can use it!\n\n⚠️ Use fast before magic runs out! 🍃",
-            show_alert=True,
+            "📜 What is VAMT?\n\n"
+            "✅ Official Microsoft Volume keys\n"
+            "One key activates many PCs.\n\n"
+            "📦 Remaining = how many more devices can use it\n"
+            "• Remaining: 10 = works on 10 PCs\n"
+            "• Remaining: 0 = key is exhausted\n\n"
+            "⚡ Use quickly before it runs out!",
+            show_alert=True
         )
+
     # ── INVITE COPY LINK ──
     elif data.startswith("copy_ref_link|"):
         try:
@@ -4684,7 +4681,7 @@ async def handle_callback(update: Update):
                 if action_xp:
                     asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-                await show_winoffice_keys(chat_id, category, profile, query)
+                await show_winoffice_keys(chat_id, category, profile, query, page=0)
                 return
 
     elif data.startswith("key_feedback_ok|") or data.startswith("key_feedback_bad|"):
@@ -5049,22 +5046,24 @@ async def handle_callback(update: Update):
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def process_update(update_data: dict):
-    global COLD_START
-
     update = Update.de_json(update_data, tg_app.bot)
 
-    # ── COLD START CUTE MESSAGE (only once after Render spin-down) ──
-    if COLD_START and update.message:
-        chat_id = update.effective_chat.id if update.effective_chat else None
-        if chat_id:
+    # ── Improved Cold Start + Auto-delete after 5 seconds
+    if update.message:
+        chat_id = update.effective_chat.id
+        cold_key = "cold_start_sent"
+        if not await redis_client.get(cold_key):
+            await redis_client.setex(cold_key, 3600, "1")
+
             try:
-                await tg_app.bot.send_message(
+                msg = await tg_app.bot.send_message(
                     chat_id=chat_id,
-                    text="Yawnnn~ 😴💤\nThe forest just woke me up!\nReady for you now, wanderer ✨🍃",
+                    text="Yawnnn~ 😴💤\nThe forest just woke me up!\nReady for you now, wanderer ✨🍃"
                 )
-            except Exception as e:
-                print(f"⚠️ Cold-start message failed: {e}")
-        COLD_START = False
+                await asyncio.sleep(3)
+                await tg_app.bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
+            except:
+                pass
 
     # ── Maintenance mode ──
     if await get_maintenance_mode():
