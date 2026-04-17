@@ -957,7 +957,7 @@ async def set_notion_availability(chat_id: int, token: str, new_status: str):
         await tg_app.bot.send_message(chat_id, f"❌ Failed: {e}")
 
 # ──────────────────────────────────────────────
-# VIEW LIBRARY (newest first + edit in place)
+# VIEW LIBRARY (newest updated first + empty name safe)
 # ──────────────────────────────────────────────
 async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
     database_id = os.getenv("NOTION_DATABASE_ID")
@@ -992,9 +992,15 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
 
     for item in results:
         props = item.get("properties", {})
-        game_name = props.get("Game Name", {}).get("title", [{}])[0].get("text", {}).get("content", "Unknown")
 
-        # Availability
+        # Safe Game Name extraction (fixes the IndexError)
+        title_list = props.get("Game Name", {}).get("title", [])
+        if title_list and isinstance(title_list, list) and len(title_list) > 0:
+            game_name = title_list[0].get("text", {}).get("content", "Untitled Game")
+        else:
+            game_name = "Untitled Game"
+
+        # Availability (multi-select)
         avail_prop = props.get("Availability", {})
         if avail_prop.get("type") == "multi_select":
             multi = avail_prop.get("multi_select", [])
@@ -1005,7 +1011,7 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
         # Display
         display = props.get("Display", {}).get("formula", {}).get("string", "—")
 
-        # Updated
+        # Updated (formula)
         updated = "—"
         for key in ["Updated", "🕒", "Clock", "updated", "Last Updated"]:
             prop = props.get(key)
@@ -1027,7 +1033,7 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
         else:
             no_update.append(item_data)
 
-    # Sort: newest first, then no-update by name
+    # Sort: newest first, then no-update alphabetically
     has_update.sort(key=lambda x: x["sort_key"], reverse=True)
     no_update.sort(key=lambda x: x["game_name"])
 
@@ -1067,7 +1073,7 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
 
     final_text = text + f"━━━━━━━━━━━━━━━━━━\n📄 Page {page+1} • Newest updated first"
 
-    # EDIT existing message (pagination) or SEND new one
+    # Edit existing message when using Next/Previous, otherwise send new
     if query and query.message:
         try:
             await query.message.edit_text(
@@ -1075,15 +1081,16 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
+            return
         except:
-            await tg_app.bot.send_message(chat_id, final_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
-    else:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=final_text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            pass  # fallback to new message if edit fails
+
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=final_text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 async def handle_document(update: Update):
     """Handle document uploads (.txt or .zip) - Fast single file + Batch for multiple"""
