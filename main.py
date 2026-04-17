@@ -911,9 +911,7 @@ async def edit_notion_availability(chat_id: int, token: str):
         return
 
     options = ["Available", "Expired"]
-    buttons = []
-    for opt in options:
-        buttons.append([InlineKeyboardButton(opt, callback_data=f"set_notion_availability|{token}|{opt}")])
+    buttons = [[InlineKeyboardButton(opt, callback_data=f"set_notion_availability|{token}|{opt}")] for opt in options]
     buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="view_notion_steam")])
 
     await tg_app.bot.send_message(
@@ -924,7 +922,7 @@ async def edit_notion_availability(chat_id: int, token: str):
     )
 
 # ──────────────────────────────────────────────
-# 3. SET (fixed for multi-select + no formula update)
+# 3. SET AVAILABILITY (fixed for multi-select)
 # ──────────────────────────────────────────────
 async def set_notion_availability(chat_id: int, token: str, new_status: str):
     page_id = await redis_client.get(f"notion:edit:{token}")
@@ -941,11 +939,8 @@ async def set_notion_availability(chat_id: int, token: str, new_status: str):
     payload = {
         "properties": {
             "Availability": {
-                "multi_select": [{"name": new_status}]   # ← fixed for your current multi-select
-                # If you change to Select type in Notion, use this instead:
-                # "select": {"name": new_status}
+                "multi_select": [{"name": new_status}]   # ← your column is Multi-select
             }
-            # Removed "Updated" completely — formulas cannot be updated
         }
     }
 
@@ -960,14 +955,13 @@ async def set_notion_availability(chat_id: int, token: str, new_status: str):
             await asyncio.sleep(1)
             await view_notion_steam_library(chat_id, page=0)
         else:
-            await tg_app.bot.send_message(
-                chat_id,
-                f"❌ Notion error {r.status_code}\n{r.text[:400]}",
-                parse_mode="HTML"
-            )
+            await tg_app.bot.send_message(chat_id, f"❌ Notion error {r.status_code}: {r.text[:300]}", parse_mode="HTML")
     except Exception as e:
         await tg_app.bot.send_message(chat_id, f"❌ Failed: {e}")
 
+# ──────────────────────────────────────────────
+# 1. VIEW LIBRARY (fixed parsing for Multi-select + Formula)
+# ──────────────────────────────────────────────
 async def view_notion_steam_library(chat_id: int, page: int = 0):
     database_id = os.getenv("NOTION_DATABASE_ID")
     if not database_id:
@@ -1007,23 +1001,23 @@ async def view_notion_steam_library(chat_id: int, page: int = 0):
         # Game Name
         game_name = props.get("Game Name", {}).get("title", [{}])[0].get("text", {}).get("content", "Unknown")
 
-        # Availability - now supports both Select AND Multi-select
+        # Availability - supports both Select and Multi-select
         avail_prop = props.get("Availability", {})
         if avail_prop.get("type") == "multi_select":
             multi = avail_prop.get("multi_select", [])
-            availability = ", ".join([m.get("name", "") for m in multi]) if multi else "—"
+            availability = ", ".join([m.get("name", "—") for m in multi]) if multi else "—"
         else:
             availability = avail_prop.get("select", {}).get("name", "—") or "—"
 
-        # Display (formula)
+        # Display (formula column)
         display = props.get("Display", {}).get("formula", {}).get("string", "—")
 
-        # Updated (formula) - more robust lookup
+        # Updated (formula column) - more robust lookup
         updated = "—"
-        for key in ["Updated", "🕓", "Clock", "updated"]:
+        for key in ["Updated", "🕓", "Clock", "updated", "Last Updated"]:
             prop = props.get(key)
-            if prop and prop.get("formula", {}).get("string"):
-                updated = prop["formula"]["string"]
+            if prop and prop.get("type") == "formula":
+                updated = prop.get("formula", {}).get("string", "—")
                 break
 
         text += f"🎮 <b>{game_name}</b>\n"
@@ -1033,9 +1027,9 @@ async def view_notion_steam_library(chat_id: int, page: int = 0):
 
         page_id = item["id"]
 
-        # ← NEW: Short token to avoid Button_data_invalid
+        # Short token to fix Button_data_invalid
         short_token = secrets.token_urlsafe(8)
-        await redis_client.setex(f"notion:edit:{short_token}", 1800, page_id)  # 30 min
+        await redis_client.setex(f"notion:edit:{short_token}", 1800, page_id)  # 30 minutes
 
         buttons.append([
             InlineKeyboardButton(f"✏️ Change {game_name[:22]}", callback_data=f"edit_notion_availability|{short_token}")
@@ -4077,13 +4071,13 @@ async def handle_callback(update: Update):
         page = int(data.split("_")[2])
         await view_notion_steam_library(chat_id, page=page)
 
+    elif data.startswith("edit_notion_availability|"):
+        token = data.split("|")[1]
+        await edit_notion_availability(chat_id, token)
+
     elif data.startswith("set_notion_availability|"):
         _, token, new_status = data.split("|")
         await set_notion_availability(chat_id, token, new_status)
-
-    elif data.startswith("set_notion_availability|"):
-        _, page_id, new_status = data.split("|")
-        await set_notion_availability(chat_id, page_id, new_status)
 
     # ── WHEEL OF WHISPERS ──
     elif data == "show_wheel_menu":
