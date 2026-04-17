@@ -5,7 +5,6 @@ import json
 import random
 import zipfile
 import io
-import secrets
 import html
 import httpx
 import pytz
@@ -21,13 +20,11 @@ from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.responses import PlainTextResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 # ──────────────────────────────────────────────
-# AUTO TRANSLATION SYSTEM — English + Tagalog + Bisaya only
+# AUTO TRANSLATION SYSTEM — English + Tagalog + Bisaya (using deep-translator)
 # ──────────────────────────────────────────────
-translator = Translator()   # global translator
-
 SUPPORTED_LANGUAGES = {
     "en":  ("🇬🇧", "English"),
     "tl":  ("🇵🇭", "Tagalog"),
@@ -44,14 +41,19 @@ async def set_user_language(chat_id: int, lang_code: str):
     await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {"preferred_language": lang_code})
 
 async def translate_text(text: str, target_lang: str) -> str:
-    if not text or target_lang == "en":
+    """Auto translate using Google Translate (safe & compatible)"""
+    if not text or target_lang == "en" or not text.strip():
         return text
+    
     try:
-        result = await translator.translate(text, dest=target_lang)
-        return result.text if result and result.text else text
-    except:
-        return text  # fallback to English if translation fails
-
+        # Run in background thread so it doesn't block your async bot
+        translated = await asyncio.to_thread(
+            lambda: GoogleTranslator(source='auto', target=target_lang).translate(text)
+        )
+        return translated
+    except Exception:
+        return text  # fallback to original text if anything fails
+    
 # ──────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────
