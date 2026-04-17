@@ -163,6 +163,9 @@ HELLO_GIF     = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbd
 CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef75e9aeb09.gif"
 INVITE_GIF = "https://images.gr-assets.com/hostedimages/1489696457ra/22241153.gif"
 NEW_UPLOAD_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExejlsMjBxanUwOWhzYXMxZjZkM29yeHY0Mmt3bHY5OGF2bnhleGw5MCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Lo6BKNnNjKFy4A0Gc8/giphy.gif"
+MORNING_GIF   = "https://i.gifer.com/HYel.gif"
+AFTERNOON_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
+EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540.mp4"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
@@ -418,6 +421,32 @@ async def _sb_patch(path: str, payload: dict) -> bool:
             print(f"🔴 SB PATCH {path}: {e}")
             return False
 
+async def _sb_patch_check(path: str, payload: dict) -> tuple[bool, bool]:
+    """
+    Like _sb_patch but also returns whether any rows were actually updated.
+    Returns (http_ok, rows_updated)
+    """
+    async with db_sem:
+        try:
+            r = await asyncio.wait_for(
+                http.patch(
+                    f"{SUPABASE_URL}/rest/v1/{path}",
+                    headers=_supabase_headers({
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",  # ✅ returns updated rows
+                    }),
+                    json=payload,
+                ),
+                timeout=10.0,
+            )
+            if r.status_code in (200, 204):
+                body = r.json() if r.status_code == 200 else []
+                rows_updated = len(body) > 0 if isinstance(body, list) else True
+                return True, rows_updated
+            return False, False
+        except Exception as e:
+            print(f"🔴 SB PATCH CHECK {path}: {e}")
+            return False, False
 
 async def _sb_delete(path: str) -> bool:
     async with db_sem:
@@ -1562,19 +1591,19 @@ async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool,
 
         if result == 0:
             current = int(await redis_client.get(key) or 0)
+            remaining = max(0, max_reveals - current)
             print(f"[DEBUG] CAP REACHED. Currently used = {current}")
-            return False, 0
+            return False, remaining
         else:
             used_after = int(result)
-            remaining = max_reveals - used_after + 1
+            remaining = max(0, max_reveals - used_after)
             print(f"[DEBUG] REVEAL SUCCESS → Used now = {used_after} | Remaining = {remaining}")
             return True, remaining
-
     except Exception as e:
         print(f"🔴 CRITICAL Redis error in try_consume_reveal_cap({chat_id}, {service_type}): {e}")
         import traceback
         traceback.print_exc()
-        return False, 0   # safe fallback
+        return False, 0
 
 async def get_remaining_reveals_and_views(chat_id: int) -> dict:
     try:
@@ -1643,11 +1672,12 @@ async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
 
         if result == 0:
             current = int(await redis_client.get(key) or 0)
+            remaining = max(0, max_views - current)
             print(f"[DEBUG] VIEW CAP REACHED for {category}. Currently used = {current}")
-            return False, 0
+            return False, remaining
         else:
             used_after = int(result)
-            remaining = max_views - used_after + 1
+            remaining = max(0, max_views - used_after)
             print(f"[DEBUG] VIEW SUCCESS → Used now = {used_after} | Remaining = {remaining}")
             return True, remaining
     except Exception as e:
@@ -1655,7 +1685,7 @@ async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
         import traceback
         traceback.print_exc()
         return False, 0
-    
+
 # ══════════════════════════════════════════════════════════════════════════════
 # DAILY BONUS HELPER  (called inside add_xp, not exposed separately)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2250,13 +2280,16 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITY MESSAGES
 # ══════════════════════════════════════════════════════════════════════════════
-def _greeting(tz_str: str = "Asia/Manila") -> tuple[str, str]:
+def _greeting(tz_str: str = "Asia/Manila") -> tuple[str, str, str]:
+    """Returns (icon, greeting_text, gif_url)"""
     hour = datetime.now(pytz.timezone(tz_str)).hour
+    
     if 5 <= hour < 12:
-        return "🌅", "Good morning"
-    if 12 <= hour < 18:
-        return "🌤️", "Good afternoon"
-    return "🌙", "Good evening"
+        return "🌅", "Good morning", MORNING_GIF
+    elif 12 <= hour < 18:
+        return "🌤️", "Good afternoon", AFTERNOON_GIF
+    else:
+        return "🌙", "Good evening", EVENING_GIF
 
 async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
     if xp_amount <= 0:
@@ -2384,7 +2417,7 @@ async def send_animated_translated(
     return msg
 
 async def send_initial_welcome(chat_id: int, first_name: str):
-    icon, greeting = _greeting()
+    icon, greeting, gif_url = _greeting()
     caption = (
         f"{icon} {greeting}, {html.escape(str(first_name))}!\n\n"
         "🌿 Welcome, dear wanderer, to Clyde's Enchanted Clearing.\n\n"
@@ -2394,7 +2427,7 @@ async def send_initial_welcome(chat_id: int, first_name: str):
     )
     msg = await send_animated_translated(
         chat_id=chat_id,
-        animation_url=WELCOME_GIF,
+        animation_url=gif_url,
         caption=caption,
         reply_markup=kb_start(),
     )
@@ -2402,7 +2435,7 @@ async def send_initial_welcome(chat_id: int, first_name: str):
 
 
 async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = False):
-    icon, greeting = _greeting()
+    icon, greeting, gif_url = _greeting()
     profile = await get_user_profile(chat_id)
 
     level      = profile.get("level", 1) if profile else 1
@@ -2470,7 +2503,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
 
     msg = await send_animated_translated(
         chat_id=chat_id,
-        animation_url=MENU_GIF,
+        animation_url=gif_url,
         caption=caption,
         reply_markup=keyboard,
     )
@@ -2524,126 +2557,137 @@ async def show_paginated_cookie_list(
         chat_id,
         f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Opening the ancient scroll of {service_type.title()} cookies...</i>"
     )
+    try:
+        profile   = await get_user_profile(chat_id)
+        user_level = profile.get("level", 1) if profile else 1
+        event      = await get_active_event() 
+        max_items  = get_max_items(service_type, user_level, event)
 
-    profile   = await get_user_profile(chat_id)
-    user_level = profile.get("level", 1) if profile else 1
-    event      = await get_active_event() 
-    max_items  = get_max_items(service_type, user_level, event)
+        # Get remaining reveals
+        rem = await get_remaining_reveals_and_views(chat_id)
+        reveals_left = rem.get(service_type, 0)
 
-    # Get remaining reveals
-    rem = await get_remaining_reveals_and_views(chat_id)
-    reveals_left = rem.get(service_type, 0)
+        event_bonus_txt = ""
+        if event:
+            bonus_type = event.get("bonus_type", "").strip()
+            if bonus_type == "netflix_double":
+                event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>doubled</b> today!\n\n"
+            elif bonus_type == "netflix_max":
+                event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>maximized</b> today!\n\n"
+        
+        title = "Netflix" if service_type == "netflix" else "PrimeVideo"
+        emoji = "🍿"    if service_type == "netflix" else "🎥"
 
-    event_bonus_txt = ""
-    if event:
-        bonus_type = event.get("bonus_type", "").strip()
-        if bonus_type == "netflix_double":
-            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>doubled</b> today!\n\n"
-        elif bonus_type == "netflix_max":
-            event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>maximized</b> today!\n\n"
-    
-    title = "Netflix" if service_type == "netflix" else "PrimeVideo"
-    emoji = "🍿"    if service_type == "netflix" else "🎥"
+        data = await get_vamt_data()
+        if not data:
+            try:
+                await loading.delete()
+            except Exception:
+                pass
+            await send_supabase_error(chat_id)
+            await query.message.edit_caption(
+                "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
+                parse_mode="HTML",
+                reply_markup=kb_back_inventory(),
+            )
+            return
 
-    data = await get_vamt_data()
-    if not data:
+        filtered = [
+            item for item in data
+            if service_type in str(item.get("service_type", "")).lower()
+            and str(item.get("status", "")).lower() == "active"
+            and int(item.get("remaining", 0)) > 0
+        ]
+
+        if not filtered:
+            await query.message.edit_caption(
+                caption=(
+                    f"<b>{emoji} Secret {title} Premium Cookies</b>\n\n"
+                    "🌫️ No working cookies available in the forest right now...\n\n"
+                    "The trees are resting. Please check back later or explore other scrolls 🍃"
+                ),
+                parse_mode="HTML",
+                reply_markup=kb_back_inventory(),
+            )
+            return
+
+        filtered.sort(key=lambda x: x.get("last_updated", ""))
+
+        if user_level >= 6:
+            filtered  = filtered[-max_items:]
+            priority  = "✨ You get the freshest cookies first!"
+        else:
+            filtered  = filtered[:max_items]
+            priority  = "🌱 You get older but still working cookies."
+
+        start      = page * NETFLIX_ITEMS_PER_PAGE
+        end        = start + NETFLIX_ITEMS_PER_PAGE
+        page_items = filtered[start:end]
+        total_pages = (len(filtered) + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
+
+        report = (
+            f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🌿 You have <b>{reveals_left}</b> reveals left today (Level {user_level})\n\n"
+            f"{event_bonus_txt}"
+            f"📦 <b>{len(filtered)} {title} available</b>\n"
+            f"📄 Page {page + 1} of {total_pages}\n\n"
+            "<i>Which one whispers to your spirit?</i>\n\n"
+        )
+
+        buttons = []
+        for idx, item in enumerate(page_items, start=start + 1):
+            name = str(item.get("display_name") or "").strip() or f"{title} Cookie"
+            report += f"✨ <b>{name}</b>\n Status: ✅ Working\n Remaining: {item.get('remaining', 0)}\n\n"
+            buttons.append([
+                InlineKeyboardButton(f"🔓 Reveal {name}", callback_data=f"reveal_{service_type}|{idx}|{page}")
+            ])
+
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"{service_type}_page_{page - 1}"))
+        if end < len(filtered):
+            nav.append(InlineKeyboardButton("Next ⇀",     callback_data=f"{service_type}_page_{page + 1}"))
+        if nav:
+            buttons.append(nav)
+        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
+
+        report += (
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🌿 Level {user_level} → Up to {max_items} items\n"
+            f"{priority}\n"
+        )
+        if len(filtered) < max_items:
+            report += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest.\n\n"
+        report += "⚠️ Cookies can stop working without notice. Test quickly after revealing."
+
+        await query.message.edit_caption(
+            caption=report, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    finally:
         try:
             await loading.delete()
         except Exception:
             pass
-        await send_supabase_error(chat_id)
-        await query.message.edit_caption(
-            "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
-            parse_mode="HTML",
-            reply_markup=kb_back_inventory(),
-        )
-        return
-
-    filtered = [
-        item for item in data
-        if service_type in str(item.get("service_type", "")).lower()
-        and str(item.get("status", "")).lower() == "active"
-        and int(item.get("remaining", 0)) > 0
-    ]
-
-    if not filtered:
-        await query.message.edit_caption(
-            caption=(
-                f"<b>{emoji} Secret {title} Premium Cookies</b>\n\n"
-                "🌫️ No working cookies available in the forest right now...\n\n"
-                "The trees are resting. Please check back later or explore other scrolls 🍃"
-            ),
-            parse_mode="HTML",
-            reply_markup=kb_back_inventory(),
-        )
-        return
-
-    filtered.sort(key=lambda x: x.get("last_updated", ""))
-
-    if user_level >= 6:
-        filtered  = filtered[-max_items:]
-        priority  = "✨ You get the freshest cookies first!"
-    else:
-        filtered  = filtered[:max_items]
-        priority  = "🌱 You get older but still working cookies."
-
-    start      = page * NETFLIX_ITEMS_PER_PAGE
-    end        = start + NETFLIX_ITEMS_PER_PAGE
-    page_items = filtered[start:end]
-    total_pages = (len(filtered) + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
-
-    report = (
-        f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🌿 You have <b>{reveals_left}</b> reveals left today (Level {user_level})\n\n"
-        f"{event_bonus_txt}"
-        f"📦 <b>{len(filtered)} {title} available</b>\n"
-        f"📄 Page {page + 1} of {total_pages}\n\n"
-        "<i>Which one whispers to your spirit?</i>\n\n"
-    )
-
-    buttons = []
-    for idx, item in enumerate(page_items, start=start + 1):
-        name = str(item.get("display_name") or "").strip() or f"{title} Cookie"
-        report += f"✨ <b>{name}</b>\n Status: ✅ Working\n Remaining: {item.get('remaining', 0)}\n\n"
-        buttons.append([
-            InlineKeyboardButton(f"🔓 Reveal {name}", callback_data=f"reveal_{service_type}|{idx}|{page}")
-        ])
-
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"{service_type}_page_{page - 1}"))
-    if end < len(filtered):
-        nav.append(InlineKeyboardButton("Next ⇀",     callback_data=f"{service_type}_page_{page + 1}"))
-    if nav:
-        buttons.append(nav)
-    buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-
-    report += (
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🌿 Level {user_level} → Up to {max_items} items\n"
-        f"{priority}\n"
-    )
-    if len(filtered) < max_items:
-        report += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest.\n\n"
-    report += "⚠️ Cookies can stop working without notice. Test quickly after revealing."
-
-    await query.message.edit_caption(
-        caption=report, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-    try:
-        await loading.delete()
-    except Exception:
-        pass
-
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
     loading = None
 
     try:
-        # ── Validate data BEFORE touching the cap ──
+        # ── Spam guard ──
+        spam_key = f"reveal_spam:{chat_id}:{service_type}"
+        if await redis_client.exists(spam_key):
+            await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
+            return
+
+        # Set immediately — use SET NX so concurrent requests can't both win
+        acquired = await redis_client.set(spam_key, 1, ex=8, nx=True)
+        if not acquired:
+            await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
+            return
+
+        # Now safe to validate data and consume cap
         profile = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
         event = await get_active_event()
@@ -2678,23 +2722,14 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
             await show_paginated_cookie_list(service_type, chat_id, query, page)
             return
 
-        # ── Spam guard ──
-        spam_key = f"reveal_spam:{chat_id}:{service_type}"
-        if await redis_client.exists(spam_key):
-            await query.answer("🌿 Slow down, wanderer! One reveal at a time 🍃", show_alert=True)
-            return
-        await redis_client.setex(spam_key, 8, 1)
-
         # ── Check bonus slots first ──
         bonus_key = f"daily_reveals_bonus:{chat_id}"
         bonus_slots = int(await redis_client.get(bonus_key) or 0)
         if bonus_slots > 0:
             await redis_client.decr(bonus_key)
         else:
-            # Normal daily cap
             allowed, remaining = await try_consume_reveal_cap(chat_id, service_type)
             if not allowed:
-                # ← This is the important part that fixes the "returns to 10 remaining" bug
                 await query.message.edit_caption(
                     caption=(
                         f"{emoji} <b>Daily Reveal Limit Reached</b>\n\n"
@@ -3290,8 +3325,8 @@ async def handle_add_event(chat_id: int, title: str, description: str, event_dat
     if chat_id != OWNER_ID:
         return
 
-    # Deactivate all previous events first
-    await _sb_patch("events?is_active=eq.true", {"is_active": False})
+    # Deactivate previous — use checked version so we know if anything was active
+    await _sb_patch_check("events?is_active=eq.true", {"is_active": False})
 
     ok = await _sb_post("events", {
         "title":       title.strip(),
@@ -3328,8 +3363,8 @@ async def handle_end_event(chat_id: int):
         )
         return
 
-    ok = await _sb_patch("events?is_active=eq.true", {"is_active": False})
-    if ok:
+    ok, rows_updated = await _sb_patch_check("events?is_active=eq.true", {"is_active": False})
+    if ok and rows_updated:
         await tg_app.bot.send_message(
             chat_id,
             "✅ <b>Event ended successfully!</b>\n\n"
@@ -3338,6 +3373,13 @@ async def handle_end_event(chat_id: int):
             parse_mode="HTML",
         )
         await redis_client.delete("active_event")
+    elif ok and not rows_updated:
+        await tg_app.bot.send_message(
+            chat_id,
+            "⚠️ <b>No active event found to end.</b>\n\n"
+            "It may have already expired or been ended. 🍃",
+            parse_mode="HTML",
+        )
     else:
         await tg_app.bot.send_message(chat_id, "❌ Failed to end event.")
 
@@ -4185,7 +4227,7 @@ async def handle_callback(update: Update):
     data      = query.data
 
     # Feedback callbacks answer themselves with show_alert — skip early answer
-    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|", "winoffice_help", "copy_ref_link|")
+    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|", "copy_ref_link|")
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
 
