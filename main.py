@@ -164,8 +164,8 @@ CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef
 INVITE_GIF = "https://images.gr-assets.com/hostedimages/1489696457ra/22241153.gif"
 NEW_UPLOAD_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExejlsMjBxanUwOWhzYXMxZjZkM29yeHY0Mmt3bHY5OGF2bnhleGw5MCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Lo6BKNnNjKFy4A0Gc8/giphy.gif"
 MORNING_GIF   = "https://i.gifer.com/HYel.gif"
-AFTERNOON_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
-EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540.mp4"
+AFTERNOON_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
+EVENING_GIF   = "https://www.reddit.com/media?url=https%3A%2F%2Fi.redd.it%2Fpucc5tc1vnsf1.gif"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
@@ -2418,13 +2418,15 @@ async def send_animated_translated(
 
 async def send_initial_welcome(chat_id: int, first_name: str):
     icon, greeting, gif_url = _greeting()
+    
     caption = (
         f"{icon} {greeting}, {html.escape(str(first_name))}!\n\n"
         "🌿 Welcome, dear wanderer, to Clyde's Enchanted Clearing.\n\n"
         "Beneath the whispering ancient trees, a world of gentle magic awaits.\n"
         "Hidden wonders and peaceful moments are ready to be discovered.\n\n"
-        "<i>Tap the button below to step into the heart of the forest.</i> 🍃✨"
+        "Tap the button below to step into the heart of the forest. 🍃✨"
     )
+    
     msg = await send_animated_translated(
         chat_id=chat_id,
         animation_url=gif_url,
