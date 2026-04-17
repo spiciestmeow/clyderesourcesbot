@@ -21,6 +21,36 @@ from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.responses import PlainTextResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
+from googletrans import Translator
+
+# ──────────────────────────────────────────────
+# AUTO TRANSLATION SYSTEM — English + Tagalog + Bisaya only
+# ──────────────────────────────────────────────
+translator = Translator()   # global translator
+
+SUPPORTED_LANGUAGES = {
+    "en":  ("🇬🇧", "English"),
+    "tl":  ("🇵🇭", "Tagalog"),
+    "ceb": ("🇵🇭", "Bisaya"),
+}
+
+async def get_user_language(chat_id: int) -> str:
+    profile = await get_user_profile(chat_id)
+    return profile.get("preferred_language", "en") if profile else "en"
+
+async def set_user_language(chat_id: int, lang_code: str):
+    if lang_code not in SUPPORTED_LANGUAGES:
+        lang_code = "en"
+    await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {"preferred_language": lang_code})
+
+async def translate_text(text: str, target_lang: str) -> str:
+    if not text or target_lang == "en":
+        return text
+    try:
+        result = await translator.translate(text, dest=target_lang)
+        return result.text if result and result.text else text
+    except:
+        return text  # fallback to English if translation fails
 
 # ──────────────────────────────────────────────
 # CONFIG
@@ -2126,6 +2156,7 @@ def kb_first_time_menu():
         [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🌟 Wheel of Whispers", callback_data="show_wheel_menu")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
+        [InlineKeyboardButton("🌐 Change Language", callback_data="set_language")],
     ])
 
 def kb_inventory():
@@ -3976,6 +4007,41 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
         reply_markup=markup
     )
 
+#hadle language
+async def handle_set_language(chat_id: int):
+    """Show language selector (English, Tagalog, Bisaya only)"""
+    lang = await get_user_language(chat_id)
+    current_flag, current_name = SUPPORTED_LANGUAGES.get(lang, ("🇬🇧", "English"))
+    
+    text = f"🌍 <b>Current language:</b> {current_flag} {current_name}\n\nChoose your preferred language:"
+    
+    buttons = [
+        [InlineKeyboardButton("🇬🇧 English", callback_data="lang_set|en")],
+        [InlineKeyboardButton("🇵🇭 Tagalog", callback_data="lang_set|tl")],
+        [InlineKeyboardButton("🇵🇭 Bisaya", callback_data="lang_set|ceb")],
+        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+    ]
+    
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+# ── Auto-translate helpers (use these from now on) ──
+async def send_translated(chat_id: int, text: str, lang: str = None, **kwargs):
+    if lang is None:
+        lang = await get_user_language(chat_id)
+    translated = await translate_text(text, lang)
+    return await tg_app.bot.send_message(chat_id=chat_id, text=translated, **kwargs)
+
+async def edit_translated(query, text: str, lang: str = None, **kwargs):
+    if lang is None:
+        lang = await get_user_language(query.message.chat_id)
+    translated = await translate_text(text, lang)
+    return await query.message.edit_caption(caption=translated, **kwargs)
+
 async def handle_uploadsteam_command(chat_id: int, raw_text: str):
     """Upload Steam Account + Save steam_id column"""
     if chat_id != OWNER_ID:
@@ -4141,6 +4207,19 @@ async def handle_callback(update: Update):
             ),
             parse_mode="HTML", reply_markup=kb_inventory(),
         )
+
+    elif data == "set_language":
+        await handle_set_language(chat_id)
+        return
+
+    elif data.startswith("lang_set|"):
+        lang_code = data.split("|")[1]
+        await set_user_language(chat_id, lang_code)
+        flag, name = SUPPORTED_LANGUAGES.get(lang_code, ("🇬🇧", "English"))
+        await query.answer(f"✅ Language set to {flag} {name}!", show_alert=True)
+        await query.message.delete()
+        await send_full_menu(chat_id, first_name)   # now auto-translated!
+        return
 
     elif data == "view_notion_steam":
         await view_notion_steam_library(chat_id)
@@ -5293,6 +5372,9 @@ async def process_update(update_data: dict):
     
     elif text.startswith(("/updates", "/update")):
         await handle_updates(chat_id)
+
+    elif text.startswith(("/lang", "/language")):
+        await handle_set_language(chat_id)
 
     elif text.startswith(("/viewfeedback", "/feedbacks")):
         await handle_view_feedback(chat_id)
