@@ -2144,7 +2144,7 @@ def kb_main_menu():
         [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
         [
-            InlineKeyboardButton("🌐 Change Language", callback_data="set_language"),
+            InlineKeyboardButton("🌍 Language", callback_data="set_language"),
             InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals"),
         ],
     ])
@@ -2157,7 +2157,7 @@ def kb_first_time_menu():
         [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
         [
-            InlineKeyboardButton("🌐 Change Language", callback_data="set_language"),
+            InlineKeyboardButton("🌍 Language", callback_data="set_language"),
             InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals"),
         ],
     ])
@@ -4389,11 +4389,10 @@ async def handle_callback(update: Update):
             [InlineKeyboardButton("ℹ️ About the Wheel", callback_data="about_wheel")],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
         ])
-        await tg_app.bot.send_animation(
+        await send_animated_translated(
             chat_id=chat_id,
-            animation=LOADING_GIF,
+            animation_url=LOADING_GIF,
             caption=caption,
-            parse_mode="HTML",
             reply_markup=keyboard
         )
         return
@@ -4518,7 +4517,9 @@ async def handle_callback(update: Update):
             "The wheel resets every midnight (Manila time).\n\n"
             "<i>May the forest bless your spins, wanderer.</i> ✨"
         )
-        await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        await send_animated_translated(
+            chat_id=chat_id,
+            caption=text,)
         return
     
     # ── WHEEL LEADERBOARD ──
