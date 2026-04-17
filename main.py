@@ -4045,31 +4045,37 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
     )
 
 #hadle language
-async def handle_set_language(chat_id: int):
-    """Show language selector + beta notice"""
-    try:
-        pass
-    except:
-        pass
-
+async def handle_set_language(chat_id: int, query=None):
+    """Show language selector — now properly replaces the old menu"""
     lang = await get_user_language(chat_id)
     current_flag, current_name = SUPPORTED_LANGUAGES.get(lang, ("🇬🇧", "English"))
-    
+   
     text = f"🌍 <b>Current language:</b> {current_flag} {current_name}\n\nChoose your preferred language:"
-
     buttons = [
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_set|en")],
         [InlineKeyboardButton("🇵🇭 Tagalog", callback_data="lang_set|tl")],
         [InlineKeyboardButton("🇵🇭 Bisaya", callback_data="lang_set|ceb")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
     ]
+    markup = InlineKeyboardMarkup(buttons)
 
-    # Send the language selector
-    msg = await tg_app.bot.send_message(
+    if query and query.message:
+        try:
+            await query.message.edit_text(
+                text=text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+            return
+        except Exception:
+            pass
+
+    # Fallback: send new message
+    await tg_app.bot.send_message(
         chat_id=chat_id,
         text=text,
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        reply_markup=markup
     )
 
     # Show beta notice as a temporary message (disappears after 3.5 seconds)
@@ -4256,15 +4262,27 @@ async def handle_callback(update: Update):
         )
 
     elif data == "show_resources":
-        await query.message.edit_caption(
-            caption="📦 <b>Resources & Links</b>\n\nChoose what you need:",
-            parse_mode="HTML",
-            reply_markup=kb_resources()
-        )
+        try:
+            await query.message.edit_caption(
+                caption="📦 <b>Resources & Links</b>\n\nChoose what you need:",
+                parse_mode="HTML",
+                reply_markup=kb_resources()
+            )
+        except Exception:
+            try:
+                await query.message.delete()
+            except:
+                pass
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text="📦 <b>Resources & Links</b>\n\nChoose what you need:",
+                parse_mode="HTML",
+                reply_markup=kb_resources()
+            )
         return
 
     elif data == "set_language":
-        await handle_set_language(chat_id)
+        await handle_set_language(chat_id, query=query)
         return
 
     elif data.startswith("lang_set|"):
@@ -4273,7 +4291,6 @@ async def handle_callback(update: Update):
         
         flag, name = SUPPORTED_LANGUAGES.get(lang_code, ("🇬🇧", "English"))
         
-        # Permanent success message
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"✅ Language successfully changed to {flag} {name}!",
