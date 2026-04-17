@@ -4046,25 +4046,35 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
 
 #hadle language
 async def handle_set_language(chat_id: int):
-    """Show language selector (English, Tagalog, Bisaya only)"""
+    """Show language selector + beta notice"""
+    try:
+        pass
+    except:
+        pass
+
     lang = await get_user_language(chat_id)
     current_flag, current_name = SUPPORTED_LANGUAGES.get(lang, ("🇬🇧", "English"))
     
     text = f"🌍 <b>Current language:</b> {current_flag} {current_name}\n\nChoose your preferred language:"
-    
+
     buttons = [
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_set|en")],
         [InlineKeyboardButton("🇵🇭 Tagalog", callback_data="lang_set|tl")],
         [InlineKeyboardButton("🇵🇭 Bisaya", callback_data="lang_set|ceb")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
     ]
-    
-    await tg_app.bot.send_message(
+
+    # Send the language selector
+    msg = await tg_app.bot.send_message(
         chat_id=chat_id,
         text=text,
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
+
+    # Show beta notice as a temporary message (disappears after 3.5 seconds)
+    beta_msg = "🌱 This language feature is still in beta."
+    asyncio.create_task(send_temporary_message(chat_id, beta_msg, duration=3.5))
 
 # ── Auto-translate helpers (use these from now on) ──
 async def send_translated(chat_id: int, text: str, lang: str = None, **kwargs):
@@ -4263,21 +4273,15 @@ async def handle_callback(update: Update):
         
         flag, name = SUPPORTED_LANGUAGES.get(lang_code, ("🇬🇧", "English"))
         
-        # 1. Permanent confirmation message
+        # Permanent success message
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=f"✅ Language successfully changed to {flag} {name}!",
             parse_mode="HTML"
         )
         
-        # 2. Separate temporary beta notice (disappears after 3.5 seconds)
-        beta_msg = (
-            "🌱 This language feature is still in beta.\n"
-        )
-        asyncio.create_task(send_temporary_message(chat_id, beta_msg, duration=2))
-        
-        # Clean up language selector and refresh main menu
         await query.message.delete()
+        
         await send_full_menu(chat_id, first_name)
         return
     
