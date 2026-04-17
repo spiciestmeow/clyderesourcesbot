@@ -4044,13 +4044,16 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
         reply_markup=markup
     )
 
-#hadle language
+# ──────────────────────────────────────────────
+# LANGUAGE SELECTOR (now deletes old menu first)
+# ──────────────────────────────────────────────
 async def handle_set_language(chat_id: int, query=None):
-    """Show language selector — now properly replaces the old menu"""
+    """Show language selector — deletes old animated main menu first"""
     lang = await get_user_language(chat_id)
     current_flag, current_name = SUPPORTED_LANGUAGES.get(lang, ("🇬🇧", "English"))
    
     text = f"🌍 <b>Current language:</b> {current_flag} {current_name}\n\nChoose your preferred language:"
+    
     buttons = [
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_set|en")],
         [InlineKeyboardButton("🇵🇭 Tagalog", callback_data="lang_set|tl")],
@@ -4059,18 +4062,14 @@ async def handle_set_language(chat_id: int, query=None):
     ]
     markup = InlineKeyboardMarkup(buttons)
 
+    # 🔥 CRITICAL FIX: Delete the old animated menu
     if query and query.message:
         try:
-            await query.message.edit_text(
-                text=text,
-                parse_mode="HTML",
-                reply_markup=markup
-            )
-            return
+            await query.message.delete()
         except Exception:
             pass
 
-    # Fallback: send new message
+    # Send clean language selector
     await tg_app.bot.send_message(
         chat_id=chat_id,
         text=text,
@@ -4078,9 +4077,8 @@ async def handle_set_language(chat_id: int, query=None):
         reply_markup=markup
     )
 
-    # Show beta notice as a temporary message (disappears after 3.5 seconds)
-    beta_msg = "🌱 This language feature is still in beta."
-    asyncio.create_task(send_temporary_message(chat_id, beta_msg, duration=3.5))
+    # Beta notice (disappears automatically)
+    asyncio.create_task(send_temporary_message(chat_id, "🌱 This language feature is still in beta.", duration=3))
 
 # ── Auto-translate helpers (use these from now on) ──
 async def send_translated(chat_id: int, text: str, lang: str = None, **kwargs):
@@ -4262,20 +4260,32 @@ async def handle_callback(update: Update):
         )
 
     elif data == "show_resources":
+        # Immersive description + clean menu
+        immersive_text = (
+            "📦 <b>The Resource Grove</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Deep within the Enchanted Clearing, where golden sunlight filters through ancient leaves, "
+            "lies a hidden grove tended by the forest spirits themselves.\n\n"
+            "Here they have gathered the rarest treasures and wisest knowledge from distant realms — "
+            "all for kind wanderers like you.\n\n"
+            "<i>Choose your path below, and may the trees guide you to what you seek...</i> 🍃✨"
+        )
+        
         try:
             await query.message.edit_caption(
-                caption="📦 <b>Resources & Links</b>\n\nChoose what you need:",
+                caption=immersive_text,
                 parse_mode="HTML",
                 reply_markup=kb_resources()
             )
         except Exception:
+            # Safe fallback if edit fails (e.g. animation message)
             try:
                 await query.message.delete()
             except:
                 pass
             await tg_app.bot.send_message(
                 chat_id=chat_id,
-                text="📦 <b>Resources & Links</b>\n\nChoose what you need:",
+                text=immersive_text,
                 parse_mode="HTML",
                 reply_markup=kb_resources()
             )
