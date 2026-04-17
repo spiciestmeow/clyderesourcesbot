@@ -913,7 +913,7 @@ async def edit_notion_availability(chat_id: int, token: str):
 
     options = ["Available", "Expired"]
     buttons = [[InlineKeyboardButton(opt, callback_data=f"set_notion_availability|{token}|{opt}")] for opt in options]
-    buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="view_notion_steam")])
+    buttons.append([InlineKeyboardButton("❌ Cancel Edit", callback_data="view_notion_steam")])
 
     await tg_app.bot.send_message(
         chat_id=chat_id,
@@ -1036,10 +1036,9 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
         else:
             no_update.append(item_data)
 
-    # Sort: newest first, then no-update alphabetically
+    # ── SORTING: Newest → Oldest → No-update at bottom ──
     has_update.sort(key=lambda x: x["sort_key"], reverse=True)
-    no_update.sort(key=lambda x: x["game_name"])
-
+    no_update.sort(key=lambda x: x["game_name"].lower())
     all_items = has_update + no_update
 
     start = page * 8
@@ -1387,16 +1386,33 @@ async def update_last_active(chat_id: int):
 
 # Helper to turn "9 days ago" into a number for sorting
 def parse_updated_for_sort(updated_str: str) -> int:
-    if not updated_str or updated_str == "—":
-        return -1
-    if "Just now" in updated_str or "minute" in updated_str:
-        return 100000
-    if "hour" in updated_str:
-        match = re.search(r'(\d+)', updated_str)
-        return (int(match.group(1)) if match else 1) * 60
-    if "day" in updated_str:
-        match = re.search(r'(\d+)', updated_str)
-        return (int(match.group(1)) if match else 1) * 1440
+    """Newest = highest number → Oldest = lower number → No update = very low"""
+    if not updated_str or updated_str.strip() in ("—", "-", "", None):
+        return -9999999   # ← Puts games with no update time at the VERY BOTTOM
+    
+    s = updated_str.lower().strip()
+    
+    # Just now or minutes ago = newest
+    if "just now" in s or "minute" in s:
+        return 1_000_000
+    
+    # Days ago → fewer days = newer
+    match = re.search(r'(\d+)\s*day', s)
+    if match:
+        days = int(match.group(1))
+        return 100_000 - (days * 1440)   # invert so 1 day > 9 days
+    
+    # Hours ago
+    match = re.search(r'(\d+)\s*hour', s)
+    if match:
+        hours = int(match.group(1))
+        return 10_000 - (hours * 60)     # invert so 1 hour > 12 hours
+    
+    # Minutes ago (fallback)
+    match = re.search(r'(\d+)\s*min', s)
+    if match:
+        return 1000 - int(match.group(1))
+    
     return 0
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4134,6 +4150,18 @@ async def handle_callback(update: Update):
     elif data.startswith("set_notion_availability|"):
         _, token, new_status = data.split("|")
         await set_notion_availability(chat_id, token, new_status)
+
+    # ── CANCEL EDIT ──
+    elif data == "view_notion_steam":
+        # This is used as Cancel button from the edit screen
+        try:
+            # Delete the "Change Availability" message so it doesn't stay messy
+            await query.message.delete()
+        except Exception:
+            pass  # if already deleted, ignore
+        
+        # Now show fresh library (clean, no duplicates)
+        await view_notion_steam_library(chat_id, page=0, query=query)
 
     # ── WHEEL OF WHISPERS ──
     elif data == "show_wheel_menu":
