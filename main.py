@@ -1335,33 +1335,32 @@ async def update_last_active(chat_id: int):
 
 # Helper to turn "9 days ago" into a number for sorting
 def parse_updated_for_sort(updated_str: str) -> int:
-    """Newest = highest number → Oldest = lower number → No update = very low"""
+    """Higher number = more recent. Fixed so any hour beats any day."""
     if not updated_str or updated_str.strip() in ("—", "-", "", None):
-        return -9999999   # ← Puts games with no update time at the VERY BOTTOM
-    
+        return -9999999
+
     s = updated_str.lower().strip()
-    
-    # Just now or minutes ago = newest
+
     if "just now" in s or "minute" in s:
         return 1_000_000
-    
-    # Days ago → fewer days = newer
+
+    # Days ago
     match = re.search(r'(\d+)\s*day', s)
     if match:
         days = int(match.group(1))
-        return 100_000 - (days * 1440)   # invert so 1 day > 9 days
-    
-    # Hours ago
+        return 100_000 - (days * 1440)
+
+    # Hours ago - boosted base so 13hrs > 1 day
     match = re.search(r'(\d+)\s*hour', s)
     if match:
         hours = int(match.group(1))
-        return 10_000 - (hours * 60)     # invert so 1 hour > 12 hours
-    
-    # Minutes ago (fallback)
+        return 200_000 - (hours * 60)   # ← this is the key change
+
+    # Minutes fallback
     match = re.search(r'(\d+)\s*min', s)
     if match:
-        return 1000 - int(match.group(1))
-    
+        return 300_000 - int(match.group(1))
+
     return 0
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4092,10 +4091,23 @@ async def handle_callback(update: Update):
         page = int(data.split("_")[2])
         await view_notion_steam_library(chat_id, page=page, query=query)
 
-    # ── QUICK INLINE AVAILABILITY UPDATE (Option A)
+    # ── QUICK INLINE AVAILABILITY UPDATE
     elif data.startswith("quick_set|"):
         _, page_id, new_status = data.split("|")
         
+        # Get game name for nice message (we'll extract it from query if possible)
+        game_name = "Game"  # fallback
+        try:
+            # Try to read game name from current message text (best effort)
+            if query and query.message and query.message.text:
+                lines = query.message.text.split("\n")
+                for line in lines:
+                    if line.startswith("🎮"):
+                        game_name = line.replace("🎮", "").strip()
+                        break
+        except:
+            pass
+
         headers = {
             "Authorization": f"Bearer {os.getenv('NOTION_TOKEN')}",
             "Content-Type": "application/json",
@@ -4110,25 +4122,20 @@ async def handle_callback(update: Update):
         try:
             r = await http.patch(f"https://api.notion.com/v1/pages/{page_id}", headers=headers, json=payload)
             if r.status_code in (200, 204):
-                await query.answer(f"✅ Changed to {new_status}", show_alert=False)
-                # Refresh the current library view
+                # Beautiful disappearing message
+                success_text = f"✅ {game_name} marked as {new_status} successfully!"
+                asyncio.create_task(send_temporary_message(chat_id, success_text, duration=2))
+                
+                # Refresh library
                 await view_notion_steam_library(chat_id, page=page if 'page' in locals() else 0, query=query)
             else:
                 await query.answer("❌ Failed to update", show_alert=True)
         except Exception as e:
             await query.answer(f"❌ Error: {str(e)[:30]}", show_alert=True)
 
-    # ── CANCEL EDIT ──
-    elif data == "view_notion_steam":
-        # This is used as Cancel button from the edit screen
-        try:
-            # Delete the "Change Availability" message so it doesn't stay messy
-            await query.message.delete()
-        except Exception:
-            pass  # if already deleted, ignore
-        
-        # Now show fresh library (clean, no duplicates)
-        await view_notion_steam_library(chat_id, page=0, query=query)
+    # ── BACK TO CARETAKER MENU
+    elif data == "caretaker_menu":
+        await handle_caretaker(chat_id, first_name)
 
     # ── WHEEL OF WHISPERS ──
     elif data == "show_wheel_menu":
