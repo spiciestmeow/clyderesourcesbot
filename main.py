@@ -3831,7 +3831,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             ])
 
         buttons.append([InlineKeyboardButton(
-            "❓ What is VAMT / Remaining?", callback_data="winoffice_help"
+            "❓ What is VAMT / Remaining?", callback_data="explain_vamt"
         )])
         buttons.append([InlineKeyboardButton(
             "⬅️ Back to Inventory", callback_data="check_vamt"
@@ -4555,17 +4555,45 @@ async def handle_callback(update: Update):
         await query.message.edit_text("❌ Reset cancelled. Your data is safe.")
 
     # ── VAMT HELP POPUP (shortened - max 200 chars)
-    elif data == "winoffice_help":
-        await query.answer(
-            "📜 What is VAMT?\n\n"
-            "✅ Official Microsoft Volume keys\n"
-            "One key activates many PCs.\n\n"
-            "📦 Remaining = how many more devices can use it\n"
-            "• Remaining: 10 = works on 10 PCs\n"
-            "• Remaining: 0 = key is exhausted\n\n"
-            "⚡ Use quickly before it runs out!",
-            show_alert=True
+    elif data == "explain_vamt" or data == "winoffice_help":  # supports both names during transition
+        # Get which category we are showing (win or office)
+        pending_cat = await redis_client.get(f"winoffice_pending_cat:{chat_id}") or "win"
+        cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
+        cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
+
+        help_text = (
+            f"{cat_emoji} <b>What is VAMT / Remaining? ({cat_label} Keys)</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "✅ These are official <b>Microsoft Volume Activation</b> keys.\n"
+            "One key can activate <b>multiple PCs</b> at once.\n\n"
+            "📦 <b>Remaining</b> = How many more devices this key can still activate.\n\n"
+            "• <b>Remaining: 10</b> → Works on up to 10 more computers\n"
+            "• <b>Remaining: 0</b> → Key is fully used up\n\n"
+            "⚡ <b>Tip:</b> Always use keys with the highest Remaining first — they disappear fast!\n\n"
+            "<i>Test quickly after viewing. These are shared keys.</i> 🍃"
         )
+
+        buttons = [
+            [InlineKeyboardButton("⬅️ Back to Keys", callback_data=f"back_to_winoffice_keys|{pending_cat}")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+        ]
+
+        await query.message.edit_caption(
+            caption=help_text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
+    
+    elif data.startswith("back_to_winoffice_keys|"):
+        try:
+            _, category = data.split("|")
+        except:
+            category = "win"
+        
+        # Re-show the original key list
+        await show_winoffice_keys(chat_id, category, profile, query)
+        return
 
     # ── INVITE COPY LINK ──
     elif data.startswith("copy_ref_link|"):
