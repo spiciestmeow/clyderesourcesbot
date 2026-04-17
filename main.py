@@ -1011,13 +1011,16 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
         # Display
         display = props.get("Display", {}).get("formula", {}).get("string", "—")
 
-        # Updated (formula)
+        # Updated (formula) — works with ANY emoji-named column
         updated = "—"
-        for key in ["Updated", "🕒", "Clock", "updated", "Last Updated"]:
-            prop = props.get(key)
+        for prop_name, prop in props.items():
             if prop and prop.get("type") == "formula":
-                updated = prop.get("formula", {}).get("string", "—")
-                break
+                formula_str = prop.get("formula", {}).get("string", "").strip()
+                if formula_str and any(keyword in formula_str.lower() for keyword in [
+                    "ago", "day", "hour", "minute", "just now", "yesterday"
+                ]):
+                    updated = formula_str
+                    break
 
         item_data = {
             "page_id": item["id"],
