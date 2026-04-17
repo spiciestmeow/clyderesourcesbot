@@ -1,5 +1,4 @@
 import os
-import json
 import asyncio
 import re
 import json
@@ -902,13 +901,15 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     return imported, skipped, errors, dict(added_counts)
 
 # ──────────────────────────────────────────────
-# 2. EDIT MENU (uses short token)
+# EDIT MENU + SET AVAILABILITY (with game name)
 # ──────────────────────────────────────────────
 async def edit_notion_availability(chat_id: int, token: str):
-    page_id = await redis_client.get(f"notion:edit:{token}")
-    if not page_id:
+    data = await redis_client.get(f"notion:edit:{token}")
+    if not data:
         await tg_app.bot.send_message(chat_id, "⚠️ This edit link has expired. Please refresh the library.")
         return
+    token_data = json.loads(data)
+    game_name = token_data["game_name"]
 
     options = ["Available", "Expired"]
     buttons = [[InlineKeyboardButton(opt, callback_data=f"set_notion_availability|{token}|{opt}")] for opt in options]
@@ -916,19 +917,19 @@ async def edit_notion_availability(chat_id: int, token: str):
 
     await tg_app.bot.send_message(
         chat_id=chat_id,
-        text="🔄 <b>Change Availability</b>\n\nChoose new status:",
+        text=f"🔄 <b>Change {game_name}</b>\n\nChoose new Availability:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# ──────────────────────────────────────────────
-# 3. SET AVAILABILITY (fixed for multi-select)
-# ──────────────────────────────────────────────
 async def set_notion_availability(chat_id: int, token: str, new_status: str):
-    page_id = await redis_client.get(f"notion:edit:{token}")
-    if not page_id:
-        await tg_app.bot.send_message(chat_id, "⚠️ Session expired. Please try again.")
+    data = await redis_client.get(f"notion:edit:{token}")
+    if not data:
+        await tg_app.bot.send_message(chat_id, "⚠️ Session expired.")
         return
+    token_data = json.loads(data)
+    game_name = token_data["game_name"]
+    page_id = token_data["page_id"]
 
     headers = {
         "Authorization": f"Bearer {os.getenv('NOTION_TOKEN')}",
@@ -938,9 +939,7 @@ async def set_notion_availability(chat_id: int, token: str, new_status: str):
 
     payload = {
         "properties": {
-            "Availability": {
-                "multi_select": [{"name": new_status}]   # ← your column is Multi-select
-            }
+            "Availability": {"multi_select": [{"name": new_status}]}
         }
     }
 
@@ -949,20 +948,18 @@ async def set_notion_availability(chat_id: int, token: str, new_status: str):
         if r.status_code in (200, 204):
             await tg_app.bot.send_message(
                 chat_id,
-                f"✅ Availability changed to <b>{new_status}</b> successfully!",
+                f"✅ <b>{game_name}</b> availability changed to <b>{new_status}</b> successfully!",
                 parse_mode="HTML"
             )
-            await asyncio.sleep(1)
+            await asyncio.sleep(1.2)
             await view_notion_steam_library(chat_id, page=0)
-        else:
-            await tg_app.bot.send_message(chat_id, f"❌ Notion error {r.status_code}: {r.text[:300]}", parse_mode="HTML")
     except Exception as e:
         await tg_app.bot.send_message(chat_id, f"❌ Failed: {e}")
 
 # ──────────────────────────────────────────────
-# 1. VIEW LIBRARY (fixed parsing for Multi-select + Formula)
+# VIEW LIBRARY (newest first + edit in place)
 # ──────────────────────────────────────────────
-async def view_notion_steam_library(chat_id: int, page: int = 0):
+async def view_notion_steam_library(chat_id: int, page: int = 0, query=None):
     database_id = os.getenv("NOTION_DATABASE_ID")
     if not database_id:
         await tg_app.bot.send_message(chat_id, "❌ Notion database not configured.")
@@ -978,7 +975,7 @@ async def view_notion_steam_library(chat_id: int, page: int = 0):
         r = await http.post(
             f"https://api.notion.com/v1/databases/{database_id}/query",
             headers=headers,
-            json={"page_size": 20, "sorts": [{"property": "Game Name", "direction": "ascending"}]}
+            json={"page_size": 50}
         )
         results = r.json().get("results", [])
     except Exception as e:
@@ -986,71 +983,107 @@ async def view_notion_steam_library(chat_id: int, page: int = 0):
         return
 
     if not results:
-        await tg_app.bot.send_message(chat_id, "🌫️ No games found in STEAM LIBRARY.")
+        await tg_app.bot.send_message(chat_id, "🌫️ No games found.")
         return
 
-    start = page * 8
-    page_items = results[start:start + 8]
+    # Separate games with/without Updated
+    has_update = []
+    no_update = []
 
-    text = "📋 <b>Notion STEAM LIBRARY</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-    buttons = []
-
-    for item in page_items:
+    for item in results:
         props = item.get("properties", {})
-
-        # Game Name
         game_name = props.get("Game Name", {}).get("title", [{}])[0].get("text", {}).get("content", "Unknown")
 
-        # Availability - supports both Select and Multi-select
+        # Availability
         avail_prop = props.get("Availability", {})
         if avail_prop.get("type") == "multi_select":
             multi = avail_prop.get("multi_select", [])
-            availability = ", ".join([m.get("name", "—") for m in multi]) if multi else "—"
+            availability = ", ".join([m.get("name", "") for m in multi]) if multi else "—"
         else:
             availability = avail_prop.get("select", {}).get("name", "—") or "—"
 
-        # Display (formula column)
+        # Display
         display = props.get("Display", {}).get("formula", {}).get("string", "—")
 
-        # Updated (formula column) - more robust lookup
+        # Updated
         updated = "—"
-        for key in ["Updated", "🕓", "Clock", "updated", "Last Updated"]:
+        for key in ["Updated", "🕒", "Clock", "updated", "Last Updated"]:
             prop = props.get(key)
             if prop and prop.get("type") == "formula":
                 updated = prop.get("formula", {}).get("string", "—")
                 break
 
-        text += f"🎮 <b>{game_name}</b>\n"
-        text += f" Availability: <b>{availability}</b>\n"
-        text += f" Display: {display}\n"
-        text += f" Updated: {updated}\n\n"
+        item_data = {
+            "page_id": item["id"],
+            "game_name": game_name,
+            "availability": availability,
+            "display": display,
+            "updated": updated,
+            "sort_key": parse_updated_for_sort(updated)
+        }
 
-        page_id = item["id"]
+        if updated != "—":
+            has_update.append(item_data)
+        else:
+            no_update.append(item_data)
 
-        # Short token to fix Button_data_invalid
+    # Sort: newest first, then no-update by name
+    has_update.sort(key=lambda x: x["sort_key"], reverse=True)
+    no_update.sort(key=lambda x: x["game_name"])
+
+    all_items = has_update + no_update
+
+    start = page * 8
+    page_items = all_items[start:start + 8]
+
+    text = "📋 <b>Notion STEAM LIBRARY</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    buttons = []
+
+    for item in page_items:
+        text += f"🎮 <b>{item['game_name']}</b>\n"
+        text += f" Availability: <b>{item['availability']}</b>\n"
+        text += f" Display: {item['display']}\n"
+        text += f" Updated: {item['updated']}\n\n"
+
         short_token = secrets.token_urlsafe(8)
-        await redis_client.setex(f"notion:edit:{short_token}", 1800, page_id)  # 30 minutes
+        await redis_client.setex(
+            f"notion:edit:{short_token}", 1800,
+            json.dumps({"page_id": item["page_id"], "game_name": item["game_name"]})
+        )
 
         buttons.append([
-            InlineKeyboardButton(f"✏️ Change {game_name[:22]}", callback_data=f"edit_notion_availability|{short_token}")
+            InlineKeyboardButton(f"✏️ Change {item['game_name'][:22]}", callback_data=f"edit_notion_availability|{short_token}")
         ])
 
     # Navigation
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"notion_page_{page-1}"))
-    if start + 8 < len(results):
+    if start + 8 < len(all_items):
         nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"notion_page_{page+1}"))
     if nav:
         buttons.append(nav)
     buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_menu")])
 
-    await tg_app.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    final_text = text + f"━━━━━━━━━━━━━━━━━━\n📄 Page {page+1} • Newest updated first"
+
+    # EDIT existing message (pagination) or SEND new one
+    if query and query.message:
+        try:
+            await query.message.edit_text(
+                text=final_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        except:
+            await tg_app.bot.send_message(chat_id, final_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=final_text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
 
 async def handle_document(update: Update):
     """Handle document uploads (.txt or .zip) - Fast single file + Batch for multiple"""
@@ -1342,6 +1375,19 @@ async def update_last_active(chat_id: int):
         {"last_active": datetime.now(pytz.utc).isoformat()},
     )
 
+# Helper to turn "9 days ago" into a number for sorting
+def parse_updated_for_sort(updated_str: str) -> int:
+    if not updated_str or updated_str == "—":
+        return -1
+    if "Just now" in updated_str or "minute" in updated_str:
+        return 100000
+    if "hour" in updated_str:
+        match = re.search(r'(\d+)', updated_str)
+        return (int(match.group(1)) if match else 1) * 60
+    if "day" in updated_str:
+        match = re.search(r'(\d+)', updated_str)
+        return (int(match.group(1)) if match else 1) * 1440
+    return 0
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LEVELING SYSTEM
@@ -4069,7 +4115,7 @@ async def handle_callback(update: Update):
 
     elif data.startswith("notion_page_"):
         page = int(data.split("_")[2])
-        await view_notion_steam_library(chat_id, page=page)
+        await view_notion_steam_library(chat_id, page=page, query=query)
 
     elif data.startswith("edit_notion_availability|"):
         token = data.split("|")[1]
