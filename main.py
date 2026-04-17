@@ -3795,7 +3795,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
 # CALLBACK HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_searchsteam_command(chat_id: int, raw_text: str):
-    """Single search with pagination | Bulk search = Supabase only"""
+    """Single search with live data + pagination | Bulk search = Supabase only"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
         return
@@ -3804,60 +3804,79 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str):
     if not body:
         await tg_app.bot.send_message(
             chat_id,
-            "🔍 <b>Steam Search</b>\n\n"
-            "• Single: username or email\n"
-            "• Bulk: multiple lines (Supabase only)\n\n"
-            "Example:\n<code>/searchsteam HDVL142373</code>",
+            "🔍 <b>Steam Account Search</b>\n\n"
+            "• <b>Single search</b>: One username or email\n"
+            "• <b>Bulk search</b>: Multiple lines (Supabase only)\n\n"
+            "Example single:\n<code>/searchsteam HDVL142373</code>",
             parse_mode="HTML"
         )
         return
 
     lines = [line.strip() for line in body.split("\n") if line.strip()]
 
-    # ==================== BULK SEARCH ====================
+    # ====================== BULK SEARCH ======================
     if len(lines) > 1:
-        await tg_app.bot.send_message(chat_id, f"📋 Processing {len(lines)} accounts (Supabase only)...", parse_mode="HTML")
-        
-        all_accounts = await _sb_get("steamCredentials", **{"select": "email,password,game_name,status", "limit": 2000}) or []
-        account_map = {str(acc.get("email", "")).lower().strip(): acc for acc in all_accounts if acc.get("email")}
+        await tg_app.bot.send_message(
+            chat_id,
+            f"📋 <b>Bulk Search</b>\nProcessing {len(lines)} accounts...\n"
+            "(Live games data disabled in bulk mode)",
+            parse_mode="HTML"
+        )
+
+        all_accounts = await _sb_get(
+            "steamCredentials",
+            **{"select": "email,password,game_name,status", "limit": 2000}
+        ) or []
+
+        account_map = {
+            str(acc.get("email", "")).lower().strip(): acc 
+            for acc in all_accounts if acc.get("email")
+        }
 
         results = []
         for term in lines:
             acc = account_map.get(term.lower().strip())
             if acc:
-                results.append(f"✅ <code>{html.escape(term)}</code> → {acc.get('game_name', '—')} | {acc.get('status', 'Available')}")
+                results.append(
+                    f"✅ <code>{html.escape(term)}</code>\n"
+                    f"🎮 {acc.get('game_name', '—')}\n"
+                    f"Status: <b>{acc.get('status', 'Available')}</b>\n"
+                    f"🔑 <code>{html.escape(acc.get('password', 'HIDDEN'))}</code>"
+                )
             else:
-                results.append(f"❌ <code>{html.escape(term)}</code> → Not found")
-        
-        await tg_app.bot.send_message(chat_id, "\n".join(results), parse_mode="HTML")
+                results.append(f"❌ <code>{html.escape(term)}</code> — Not found in database")
+
+        final_text = "📊 <b>Bulk Search Results</b>\n━━━━━━━━━━━━━━━━━━\n\n" + "\n\n".join(results)
+        await tg_app.bot.send_message(chat_id, final_text, parse_mode="HTML")
         return
 
-    # ==================== SINGLE SEARCH ====================
+    # ====================== SINGLE SEARCH ======================
     term = lines[0]
 
     STEAM_API_KEY = os.getenv("STEAM_API_KEY")
     if not STEAM_API_KEY:
-        await tg_app.bot.send_message(chat_id, "❌ STEAM_API_KEY not set.")
+        await tg_app.bot.send_message(chat_id, "❌ STEAM_API_KEY is not set.")
         return
 
-    # Get account from Supabase
+    # Fetch from Supabase
     all_accounts = await _sb_get(
         "steamCredentials",
         **{"select": "email,password,game_name,status,steam_id", "limit": 2000}
     ) or []
 
-    supabase_acc = next((acc for acc in all_accounts if str(acc.get("email", "")).lower().strip() == term.lower().strip()), None)
+    supabase_acc = next((acc for acc in all_accounts 
+                        if str(acc.get("email", "")).lower().strip() == term.lower().strip()), None)
 
     supabase_text = ""
     if supabase_acc:
         supabase_text = (
-            f"✅ <b>Found in Supabase</b>\n"
+            f"✅ <b>Found in Supabase Database</b>\n"
             f"🎮 Game: {supabase_acc.get('game_name', '—')}\n"
             f"Status: <b>{supabase_acc.get('status', 'Available')}</b>\n"
             f"🔑 Password: <code>{html.escape(supabase_acc.get('password', 'HIDDEN'))}</code>\n\n"
         )
     else:
-        supabase_text = "❌ Not found in Supabase.\n\n"
+        supabase_text = "❌ Not found in Supabase database.\n\n"
 
     # Get steam_id
     steamid = None
@@ -3869,39 +3888,39 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str):
     if not steamid:
         await tg_app.bot.send_message(
             chat_id,
-            f"🔍 <b>Result for:</b> <code>{html.escape(term)}</code>\n\n"
+            f"🔍 <b>Search Result for:</b> <code>{html.escape(term)}</code>\n\n"
             f"{supabase_text}"
-            "🌐 Live data unavailable — No steam_id stored.",
+            "🌐 <b>Live Steam Data</b>\n❌ No SteamID64 stored for this account.",
             parse_mode="HTML"
         )
         return
 
     # Fetch live data
-    live_status = "❌ Could not fetch status"
+    live_status = "❌ Could not fetch live status"
     games = []
     try:
-        # Status
+        # Player Status
         sum_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={steamid}"
         sum_r = await http.get(sum_url, timeout=10.0)
         players = sum_r.json().get("response", {}).get("players", [])
         if players:
             p = players[0]
-            state_map = {0:"Offline",1:"Online",2:"Busy",3:"Away",4:"Snooze",5:"Looking to Trade",6:"Looking to Play"}
+            state_map = {0:"Offline", 1:"Online", 2:"Busy", 3:"Away", 4:"Snooze", 5:"Looking to Trade", 6:"Looking to Play"}
             status = state_map.get(p.get("personastate", 0), "Unknown")
             game = p.get("gameextrainfo")
-            live_status = f"🎮 **Currently playing**: {game}\nStatus: {status}" if game else f"Status: {status}"
+            live_status = f"🎮 <b>Currently playing</b>: {game}\nStatus: {status}" if game else f"Status: {status}"
 
-        # Games
-        games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={steamid}&include_appinfo=1"
+        # Owned Games
+        games_url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={steamid}&include_appinfo=1&include_played_free_games=1"
         games_r = await http.get(games_url, timeout=15.0)
         games_data = games_r.json().get("response", {}).get("games", [])
         if games_data:
             games_data.sort(key=lambda x: x.get("playtime_forever", 0), reverse=True)
             games = games_data
     except Exception as e:
-        print(f"Live fetch error: {e}")
+        print(f"Steam API error for {term}: {e}")
 
-    # Show first page
+    # Show first page with improved design
     await show_games_page(chat_id, term, supabase_text, live_status, games, page=0)
 
 # ──────────────────────────────────────────────
@@ -3910,7 +3929,6 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str):
 async def show_games_page(chat_id: int, term: str, supabase_text: str, live_status: str, all_games: list, page: int = 0):
     GAMES_PER_PAGE = 10
     total_games = len(all_games)
-    total_pages = (total_games + GAMES_PER_PAGE - 1) // GAMES_PER_PAGE if total_games > 0 else 1
 
     start = page * GAMES_PER_PAGE
     end = min(start + GAMES_PER_PAGE, total_games)
@@ -3921,15 +3939,15 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
     text += f"🌐 <b>Live Steam Data</b>\n{live_status}\n\n"
 
     if total_games == 0:
-        text += "⚠️ No games visible (profile is private)."
+        text += "⚠️ No games visible (profile is likely private)."
     else:
-        text += f"🎮 <b>{total_games} games owned</b> — Page {page+1} of {total_pages}\n\n"
+        text += f"🎮 <b>{total_games:,} games owned</b> — Page {page+1} of {(total_games + GAMES_PER_PAGE - 1) // GAMES_PER_PAGE}\n\n"
         for g in page_games:
-            name = g.get("name", "Unknown")
+            name = g.get("name", "Unknown Game")
             hours = round(g.get("playtime_forever", 0) / 60, 1)
-            text += f"• {name} — <b>{hours} hrs</b>\n"
+            text += f"• {name} — <b>{hours:,} hrs</b>\n"
 
-    # Buttons
+    # Navigation buttons
     buttons = []
     nav = []
     if page > 0:
@@ -3938,7 +3956,7 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
         nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"games_page|{term}|{page+1}"))
     if nav:
         buttons.append(nav)
-    buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="caretaker_searchsteam")])
+    buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_searchsteam")])
 
     await tg_app.bot.send_message(
         chat_id=chat_id,
@@ -4184,7 +4202,7 @@ async def handle_callback(update: Update):
             "🌟 <b>Wheel of Whispers</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "The ancient wooden wheel, glowing with runes and floating leaves, awaits your touch.\n\n"
-            "You may spin **once per day**.\n"
+            "You may spin <b>once per day</b>.\n"
             "Each spin brings a blessing from the forest spirits.\n\n"
             "<i>Would you like to test your luck?</i> ✨"
         )
