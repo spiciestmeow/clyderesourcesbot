@@ -4260,12 +4260,27 @@ async def handle_callback(update: Update):
     elif data.startswith("lang_set|"):
         lang_code = data.split("|")[1]
         await set_user_language(chat_id, lang_code)
+        
         flag, name = SUPPORTED_LANGUAGES.get(lang_code, ("🇬🇧", "English"))
-        await query.answer(f"✅ Language set to {flag} {name}!", show_alert=True)
+        
+        # 1. Permanent confirmation message
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ Language successfully changed to {flag} {name}!",
+            parse_mode="HTML"
+        )
+        
+        # 2. Separate temporary beta notice (disappears after 3.5 seconds)
+        beta_msg = (
+            "🌱 This language feature is still in beta.\n"
+        )
+        asyncio.create_task(send_temporary_message(chat_id, beta_msg, duration=2))
+        
+        # Clean up language selector and refresh main menu
         await query.message.delete()
         await send_full_menu(chat_id, first_name)
         return
-
+    
     elif data == "view_notion_steam":
         await view_notion_steam_library(chat_id)
 
