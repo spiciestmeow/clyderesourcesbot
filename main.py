@@ -2130,36 +2130,41 @@ def kb_start():
         InlineKeyboardButton("🌿 Enter the Enchanted Clearing", callback_data="show_main_menu")
     ]])
 
+def kb_resources():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account")],
+        [InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
+        [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
+        [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")],
+    ])
+
 def kb_main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🌟 Wheel of Whispers", callback_data="show_wheel_menu")],
-        [
-            InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
-            InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides"),
-        ],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
-        [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
             InlineKeyboardButton("❓ Guidance", callback_data="help"),
             InlineKeyboardButton("ℹ️ Lore", callback_data="about"),
         ],
         [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
-        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
-        [InlineKeyboardButton("🌐 Change Language", callback_data="set_language")],
+        [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
+        [
+            InlineKeyboardButton("🌐 Change Language", callback_data="set_language"),
+            InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals"),
+        ],
     ])
 
 def kb_first_time_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❓ Start Here → Guidance", callback_data="help")],
-        [InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account")],
-        [InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
-        [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("ℹ️ Lore", callback_data="about")],
-        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🌟 Wheel of Whispers", callback_data="show_wheel_menu")],
-        [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
-        [InlineKeyboardButton("🌐 Change Language", callback_data="set_language")],
+        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
+        [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
+        [
+            InlineKeyboardButton("🌐 Change Language", callback_data="set_language"),
+            InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals"),
+        ],
     ])
 
 def kb_inventory():
@@ -4240,6 +4245,14 @@ async def handle_callback(update: Update):
             parse_mode="HTML", reply_markup=kb_inventory(),
         )
 
+    elif data == "show_resources":
+        await query.message.edit_caption(
+            caption="📦 <b>Resources & Links</b>\n\nChoose what you need:",
+            parse_mode="HTML",
+            reply_markup=kb_resources()
+        )
+        return
+
     elif data == "set_language":
         await handle_set_language(chat_id)
         return
@@ -4250,7 +4263,7 @@ async def handle_callback(update: Update):
         flag, name = SUPPORTED_LANGUAGES.get(lang_code, ("🇬🇧", "English"))
         await query.answer(f"✅ Language set to {flag} {name}!", show_alert=True)
         await query.message.delete()
-        await send_full_menu(chat_id, first_name)   # now auto-translated!
+        await send_full_menu(chat_id, first_name)
         return
 
     elif data == "view_notion_steam":
