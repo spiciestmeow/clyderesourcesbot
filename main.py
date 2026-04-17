@@ -2145,6 +2145,7 @@ def kb_main_menu():
         ],
         [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("🕊️ Messenger of the Wind", url="https://t.me/caydigitals")],
+        [InlineKeyboardButton("🌐 Change Language", callback_data="set_language")],
     ])
 
 def kb_first_time_menu():
@@ -2357,6 +2358,31 @@ async def calculate_streak(chat_id: int) -> int:
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
+# ── NEW: Send animation + auto-translated caption ──
+async def send_animated_translated(
+    chat_id: int,
+    animation_url: str,
+    caption: str,
+    lang: str = None,
+    reply_markup=None,
+    **kwargs
+):
+    """Send GIF animation with automatically translated caption"""
+    if lang is None:
+        lang = await get_user_language(chat_id)
+    
+    translated_caption = await translate_text(caption, lang)
+    
+    msg = await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=animation_url,
+        caption=translated_caption,
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+        **kwargs
+    )
+    return msg
+
 async def send_initial_welcome(chat_id: int, first_name: str):
     icon, greeting = _greeting()
     caption = (
@@ -2366,9 +2392,11 @@ async def send_initial_welcome(chat_id: int, first_name: str):
         "Hidden wonders and peaceful moments are ready to be discovered.\n\n"
         "<i>Tap the button below to step into the heart of the forest.</i> 🍃✨"
     )
-    msg = await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=WELCOME_GIF,
-        caption=caption, parse_mode="HTML", reply_markup=kb_start(),
+    msg = await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=WELCOME_GIF,
+        caption=caption,
+        reply_markup=kb_start(),
     )
     await _remember(chat_id, msg.message_id)
 
@@ -2440,9 +2468,11 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         )
         keyboard = kb_main_menu()
 
-    msg = await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=MENU_GIF,
-        caption=caption, parse_mode="HTML", reply_markup=keyboard,
+    msg = await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=MENU_GIF,
+        caption=caption,
+        reply_markup=keyboard,
     )
     await _remember(chat_id, msg.message_id)
 
