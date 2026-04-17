@@ -6,3 +6,4 @@ redis[asyncio]>=5.2.0
 pytz>=2024.2
 python-dotenv>=1.0.1
 slowapi>=0.1.9
+googletrans==4.0.0-rc1
