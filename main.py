@@ -4519,7 +4519,9 @@ async def handle_callback(update: Update):
         )
         await send_animated_translated(
             chat_id=chat_id,
-            caption=text,)
+            animation_url=NEW_UPLOAD_GIF,
+            caption=text,
+            )
         return
     
     # ── WHEEL LEADERBOARD ──
