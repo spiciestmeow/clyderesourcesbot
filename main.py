@@ -4343,7 +4343,7 @@ async def handle_callback(update: Update):
         await send_temporary_message(
             chat_id=chat_id,
             text=f"✅ Language successfully changed to {flag} {name}!",
-            duration=5
+            duration=3
         )
         
         await query.message.delete()
@@ -4551,22 +4551,17 @@ async def handle_callback(update: Update):
     # ── ABOUT WHEEL OF WHISPERS ──
     elif data == "about_wheel":
         await query.answer()
-        try:
-            await query.message.delete()
-        except:
-            pass
-
         text = (
             "🌟 <b>About the Wheel of Whispers</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "Every wanderer gets <b>1 free spin per day</b>.\n\n"
             "🎁 <b>Rewards:</b>\n"
-            "• Common (50%) → +13 XP\n"
+            "• Common (50%)   → +13 XP\n"
             "• Uncommon (28%) → +30 XP\n"
-            "• Rare (12%) → +55 XP + 1 Extra Reveal Slot\n"
-            "• Epic (6%) → +75 XP\n"
+            "• Rare (12%)     → +55 XP + 1 Extra Reveal Slot\n"
+            "• Epic (6%)      → +75 XP\n"
             "• Legendary (3%) → Fresh Netflix or Prime Cookie\n"
-            "• Secret (1%) → Special surprise +45 XP\n\n"
+            "• Secret (1%)    → Special surprise +45 XP\n\n"
             "Extra Reveal Slots can be used when revealing Netflix or Prime cookies.\n\n"
             "The wheel resets every midnight (Manila time).\n\n"
             "<i>May the forest bless your spins, wanderer.</i> ✨"
@@ -4575,7 +4570,7 @@ async def handle_callback(update: Update):
             chat_id=chat_id,
             animation_url=NEW_UPLOAD_GIF,
             caption=text,
-        )
+            )
         return
     
     # ── WHEEL LEADERBOARD ──
