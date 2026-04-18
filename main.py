@@ -113,7 +113,7 @@ async def release_daily_steam_accounts():
                     }),
                     params={
                         "status": "eq.Available",
-                        "Release": "is.null"
+                        "Release": "is.null",
                         "deleted_at": "is.null",
                     },
                     json={"Release": now_iso},
@@ -5367,6 +5367,7 @@ async def handle_callback(update: Update):
                 **{
                     "email": f"eq.{account_email}",
                     "status": "eq.Available",
+                    "deleted_at": "is.null",
                     "select": "*",
                 }
             ) or []
