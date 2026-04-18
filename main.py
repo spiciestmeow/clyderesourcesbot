@@ -5494,13 +5494,15 @@ async def handle_callback(update: Update):
             chat_id, first_name, account_email, game_name
         )
         if not success:
-            await query.answer(
-                "❌ Could not claim — try another account.",
-                show_alert=True
+            await send_temporary_message(
+                chat_id,
+                "🌿 <b>You have already claimed this Steam account!</b>\n\n"
+                duration=3
             )
+    
             await show_steam_accounts(chat_id, first_name, level, query, page=page)
             return
-
+        
         # ── Deliver ──
         password = acc.get("password", "")
         steam_id = acc.get("steam_id", "")
