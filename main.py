@@ -4037,11 +4037,10 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
     # ====================== BULK SEARCH ======================
     if len(lines) > 1:
-        # Bulk search stays the same (no pagination)
-        await tg_app.bot.send_message(
+        await send_animated_translated(
             chat_id,
-            f"📋 Processing {len(lines)} accounts (Supabase only)...",
-            parse_mode="HTML"
+            f"📋 <b>Processing {len(lines)} accounts...</b>\n\n<i>Searching Supabase...</i>",
+            animation_url=LOADING_GIF,
         )
 
         all_accounts = await _sb_get(
@@ -4064,7 +4063,12 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
                 results.append(f"❌ <code>{html.escape(term)}</code> — Not found")
 
         final_text = "📊 <b>Bulk Search Results</b>\n━━━━━━━━━━━━━━━━━━\n\n" + "\n\n".join(results)
-        await tg_app.bot.send_message(chat_id, final_text, parse_mode="HTML")
+
+        await send_animated_translated(
+            chat_id,
+            final_text,
+            animation_url=STEAM_RESULT_GIF,
+        )
         return
 
     # ====================== SINGLE SEARCH ======================
@@ -4103,12 +4107,12 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
             steamid = sid
 
     if not steamid:
-        await tg_app.bot.send_message(
+        await send_animated_translated(
             chat_id,
             f"🔍 <b>Result for:</b> <code>{html.escape(term)}</code>\n\n"
             f"{supabase_text}"
-            "🌐 Live data unavailable — No steam_id stored.",
-            parse_mode="HTML"
+            f"🌐 Live data unavailable — No steam_id stored.",
+            animation_url=STEAM_RESULT_GIF,
         )
         return
 
