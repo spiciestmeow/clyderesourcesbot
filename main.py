@@ -1310,10 +1310,19 @@ async def mark_winoffice_guide_seen(chat_id: int):
 # ONBOARDING TUTORIAL (3-step flow for new users)
 # ──────────────────────────────────────────────
 async def has_completed_onboarding(chat_id: int) -> bool:
-    return bool(await redis_client.get(f"onboarding_done:{chat_id}"))
+    if await redis_client.get(f"onboarding_done:{chat_id}"):
+        return True
+    profile = await get_user_profile(chat_id)
+    if profile and profile.get("onboarding_completed"):
+        await redis_client.set(f"onboarding_done:{chat_id}", 1)
+        return True
+    return False
 
 async def mark_onboarding_complete(chat_id: int):
     await redis_client.set(f"onboarding_done:{chat_id}", 1)
+    await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {
+        "onboarding_completed": True
+    })
 
 async def send_onboarding_step(chat_id: int, first_name: str, step: int):
     """Send the correct onboarding step. Steps 1–3."""
@@ -1457,7 +1466,7 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "windows_views,office_views,netflix_views,netflix_reveals,"
                 "prime_views,prime_reveals,times_cleared,guidance_reads,"
                 "lore_reads,profile_views,"
-                "total_wheel_spins,wheel_xp_earned,legendary_spins"
+                "total_wheel_spins,wheel_xp_earned,legendary_spins, onboarding_completed"
             ),
         },
     )
@@ -1936,6 +1945,8 @@ _XP_TABLE = {
     "clear":          6,
     "daily_bonus":    0,
     "wheel_spin": 0,
+    "onboarding_complete": 15,
+    "onboarding_skip": 0,
 }
 
 _STAT_FIELD = {
@@ -2106,6 +2117,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
             "first_name":     first_name,
             "xp":             first_xp,
             "level":          1,
+            "onboarding_completed": False,
             "last_active":    datetime.now(pytz.utc).isoformat(),
             "has_seen_menu":  False,
             "created_at": datetime.now(pytz.utc).isoformat(),  # ✅ real timestamp
@@ -4389,7 +4401,7 @@ async def handle_callback(update: Update):
         except Exception:
             pass
         # Give a small consolation XP for at least starting
-        await add_xp(chat_id, first_name, "general")
+        await add_xp(chat_id, first_name, "onboarding_skip")
         await send_initial_welcome(chat_id, first_name)
         await restore_bot_commands(chat_id)
         return
@@ -4402,19 +4414,12 @@ async def handle_callback(update: Update):
             await query.message.delete()
         except Exception:
             pass
-
-        # Award +15 XP completion bonus
-        original = _XP_TABLE.get("general", 5)
-        _XP_TABLE["general"] = 15
-        await add_xp(chat_id, first_name, "general")
-        _XP_TABLE["general"] = original
-
+        await add_xp(chat_id, first_name, "onboarding_complete")
         asyncio.create_task(send_temporary_message(
             chat_id,
             "🎉 <b>Tour Complete!</b>\n\n✨ <b>+15 XP</b> added to your forest energy! 🌱",
-            duration=3
+            duration=5
         ))
-
         await asyncio.sleep(0.5)
         await send_initial_welcome(chat_id, first_name)
         return
