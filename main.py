@@ -2176,11 +2176,7 @@ _STAT_FIELD = {
     "profile":        "profile_views",
 }
 
-async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tuple[int, int]:
-    """
-    Awards XP for an action, updates stats, checks level-ups.
-    Returns XP actually awarded (0 if rate-limited or on cooldown).
-    """
+async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_override: int = None) -> tuple[int, int]:
     # ── Hard spam block ──
     if not await check_rate_limit(chat_id):
         asyncio.create_task(send_temporary_message(
@@ -2198,9 +2194,12 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
     profile = await get_user_profile(chat_id)
 
     # ── Determine XP amount ──
-    xp_amount = _XP_TABLE.get(action, 0) if xp_allowed else 0
+    if xp_override is not None:
+        xp_amount = xp_override  # wheel spin passes exact amount
+    else:
+        xp_amount = _XP_TABLE.get(action, 0) if xp_allowed else 0
 
-    # ── Guidance: 10 XP first time, 2 XP recurring (never dead) ──
+    # Guidance: 10 XP first time, 2 XP recurring
     if action == "guidance":
         if not xp_allowed:
             xp_amount = 0
@@ -2209,7 +2208,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general") -> tupl
         else:
             xp_amount = 2
 
-    # ── Lore: same pattern ──
+    # Lore: same pattern
     elif action == "lore":
         if not xp_allowed:
             xp_amount = 0
@@ -4770,21 +4769,23 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "<code>/uploadsteam\n"
             "email\n"
             "password\n"
-            "Game Name (optional)\n"
-            "SteamID64 (optional)\n"
-            "https://cdn.cloudflare.steamstatic.com/steam/apps/{APPID}/header.jpg (optional)</code>\n\n"
+            "Game Name <b>(optional)</b>\n"
+            "SteamID64 <b>(optional)</b>\n"
+            "Banner (optional)</code>\n\n"
             "<b>Bulk (separate accounts with a blank line):</b>\n"
             "<code>/uploadsteam\n"
             "email1\n"
             "password1\n"
             "Game Name\n"
-            "76561198XXXXXXXXX\n\n"
+            "76561198XXXXXXXXX\n"
+            "Banner.jpg\n\n"
             "email2\n"
             "password2\n\n"
             "email3\n"
             "password3\n"
             "Only Game Name</code>\n\n"
-            "⚠️ <i>Minimum required: email + password</i>",
+            "⚠️ <i>Minimum required: email + password</i>\n"
+            "<i>Tip: Use /searchsteam first to check for duplicates.</i>",
             animation_url=STEAM_GIF
         )
         return
@@ -5189,23 +5190,35 @@ async def handle_callback(update: Update):
     elif data == "spin_now":
         await query.answer()
 
+        # ── Manila midnight TTL ──
+        manila = pytz.timezone("Asia/Manila")
+        now = datetime.now(manila)
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        ttl = int((midnight - now).total_seconds())
+
+        # ── Check cooldown with time remaining ──
         if await redis_client.get(f"wheel_spin:{chat_id}"):
+            ttl_remaining = await redis_client.ttl(f"wheel_spin:{chat_id}")
+            hours = ttl_remaining // 3600
+            mins = (ttl_remaining % 3600) // 60
             await tg_app.bot.send_message(
                 chat_id=chat_id,
-                text="🌿 <b>The Wheel of Whispers is resting...</b>\n\n"
-                     "The spirits have already blessed you today.\n"
-                     "Come back tomorrow after midnight (Manila time) ✨",
+                text=(
+                    "🌿 <b>The Wheel of Whispers is resting...</b>\n\n"
+                    f"You can spin again in <b>{hours}h {mins}m</b>\n"
+                    "Resets at midnight Manila time ✨"
+                ),
                 parse_mode="HTML"
             )
             return
 
         reward_table = [
-            {"rarity": "Common",      "xp": 13,  "text": "🌿 <b>Common Reward</b>\n\n+13 XP"},
-            {"rarity": "Uncommon",    "xp": 30,  "text": "🍃 <b>Uncommon Reward</b>\n\n+30 XP"},
-            {"rarity": "Rare",        "xp": 55,  "text": "🌟 <b>Rare Reward!</b>\n\n+55 XP\n+1 Extra Reveal Slot"},
-            {"rarity": "Epic",        "xp": 75,  "text": "✨ <b>Epic Reward!</b>\n\n+75 XP"},
-            {"rarity": "Legendary",   "xp": 100, "text": "🌠 <b>Legendary Jackpot!</b>"},
-            {"rarity": "Secret",      "xp": 45,  "text": "🪄 <b>Secret Reward!</b>\n\n+45 XP"},
+            {"rarity": "Common",    "xp": 13,  "text": "🌿 <b>Common Reward</b>\n\n+13 XP"},
+            {"rarity": "Uncommon",  "xp": 30,  "text": "🍃 <b>Uncommon Reward</b>\n\n+30 XP"},
+            {"rarity": "Rare",      "xp": 55,  "text": "🌟 <b>Rare Reward!</b>\n\n+55 XP\n+1 Extra Reveal Slot"},
+            {"rarity": "Epic",      "xp": 75,  "text": "✨ <b>Epic Reward!</b>\n\n+75 XP"},
+            {"rarity": "Legendary", "xp": 100, "text": "🌠 <b>Legendary Jackpot!</b>"},
+            {"rarity": "Secret",    "xp": 45,  "text": "🪄 <b>Secret Reward!</b>\n\n+45 XP"},
         ]
         weights = [50, 28, 12, 6, 3, 1]
 
@@ -5213,36 +5226,80 @@ async def handle_callback(update: Update):
         rarity = selected["rarity"]
         reward_xp = selected["xp"]
 
+        # ── Lock immediately after selection so exceptions can't allow re-spins ──
+        await redis_client.setex(f"wheel_spin:{chat_id}", ttl, "1")
+
+        # ── Rarity buildup messages ──
+        RARITY_BUILDUP = {
+            "Common":    "🌿 <b>The wheel slows gently...</b>\n\n<i>The forest offers a quiet blessing.</i>",
+            "Uncommon":  "🍃 <b>The wheel hums with energy...</b>\n\n<i>Something stirs in the branches above.</i>",
+            "Rare":      "🌟 <b>The runes flash brightly!</b>\n\n<i>The ancient spirits take notice...</i>",
+            "Epic":      "✨ <b>The wheel blazes with golden light!</b>\n\n<i>The whole forest holds its breath...</i>",
+            "Legendary": "🌠 <b>THE WHEEL ERUPTS IN STARLIGHT!</b>\n\n<i>Even the oldest trees have never seen this...</i>",
+            "Secret":    "🪄 <b>Something unexpected flickers...</b>\n\n<i>A hidden spirit winks from the shadows...</i>",
+        }
+
+        # ── Rarity flavor text ──
+        RARITY_FLAVOR = {
+            "Common":    "The forest whispers a small blessing your way. 🌿",
+            "Uncommon":  "The trees rustle with quiet approval. 🍃",
+            "Rare":      "A golden leaf drifts down from the canopy above. 🌟",
+            "Epic":      "The spirits dance around you in celebration! ✨",
+            "Legendary": "The oldest tree in the clearing bows to you. 🌠",
+            "Secret":    "A mischievous forest sprite vanishes with a grin. 🪄",
+        }
+
+        # ── Immersive spin animation ──
         loading = await tg_app.bot.send_animation(
             chat_id=chat_id,
-            animation=LOADING_GIF,
-            caption="🌟 <b>The ancient Wheel of Whispers is spinning...</b>\n\n"
-                    "Leaves and fireflies dance in the wind...",
+            animation=WHEEL_WHISPERS_GIF,
+            caption="🌿 <b>You place your hand on the ancient wheel...</b>",
             parse_mode="HTML"
         )
+        await asyncio.sleep(1.2)
+        await loading.edit_caption(
+            "🍃 <b>The runes begin to glow softly...</b>",
+            parse_mode="HTML"
+        )
+        await asyncio.sleep(1.0)
+        await loading.edit_caption(
+            "✨ <b>Leaves and fireflies swirl around you...</b>",
+            parse_mode="HTML"
+        )
+        await asyncio.sleep(1.0)
+        await loading.edit_caption(
+            "🌟 <b>The wheel spins faster and faster...</b>",
+            parse_mode="HTML"
+        )
+        await asyncio.sleep(0.8)
 
-        await asyncio.sleep(3.0)
+        # ── Rarity buildup ──
+        await loading.edit_caption(RARITY_BUILDUP[rarity], parse_mode="HTML")
+        await asyncio.sleep(1.5)
 
-        # Award XP + log to xp_history
+        # ── Award XP via add_xp with override ──
         if reward_xp > 0:
-            original = _XP_TABLE.get("wheel_spin", 0)
-            _XP_TABLE["wheel_spin"] = reward_xp
-            await add_xp(chat_id, first_name, "wheel_spin")
-            _XP_TABLE["wheel_spin"] = original
+            action_xp, _ = await add_xp(chat_id, first_name, "wheel_spin", xp_override=reward_xp)
+            if action_xp:
+                asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
+        # ── Bonus reveal slot ──
         got_bonus_slot = rarity in ["Rare", "Epic", "Legendary"]
         if got_bonus_slot:
             await redis_client.incr(f"daily_reveals_bonus:{chat_id}")
-            await redis_client.expire(f"daily_reveals_bonus:{chat_id}", 86400)
+            await redis_client.expire(f"daily_reveals_bonus:{chat_id}", ttl)
 
+        # ── Legendary: deliver fresh cookie ──
         got_fresh_cookie = False
         cookie_service = None
         if rarity == "Legendary":
             vamt_data = await get_vamt_data()
             if vamt_data:
-                fresh = [item for item in vamt_data
-                         if item.get("service_type") in ["netflix", "prime"]
-                         and int(item.get("remaining", 0)) > 0]
+                fresh = [
+                    item for item in vamt_data
+                    if item.get("service_type") in ["netflix", "prime"]
+                    and int(item.get("remaining", 0)) > 0
+                ]
                 if fresh:
                     item = fresh[-1]
                     service_type = item["service_type"]
@@ -5262,29 +5319,47 @@ async def handle_callback(update: Update):
                     await tg_app.bot.send_document(
                         chat_id=chat_id,
                         document=file_bytes,
-                        caption=f"🌠 <b>Legendary Jackpot!</b>\n\n"
-                                f"Here is your fresh {service_type.title()} cookie!\n\n"
-                                f"Enjoy, wanderer 🍃",
+                        caption=(
+                            f"🌠 <b>Legendary Jackpot!</b>\n\n"
+                            f"Here is your fresh {service_type.title()} cookie!\n\n"
+                            f"Enjoy, wanderer 🍃"
+                        ),
                         parse_mode="HTML"
                     )
                     got_fresh_cookie = True
                     cookie_service = service_type
+                else:
+                    # Fallback — no cookies available, compensate with bonus XP
+                    await tg_app.bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            "🌠 <b>Legendary Jackpot!</b>\n\n"
+                            "The forest searched but the cookie spirits are resting...\n"
+                            "You have been blessed with <b>+50 bonus XP</b> instead! 🍃"
+                        ),
+                        parse_mode="HTML"
+                    )
+                    # Use a different action key so cooldown doesn't block it
+                    action_xp, _ = await add_xp(chat_id, first_name, "legendary_fallback", xp_override=50)
+                    if action_xp:
+                        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-        # === LOG TO WHEEL_SPINS TABLE ===
-        await _log_wheel_spin(
-            chat_id=chat_id,
-            first_name=first_name,
-            rarity=rarity,
-            xp_earned=reward_xp,
-            got_bonus_slot=got_bonus_slot,
-            got_fresh_cookie=got_fresh_cookie,
-            cookie_service=cookie_service,
+        # ── Log to wheel_spins table ──
+        asyncio.create_task(
+            _log_wheel_spin(
+                chat_id=chat_id,
+                first_name=first_name,
+                rarity=rarity,
+                xp_earned=reward_xp,
+                got_bonus_slot=got_bonus_slot,
+                got_fresh_cookie=got_fresh_cookie,
+                cookie_service=cookie_service,
+            )
         )
 
-        final_text = selected["text"] + "\n\nThe forest smiles upon you, wanderer. 🍃"
+        # ── Final result ──
+        final_text = selected["text"] + f"\n\n{RARITY_FLAVOR[rarity]}"
         await loading.edit_caption(caption=final_text, parse_mode="HTML")
-
-        await redis_client.setex(f"wheel_spin:{chat_id}", 86400, "1")
         return
 
     # ── ABOUT WHEEL OF WHISPERS ──
@@ -5997,16 +6072,31 @@ async def handle_callback(update: Update):
         elif data == "caretaker_resetfirst":
             await handle_reset_first_time(chat_id)
         elif data == "caretaker_uploadsteam":
-            await tg_app.bot.send_message(
+            await send_animated_translated(
                 chat_id,
-                "🎮 <b>Upload Steam Account</b>\n\n"
-                "Send the command manually in this format:\n\n"
+                "🎮 <b>Steam Account Uploader</b>\n\n"
+                "<b>Single account:</b>\n"
                 "<code>/uploadsteam\n"
-                "username@email.com\n"
-                "yourpassword123\n"
-                "Game Name (optional)</code>\n\n"
+                "email\n"
+                "password\n"
+                "Game Name <b>(optional)</b>\n"
+                "SteamID64 <b>(optional)</b>\n"
+                "Banner (optional)</code>\n\n"
+                "<b>Bulk (separate accounts with a blank line):</b>\n"
+                "<code>/uploadsteam\n"
+                "email1\n"
+                "password1\n"
+                "Game Name\n"
+                "76561198XXXXXXXXX\n"
+                "Banner.jpg\n\n"
+                "email2\n"
+                "password2\n\n"
+                "email3\n"
+                "password3\n"
+                "Only Game Name</code>\n\n"
+                "⚠️ <i>Minimum required: email + password</i>\n"
                 "<i>Tip: Use /searchsteam first to check for duplicates.</i>",
-                parse_mode="HTML"
+                animation_url=STEAM_RESULT_GIF,
             )
         elif data == "caretaker_searchsteam":
             await handle_searchsteam_command(chat_id, "/searchsteam")
