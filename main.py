@@ -169,6 +169,7 @@ EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540
 WHEEL_WHISPERS_GIF = "https://c.tenor.com/9Bqw7W6o3m4AAAAC/tenor.gif"
 RESOURCES_GIF = "https://c.tenor.com/Ypm9KWeMnGwAAAAd/tenor.gif"
 WHEEL_BOARD_GIF = "https://i.makeagif.com/media/2-08-2018/g4YGQ_.mp4"
+ONBOARDING_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
@@ -742,7 +743,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
 
         if not cookie_block:
             errors.append(f"❌ {filename}: Cookie block was empty after extraction")
-            return 0, 1, errors
+            return 0, 1, errors, {}
 
         payload = {
             "key_id":       cookie_block,
@@ -1305,6 +1306,88 @@ async def mark_winoffice_guide_seen(chat_id: int):
     await redis_client.set(f"seen_winoffice_guide:{chat_id}", 1)
 
 # ──────────────────────────────────────────────
+# ONBOARDING TUTORIAL (3-step flow for new users)
+# ──────────────────────────────────────────────
+async def has_completed_onboarding(chat_id: int) -> bool:
+    return bool(await redis_client.get(f"onboarding_done:{chat_id}"))
+
+async def mark_onboarding_complete(chat_id: int):
+    await redis_client.set(f"onboarding_done:{chat_id}", 1)
+
+async def send_onboarding_step(chat_id: int, first_name: str, step: int):
+    """Send the correct onboarding step. Steps 1–3."""
+
+    await redis_client.setex(f"onboarding_step:{chat_id}", 3600, step)
+
+    if step == 1:
+        caption = (
+            f"🌿 <b>Welcome to Clyde's Enchanted Clearing, {html.escape(first_name)}!</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🍃 This bot gives you access to:\n\n"
+            "• 🪟 <b>Windows & Office</b> activation keys\n"
+            "• 🍿 <b>Netflix</b> premium cookies\n"
+            "• 🎥 <b>PrimeVideo</b> premium cookies\n"
+            "• 🎮 <b>Steam</b> accounts\n\n"
+            "Everything is free. No tricks. Just a peaceful forest. 🌲\n\n"
+            "<i>Step 1 of 3 — Tap below to continue your journey.</i>"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Next → How XP & Levels Work 🌱", callback_data="onboarding_step_2")],
+            [InlineKeyboardButton("⏩ Skip Tour", callback_data="onboarding_skip")],
+        ])
+
+    elif step == 2:
+        caption = (
+            "✨ <b>The Forest Energy System</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Every action in the clearing earns you <b>XP</b>:\n\n"
+            "• View any list → <b>+8 XP</b>\n"
+            "• Reveal a Netflix cookie → <b>+14 XP</b>\n"
+            "• Daily login bonus → <b>+10 to +30 XP</b>\n"
+            "• Spin the Wheel of Whispers → <b>+13 to +100 XP</b>\n\n"
+            "⭐ <b>Why level up?</b>\n"
+            "Higher levels unlock more items per day!\n\n"
+            "• Level 1 → 5 Netflix cookies/day\n"
+            "• Level 5 → 14 Netflix cookies/day\n"
+            "• Level 9 → 35 Netflix cookies/day\n\n"
+            "<i>Step 2 of 3 — Almost there!</i>"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("← Back", callback_data="onboarding_step_1"),
+             InlineKeyboardButton("Next → Your First Action 🎯", callback_data="onboarding_step_3")],
+            [InlineKeyboardButton("⏩ Skip Tour", callback_data="onboarding_skip")],
+        ])
+
+    elif step == 3:
+        caption = (
+            "🎯 <b>Ready to Begin, Wanderer?</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Here's what the forest caretaker recommends:\n\n"
+            "1️⃣ Tap <b>Check Forest Inventory</b>\n"
+            "   → Browse today's available keys & cookies\n\n"
+            "2️⃣ <b>Reveal a cookie</b> you need\n"
+            "   → +14 XP earned instantly!\n\n"
+            "3️⃣ Come back <b>every day</b>\n"
+            "   → Streak bonuses stack up to +30 XP/day\n\n"
+            "🎁 <b>Bonus:</b> You'll earn <b>+15 XP</b> just for completing this tour!\n\n"
+            "<i>Step 3 of 3 — The clearing awaits you.</i> 🍃✨"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("← Back", callback_data="onboarding_step_2")],
+            [InlineKeyboardButton("🌿 Enter the Enchanted Clearing! (+15 XP)", callback_data="onboarding_complete")],
+        ])
+
+    else:
+        return
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=ONBOARDING_GIF,
+        caption=caption,
+        reply_markup=keyboard,
+    )
+
+# ──────────────────────────────────────────────
 # BOT CONFIG
 # ──────────────────────────────────────────────
 async def get_bot_config() -> dict:
@@ -1808,14 +1891,8 @@ async def award_referral_bonus(referrer_id: int, referred_id: int, new_user_name
             pass
 
 async def _try_award_referral(chat_id: int):
-    """
-    Safely award referral bonus exactly once.
-    Redis lock prevents re-processing if DB write partially failed before.
-    """
     lock_key = f"ref_awarding:{chat_id}"
-    # BEFORE: ex=60 — too short if DB semaphore is saturated (10 slots × 10s timeout = 100s worst case)
-    # AFTER: ex=180 — 3× the worst-case DB latency stack
-    lock = await redis_client.set(lock_key, 1, ex=180, nx=True)
+    lock = await redis_client.set(lock_key, 1, ex=300, nx=True)
     if not lock:
         return
 
@@ -1829,15 +1906,15 @@ async def _try_award_referral(chat_id: int):
 
         ref = referral[0]
         referrer_id = ref["referrer_id"]
-        new_name = (await get_user_profile(chat_id) or {}).get("first_name", "Wanderer")
 
-        marked = await _sb_patch(
+        marked, rows_updated = await _sb_patch_check(
             f"referrals?referred_id=eq.{chat_id}&awarded=eq.false",
             {"awarded": True, "awarded_at": datetime.now(pytz.utc).isoformat()}
         )
-        if not marked:
+        if not marked or not rows_updated:
             return
-
+        
+        new_name = (await get_user_profile(chat_id) or {}).get("first_name", "Wanderer")
         await award_referral_bonus(referrer_id, chat_id, new_name)
     finally:
         await redis_client.delete(lock_key)
@@ -2435,7 +2512,18 @@ async def send_animated_translated(
 
 async def send_initial_welcome(chat_id: int, first_name: str):
     icon, greeting, gif_url = _greeting()
+
+    # ── NEW: New users go through onboarding first ──
+    profile = await get_user_profile(chat_id)
+    is_new_user = profile is None
+    onboarding_done = await has_completed_onboarding(chat_id)
+
+    if is_new_user and not onboarding_done:
+        # Show Step 1 of onboarding instead of the normal welcome
+        await send_onboarding_step(chat_id, first_name, step=1)
+        return
     
+    # ── Existing users or those who already completed onboarding ──
     caption = (
         f"{icon} {greeting}, {html.escape(str(first_name))}!\n\n"
         "🌿 Welcome, dear wanderer, to Clyde's Enchanted Clearing.\n\n"
@@ -2575,6 +2663,8 @@ async def show_paginated_cookie_list(
         title = "Netflix" if service_type == "netflix" else "PrimeVideo"
         emoji = "🍿"    if service_type == "netflix" else "🎥"
 
+        await asyncio.sleep(0.5)
+
         await query.message.edit_caption(
             caption=f"{emoji} <i>Opening the ancient scroll of {title} cookies...</i>",
             parse_mode="HTML",
@@ -2605,16 +2695,15 @@ async def show_paginated_cookie_list(
 
         data = await get_vamt_data()
         if not data:
+            await send_supabase_error(chat_id)
             try:
-                await query.message.delete()
+                await query.message.edit_caption(
+                    "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=kb_back_inventory(),
+                )
             except Exception:
                 pass
-            await send_supabase_error(chat_id)
-            await query.message.edit_caption(
-                "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
-                parse_mode="HTML",
-                reply_markup=kb_back_inventory(),
-            )
             return
 
         filtered = [
@@ -3815,7 +3904,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
             parse_mode="HTML",
         )
-        
+
         await asyncio.sleep(1.5)
 
         await query.message.edit_caption(
@@ -4243,6 +4332,55 @@ async def handle_callback(update: Update):
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
 
+# ── ONBOARDING TUTORIAL ──
+    if data.startswith("onboarding_step_"):
+        try:
+            step = int(data.split("_")[2])
+        except Exception:
+            step = 1
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await send_onboarding_step(chat_id, first_name, step=step)
+        return
+
+    elif data == "onboarding_skip":
+        await mark_onboarding_complete(chat_id)
+        await redis_client.delete(f"onboarding_step:{chat_id}")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        # Give a small consolation XP for at least starting
+        await add_xp(chat_id, first_name, "general")
+        await send_initial_welcome(chat_id, first_name)
+        return
+
+    elif data == "onboarding_complete":
+        await mark_onboarding_complete(chat_id)
+        await redis_client.delete(f"onboarding_step:{chat_id}")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        # Award +15 XP completion bonus
+        original = _XP_TABLE.get("general", 5)
+        _XP_TABLE["general"] = 15
+        await add_xp(chat_id, first_name, "general")
+        _XP_TABLE["general"] = original
+
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            "🎉 <b>Tour Complete!</b>\n\n✨ <b>+15 XP</b> added to your forest energy! 🌱",
+            duration=3
+        ))
+
+        await asyncio.sleep(0.5)
+        await send_initial_welcome(chat_id, first_name)
+        return
+
     # ── MAIN MENU ──
     if data in ("show_main_menu", "main_menu"):
         try:
@@ -4323,6 +4461,7 @@ async def handle_callback(update: Update):
         
         try:
             await send_animated_translated(
+                chat_id=chat_id,
                 caption=immersive_text,
                 animation_url=RESOURCES_GIF,
                 reply_markup=kb_resources()
@@ -5284,6 +5423,22 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/uploadkeys"):
         await handle_uploadkeys_command(chat_id)
+
+    elif text.startswith("/resetonboarding"):
+            if chat_id != OWNER_ID:
+                await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+                return
+            parts = text.split()
+            target_id = int(parts[1]) if len(parts) > 1 else chat_id
+            deleted1 = await redis_client.delete(f"onboarding_done:{target_id}")
+            deleted2 = await redis_client.delete(f"onboarding_step:{target_id}")
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ Onboarding reset for <code>{target_id}</code>\n"
+                f"Deleted {deleted1 + deleted2} key(s)\n\n"
+                f"They'll see the tutorial again on next /start.",
+                parse_mode="HTML"
+            )
 
     elif text.startswith("/addevent"):
         if chat_id != OWNER_ID:
