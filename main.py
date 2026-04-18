@@ -2223,6 +2223,12 @@ def kb_winoffice_guide():
         )
     ]])
 
+
+def kb_back_to_wheel():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌟 Back to Wheel of Whispers", callback_data="show_wheel_menu")],
+    ])
+
 # ══════════════════════════════════════════════════════════════════════════════
 # KEYBOARDS (final version)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2406,16 +2412,25 @@ async def send_animated_translated(
         lang = await get_user_language(chat_id)
     
     translated_caption = await translate_text(caption, lang)
-    
-    msg = await tg_app.bot.send_animation(
-        chat_id=chat_id,
-        animation=animation_url,
-        caption=translated_caption,
-        parse_mode="HTML",
-        duration=duration,
-        reply_markup=reply_markup,
-        **kwargs
-    )
+
+    if animation_url:
+        msg = await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=animation_url,
+            caption=translated_caption,
+            parse_mode="HTML",
+            duration=duration,
+            reply_markup=reply_markup,
+            **kwargs
+        )
+    else:
+        msg = await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=translated_caption,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+            **kwargs
+        )
     return msg
 
 async def send_initial_welcome(chat_id: int, first_name: str):
@@ -4114,11 +4129,15 @@ async def handle_set_language(chat_id: int, query=None):
     await send_animated_translated(
         chat_id=chat_id,
         caption=text,
+        animation_url=None,
         reply_markup=markup
     )
 
     # Beta notice (disappears automatically)
-    asyncio.create_task(send_animated_translated(chat_id, "🌱 This language feature is still in beta.", duration=3))
+    asyncio.create_task(send_animated_translated(
+        chat_id, "🌱 This language feature is still in beta.",
+        animation_url=None,
+        duration=3))
 
 # ── Auto-translate helpers (use these from now on) ──
 async def send_translated(chat_id: int, text: str, lang: str = None, **kwargs):
@@ -4571,6 +4590,7 @@ async def handle_callback(update: Update):
             chat_id=chat_id,
             animation_url=NEW_UPLOAD_GIF,
             caption=text,
+            reply_markup=kb_back_to_wheel()
             )
         return
     
