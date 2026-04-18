@@ -55,6 +55,111 @@ async def translate_text(text: str, target_lang: str) -> str:
     except Exception:
         return text  # fallback to original text if anything fails
     
+# ══════════════════════════════════════════════════════════════════════════════
+# STEAM AUTOMATED DISTRIBUTION SYSTEM
+# ══════════════════════════════════════════════════════════════════════════════
+
+STEAM_DAILY_LIMITS = {
+    7:  2,
+    8:  3,
+    9:  4,   # x2 on Sunday
+    10: 999, # unlimited
+}
+
+def get_steam_tier(level: int) -> str:
+    if level >= 10:
+        return "legend"
+    elif level == 9:
+        return "early_sunday"
+    elif level in (7, 8):
+        return "early"
+    else:
+        return "public"
+
+def is_public_drop_time() -> bool:
+    """Returns True if Manila time is past 8 PM"""
+    manila = pytz.timezone("Asia/Manila")
+    return datetime.now(manila).hour >= 20
+
+def is_sunday_manila() -> bool:
+    manila = pytz.timezone("Asia/Manila")
+    return datetime.now(manila).weekday() == 6  # Sunday = 6
+
+def get_time_until_drop() -> tuple[int, int]:
+    """Returns (hours, minutes) until 8 PM Manila"""
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    target = now.replace(hour=20, minute=0, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    diff = target - now
+    hours = int(diff.total_seconds() // 3600)
+    mins = int((diff.total_seconds() % 3600) // 60)
+    return hours, mins
+
+async def release_daily_steam_accounts():
+    """Marks all unposted Available accounts as publicly released"""
+    manila = pytz.timezone("Asia/Manila")
+    now_iso = datetime.now(manila).isoformat()
+
+    async with db_sem:
+        try:
+            r = await asyncio.wait_for(
+                http.patch(
+                    f"{SUPABASE_URL}/rest/v1/steamCredentials",
+                    headers=_supabase_headers({
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    }),
+                    params={"status": "eq.Available", "Posted": "is.null"},
+                    json={"Posted": now_iso},
+                ),
+                timeout=10.0,
+            )
+            body = r.json() if r.status_code == 200 else []
+            count = len(body) if isinstance(body, list) else 0
+            print(f"✅ Daily steam release: {count} accounts released")
+            return count
+        except Exception as e:
+            print(f"🔴 Steam release failed: {e}")
+            return 0
+
+async def get_steam_claims_today(chat_id: int) -> int:
+    """How many accounts this user claimed today"""
+    manila = pytz.timezone("Asia/Manila")
+    today_start = datetime.now(manila).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).astimezone(pytz.utc).isoformat()
+
+    data = await _sb_get(
+        "steam_claims",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "claimed_at": f"gte.{today_start}",
+            "select": "id",
+        }
+    ) or []
+    return len(data)
+
+async def claim_steam_account(chat_id: int, first_name: str, account_email: str, game_name: str) -> bool:
+    """Atomically claim a steam account"""
+    # Mark as Taken
+    ok, rows = await _sb_patch_check(
+        f"steamCredentials?email=eq.{account_email}&status=eq.Available",
+        {"status": "Taken", "action": str(chat_id)}
+    )
+    if not ok or not rows:
+        return False  # already claimed by someone else
+
+    # Log the claim
+    await _sb_post("steam_claims", {
+        "chat_id": chat_id,
+        "first_name": first_name,
+        "account_email": account_email,
+        "game_name": game_name,
+    })
+    return True
+    
 # ──────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────
@@ -205,6 +310,10 @@ async def lifespan(app: FastAPI):
     await tg_app.initialize()
     await tg_app.start()
 
+    # ── ADD THIS ──
+    asyncio.create_task(steam_daily_release_scheduler())
+    print("⏰ Steam daily release scheduler started")
+
     # ── ADD THESE 4 LINES ──
     global BOT_USERNAME
     me = await tg_app.bot.get_me()
@@ -224,6 +333,37 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+async def steam_daily_release_scheduler():
+    """Runs forever — triggers steam public release at 8 PM Manila daily"""
+    manila = pytz.timezone("Asia/Manila")
+
+    while True:
+        now = datetime.now(manila)
+        target = now.replace(hour=20, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target += timedelta(days=1)
+
+        wait_seconds = (target - now).total_seconds()
+        print(f"⏰ Next steam drop in {wait_seconds/3600:.1f}h")
+        await asyncio.sleep(wait_seconds)
+
+        count = await release_daily_steam_accounts()
+
+        # Notify owner
+        try:
+            await tg_app.bot.send_message(
+                OWNER_ID,
+                f"🎮 <b>Daily Steam Drop Released!</b>\n\n"
+                f"✅ <b>{count}</b> accounts are now publicly visible.\n"
+                f"🕗 Released at 8:00 PM Manila time.\n\n"
+                f"<i>Level 1–6 users can now see today's accounts.</i>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+        await asyncio.sleep(60)  # prevent double-trigger within same minute
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FASTAPI ROUTES
@@ -2669,6 +2809,166 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
         pass
 
 
+#STEAM CLAIM
+async def show_steam_accounts(chat_id: int, first_name: str, level: int, query, page: int = 0):
+    """Display steam accounts based on user level tier"""
+    tier = get_steam_tier(level)
+    ITEMS_PER_PAGE = 5
+
+    tier_badges = {
+        "public":       "🌍 Public Drop",
+        "early":        "⭐ Early Preview",
+        "early_sunday": "🌟 Early Preview",
+        "legend":       "👑 Legend Tier",
+    }
+
+    # ── PUBLIC: check if drop time has started ──
+    if tier == "public":
+        if not is_public_drop_time():
+            hours, mins = get_time_until_drop()
+            await query.message.edit_caption(
+                caption=(
+                    "🎮 <b>Steam Accounts — Daily Drop</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "⏳ <b>Today's drop hasn't started yet!</b>\n\n"
+                    f"🕗 Accounts release at <b>8:00 PM Manila time</b>\n"
+                    f"⏰ Opens in <b>{hours}h {mins}m</b>\n\n"
+                    "💡 <i>Reach Level 7 for Early Preview access!</i>\n\n"
+                    "🔗 Or browse the website:\n"
+                    "https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed"
+                ),
+                parse_mode="HTML",
+                reply_markup=kb_back_inventory(),
+            )
+            return
+
+        # Public only sees Posted accounts
+        accounts = await _sb_get(
+            "steamCredentials",
+            **{
+                "select": "*",
+                "status": "eq.Available",
+                "Posted": "not.is.null",
+                "order": "created_at.asc",
+                "limit": 200,
+            }
+        ) or []
+
+    elif tier in ("early", "early_sunday"):
+        # Early preview sees ALL available accounts
+        accounts = await _sb_get(
+            "steamCredentials",
+            **{
+                "select": "*",
+                "status": "eq.Available",
+                "order": "created_at.desc",
+                "limit": 200,
+            }
+        ) or []
+
+    else:  # legend
+        accounts = await _sb_get(
+            "steamCredentials",
+            **{
+                "select": "*",
+                "status": "eq.Available",
+                "order": "created_at.desc",
+                "limit": 200,
+            }
+        ) or []
+
+    if not accounts:
+        empty_msg = (
+            "🎮 <b>Steam Accounts</b>\n\n"
+            "🌫️ No accounts available right now.\n\n"
+            "🌿 Check back later or tomorrow after 8 PM! 🍃"
+        )
+        await query.message.edit_caption(
+            caption=empty_msg,
+            parse_mode="HTML",
+            reply_markup=kb_back_inventory(),
+        )
+        return
+
+    # ── Daily claim limits ──
+    daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 999)
+    if tier == "early_sunday" and is_sunday_manila():
+        daily_limit *= 2
+
+    claims_today = 0 if tier == "legend" else await get_steam_claims_today(chat_id)
+    claims_left  = 999 if tier == "legend" else max(0, daily_limit - claims_today)
+
+    # ── Pagination ──
+    start = page * ITEMS_PER_PAGE
+    page_accounts = accounts[start:start + ITEMS_PER_PAGE]
+    total_pages = max(1, (len(accounts) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+
+    # ── Sunday bonus banner ──
+    sunday_line = ""
+    if tier == "early_sunday" and is_sunday_manila():
+        sunday_line = "\n🎉 <b>Sunday Double Drop Active!</b>"
+
+    # ── Early preview warning (sees unreleased too) ──
+    early_note = ""
+    if tier in ("early", "early_sunday"):
+        early_note = "\n⭐ <i>You see accounts before public release!</i>"
+
+    report = (
+        f"🎮 <b>Steam Accounts</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏷️ {tier_badges.get(tier, '')}{sunday_line}{early_note}\n"
+        f"📦 <b>{len(accounts)}</b> accounts available\n"
+    )
+    if tier != "legend":
+        report += (
+            f"🎯 Claimed today: <b>{claims_today}</b> / <b>{daily_limit}</b>\n"
+            f"✅ Claims left: <b>{claims_left}</b>\n"
+        )
+    report += f"📄 Page {page+1} of {total_pages}\n\n"
+
+    buttons = []
+    for acc in page_accounts:
+        game  = html.escape(acc.get("game_name") or "Unknown Game")
+        email = acc.get("email", "")
+
+        report += f"🎮 <b>{game}</b>\n└ 📧 <tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
+
+        if claims_left > 0 or tier == "legend":
+            buttons.append([
+                InlineKeyboardButton(
+                    f"🔓 Claim {game[:25]}",
+                    callback_data=f"claim_steam|{email}|{page}"
+                )
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(
+                    f"❌ Limit reached — {game[:20]}",
+                    callback_data="noop"
+                )
+            ])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"steam_page_{page-1}"))
+    if start + ITEMS_PER_PAGE < len(accounts):
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"steam_page_{page+1}"))
+    if nav:
+        buttons.append(nav)
+    buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+
+    report += (
+        "━━━━━━━━━━━━━━━━━━\n"
+        "⚠️ Do not change password or add purchases.\n"
+        "<i>Shared accounts — be respectful.</i> 🍃"
+    )
+
+    await query.message.edit_caption(
+        caption=report,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
 # ══════════════════════════════════════════════════════════════════════════════
 # INVENTORY — PAGINATED COOKIES
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4964,6 +5264,103 @@ async def handle_callback(update: Update):
             else:
                 msg = "🎮 <b>Steam Accounts — Legend Tier</b>\n\n👑 You have priority access to all Steam accounts."
             await query.message.edit_caption(caption=msg, parse_mode="HTML", reply_markup=kb_back_inventory())
+            return
+        
+        if category == "steam":
+            level = profile.get("level", 1)
+            await show_steam_accounts(chat_id, first_name, level, query, page=0)
+            return
+
+        # Add these new elif blocks anywhere in handle_callback:
+        elif data.startswith("steam_page_"):
+            try:
+                page = int(data.split("_")[2])
+                level = profile.get("level", 1)
+                await show_steam_accounts(chat_id, first_name, level, query, page=page)
+            except Exception as e:
+                print(f"Steam page error: {e}")
+            return
+
+        elif data.startswith("claim_steam|"):
+            parts = data.split("|")
+            if len(parts) < 3:
+                return
+
+            account_email = parts[1]
+            page = int(parts[2])
+            level = profile.get("level", 1)
+            tier = get_steam_tier(level)
+
+            # Spam guard
+            spam_key = f"steam_claim_spam:{chat_id}"
+            if not await redis_client.set(spam_key, 1, ex=10, nx=True):
+                await query.answer("🌿 One at a time, wanderer!", show_alert=True)
+                return
+
+            # Re-check daily limit
+            if tier != "legend":
+                daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 999)
+                if tier == "early_sunday" and is_sunday_manila():
+                    daily_limit *= 2
+                claims_today = await get_steam_claims_today(chat_id)
+                if claims_today >= daily_limit:
+                    await query.answer(
+                        f"❌ You've reached your daily limit of {daily_limit} Steam accounts!",
+                        show_alert=True
+                    )
+                    return
+
+            # Fetch account details
+            acc_data = await _sb_get(
+                "steamCredentials",
+                **{
+                    "email": f"eq.{account_email}",
+                    "status": "eq.Available",
+                    "select": "*",
+                }
+            ) or []
+
+            if not acc_data:
+                await query.answer("❌ Account already claimed by someone else!", show_alert=True)
+                await show_steam_accounts(chat_id, first_name, level, query, page=page)
+                return
+
+            acc = acc_data[0]
+            game_name = acc.get("game_name") or "Steam Account"
+
+            # Atomic claim
+            success = await claim_steam_account(chat_id, first_name, account_email, game_name)
+            if not success:
+                await query.answer("❌ Could not claim — try another account.", show_alert=True)
+                await show_steam_accounts(chat_id, first_name, level, query, page=page)
+                return
+
+            # Deliver to user
+            password = acc.get("password", "")
+            steam_id  = acc.get("steam_id", "")
+
+            caption = (
+                f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
+                f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
+                + (f"🆔 Steam ID: <code>{steam_id}</code>\n" if steam_id else "")
+                + "\n⚠️ <b>Rules:</b>\n"
+                "• Do not change the password\n"
+                "• Do not make any purchases\n"
+                "• Do not log out other sessions\n\n"
+                "<i>Enjoy your game, wanderer! 🍃</i>"
+            )
+
+            await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
+            asyncio.create_task(send_temporary_message(
+                chat_id,
+                f"✨ <i>{html.escape(game_name)} successfully claimed!</i>",
+                duration=3
+            ))
+
+            # Refresh the list
+            await show_steam_accounts(chat_id, first_name, level, query, page=page)
             return
 
         # Cookie types
