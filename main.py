@@ -3197,7 +3197,6 @@ async def handle_wheel_leaderboard(chat_id: int):
         chat_id=chat_id,
         caption=text,
         animation_url=WHEEL_BOARD_GIF,
-        parse_mode="HTML"
     )
 
 # ══════════════════════════════════════════════════════════════════════════════
