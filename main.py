@@ -3731,7 +3731,7 @@ async def handle_wheel_leaderboard(chat_id: int):
     top_data = await _sb_get(
         "user_profiles",
         **{
-            "select": "chat_id,first_name,total_wheel_spins,wheel_xp_earned,legendary_spins,level",  # ← Added chat_id
+            "select": "chat_id,first_name,total_wheel_spins,wheel_xp_earned,legendary_spins,level",
             "total_wheel_spins": "gt.0",
             "order": "total_wheel_spins.desc",
             "limit": 10
@@ -3755,6 +3755,7 @@ async def handle_wheel_leaderboard(chat_id: int):
 
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     for rank, user in enumerate(top_data, 1):
+        # ✅ FIX 2: chat_id is now in select so this comparison works correctly
         name = "The Forest Warden" if str(user.get("chat_id", "")) == str(OWNER_ID) else html.escape(user.get("first_name", "Unknown"))
         medal = medals.get(rank, f"{rank}.")
         spins = user.get("total_wheel_spins", 0)
@@ -3767,12 +3768,46 @@ async def handle_wheel_leaderboard(chat_id: int):
             f"   ✨ {wheel_xp:,} Wheel XP\n\n"
         )
 
-    # Show your own stats
+    # ✅ FIX 3: Accurate rank using count of users with MORE spins
     profile = await get_user_profile(chat_id)
     if profile and profile.get("total_wheel_spins", 0) > 0:
+        user_spins = profile.get("total_wheel_spins", 0)
+
+        # Count how many users have strictly more spins → that + 1 = your rank
+        rank_data = await _sb_get(
+            "user_profiles",
+            **{
+                "select": "chat_id",
+                "total_wheel_spins": f"gt.{user_spins}",
+            }
+        ) or []
+        user_rank = len(rank_data) + 1
+
+        # Check if the current user is already visible in top 10
+        top_ids = [str(u.get("chat_id", "")) for u in top_data]
+        already_shown = str(chat_id) in top_ids
+
         text += "━━━━━━━━━━━━━━━━━━\n"
-        text += f"📍 <b>You have spun the wheel {profile.get('total_wheel_spins', 0)} times</b>\n"
-        text += f"   🔥 {profile.get('legendary_spins', 0)} Legendaries • ✨ {profile.get('wheel_xp_earned', 0):,} Wheel XP\n"
+
+        if not already_shown:
+            # Only show the "Your rank" footer if user isn't already in the top 10 list
+            display_name = "The Forest Warden" if chat_id == OWNER_ID else "You"
+            text += (
+                f"📍 <b>{display_name} — Rank #{user_rank}</b>\n"
+                f"   🌿 {user_spins} spins • "
+                f"🔥 {profile.get('legendary_spins', 0)} Legendaries\n"
+                f"   ✨ {profile.get('wheel_xp_earned', 0):,} Wheel XP\n"
+            )
+        else:
+            text += f"📍 <b>You are ranked #{user_rank} in the forest!</b>\n"
+
+    elif profile:
+        # User exists but has never spun
+        text += (
+            "━━━━━━━━━━━━━━━━━━\n"
+            "📍 <b>You haven't spun the wheel yet!</b>\n"
+            "   Try your luck to join the leaderboard 🌿\n"
+        )
 
     text += "\n<i>May your spins bring you great fortune, wanderer...</i> 🍃✨"
 
