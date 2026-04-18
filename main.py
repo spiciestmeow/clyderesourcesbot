@@ -186,16 +186,18 @@ async def get_steam_claims_today(chat_id: int) -> int:
     return len(data)
 
 async def claim_steam_account(chat_id: int, first_name: str, account_email: str, game_name: str) -> bool:
-    """Atomically claim a steam account"""
-    # Mark as Taken
-    ok, rows = await _sb_patch_check(
-        f"steamCredentials?email=eq.{account_email}&status=eq.Available",
-        {"status": "Taken", "action": str(chat_id)}
-    )
-    if not ok or not rows:
-        return False  # already claimed by someone else
+    existing_claim = await _sb_get(
+        "steam_claims",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "account_email": f"eq.{account_email}",
+            "select": "id",
+        }
+    ) or []
 
-    # Log the claim
+    if existing_claim:
+        return False
+        
     await _sb_post("steam_claims", {
         "chat_id": chat_id,
         "first_name": first_name,
