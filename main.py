@@ -5496,7 +5496,7 @@ async def handle_callback(update: Update):
         if not success:
             await send_temporary_message(
                 chat_id,
-                "🌿 <b>You have already claimed this Steam account!</b>\n\n"
+                "🌿 <b>You have already claimed this Steam account!</b>\n\n",
                 duration=3
             )
     
