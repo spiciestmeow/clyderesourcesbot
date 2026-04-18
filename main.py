@@ -4340,7 +4340,7 @@ async def handle_callback(update: Update):
             await send_animated_translated(
                 chat_id=chat_id,
                 caption=immersive_text,
-                animation_url=None;
+                animation_url=None,
                 reply_markup=kb_resources()
             )
         return
