@@ -2226,7 +2226,7 @@ def kb_winoffice_guide():
 
 def kb_back_to_wheel():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌟 Back to Wheel of Whispers", callback_data="show_wheel_menu")],
+        [InlineKeyboardButton("⬅️ Back to Wheel of Whispers", callback_data="show_wheel_menu")],
     ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4566,6 +4566,12 @@ async def handle_callback(update: Update):
     # ── ABOUT WHEEL OF WHISPERS ──
     elif data == "about_wheel":
         await query.answer()
+
+        try:
+            await query.message.delete()
+        except:
+            pass
+
         text = (
             "🌟 <b>About the Wheel of Whispers</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
