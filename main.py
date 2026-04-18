@@ -4035,12 +4035,12 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
     lines = [line.strip() for line in body.split("\n") if line.strip()]
 
-    # ====================== BULK SEARCH ======================
+# ====================== BULK SEARCH ======================
     if len(lines) > 1:
-        await send_animated_translated(
+        loading_msg = await tg_app.bot.send_message(
             chat_id,
             f"📋 <b>Processing {len(lines)} accounts...</b>\n\n<i>Searching Supabase...</i>",
-            animation_url=LOADING_GIF,
+            parse_mode="HTML"
         )
 
         all_accounts = await _sb_get(
@@ -4050,25 +4050,50 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
         account_map = {str(acc.get("email", "")).lower().strip(): acc for acc in all_accounts if acc.get("email")}
 
-        results = []
+        found_results = []
+        not_found_results = []
+
         for term in lines:
             acc = account_map.get(term.lower().strip())
             if acc:
-                results.append(
+                found_results.append(
                     f"✅ <code>{html.escape(term)}</code>\n"
                     f"🎮 {acc.get('game_name', '—')} | {acc.get('status', 'Available')}\n"
                     f"🔑 <code>{html.escape(acc.get('password', 'HIDDEN'))}</code>"
                 )
             else:
-                results.append(f"❌ <code>{html.escape(term)}</code> — Not found")
+                not_found_results.append(f"❌ <code>{html.escape(term)}</code> — Not found")
 
-        final_text = "📊 <b>Bulk Search Results</b>\n━━━━━━━━━━━━━━━━━━\n\n" + "\n\n".join(results)
+        total     = len(lines)
+        succeeded = len(found_results)
+        failed    = len(not_found_results)
 
-        await send_animated_translated(
-            chat_id,
-            final_text,
-            animation_url=STEAM_RESULT_GIF,
+        summary_header = (
+            f"📊 <b>Bulk Search Results</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✅ Found: <b>{succeeded}</b>  |  ❌ Not Found: <b>{failed}</b>  |  📋 Total: <b>{total}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
         )
+
+        grouped_lines = []
+        if found_results:
+            grouped_lines.append("🟢 <b>Found Accounts</b>")
+            grouped_lines.extend(found_results)
+        if not_found_results:
+            if found_results:
+                grouped_lines.append("")
+            grouped_lines.append("🔴 <b>Not Found</b>")
+            grouped_lines.extend(not_found_results)
+
+        final_text = summary_header + "\n\n".join(grouped_lines)
+
+        # Delete the loading message before sending results
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
+
+        await send_animated_translated(chat_id, final_text, animation_url=STEAM_RESULT_GIF)
         return
 
     # ====================== SINGLE SEARCH ======================
