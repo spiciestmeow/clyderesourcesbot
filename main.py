@@ -2579,7 +2579,12 @@ async def show_paginated_cookie_list(
             caption=f"{emoji} <i>Opening the ancient scroll of {title} cookies...</i>",
             parse_mode="HTML",
         )
-        await asyncio.sleep(1)
+        await asyncio.sleep(1.5)
+        await query.message.edit_caption(
+            caption=f"🌿 <i>The forest spirits are gathering your {title} cookies...</i>",
+            parse_mode="HTML",
+        )
+        await asyncio.sleep(1.5)
 
         profile   = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
@@ -3810,7 +3815,14 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
             parse_mode="HTML",
         )
-        await asyncio.sleep(1)
+        
+        await asyncio.sleep(1.5)
+
+        await query.message.edit_caption(
+            caption=f"🌿 <i>The ancient {cat_label} scrolls are being unsealed...</i>",
+            parse_mode="HTML",
+        )
+        await asyncio.sleep(1.5)
 
         user_level = profile.get("level", 1)
         internal_cat = normalize_view_category(category)
