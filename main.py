@@ -4333,14 +4333,14 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             await tg_app.bot.send_message(chat_id, "❌ Failed to save to Supabase.", parse_mode="HTML")
 
 async def hide_bot_commands(chat_id: int):
-    """Hide all bot commands for this user during onboarding"""
     try:
         await tg_app.bot.set_my_commands(
             commands=[],
-            scope={"type": "chat", "chat_id": chat_id}
+            scope=BotCommandScopeChat(chat_id=chat_id)
         )
+        print(f"✅ Commands hidden for {chat_id}")
     except Exception as e:
-        print(f"Could not hide commands for {chat_id}: {e}")
+        print(f"🔴 Could not hide commands for {chat_id}: {e}")
 
 async def restore_bot_commands(chat_id: int):
     """Remove chat-specific override → falls back to BotFather commands"""
@@ -4396,6 +4396,7 @@ async def handle_callback(update: Update):
     elif data == "onboarding_skip":
         await mark_onboarding_complete(chat_id)
         await redis_client.delete(f"onboarding_step:{chat_id}")
+        await restore_bot_commands(chat_id)
         try:
             await query.message.delete()
         except Exception:
@@ -4403,7 +4404,6 @@ async def handle_callback(update: Update):
         # Give a small consolation XP for at least starting
         await add_xp(chat_id, first_name, "onboarding_skip")
         await send_initial_welcome(chat_id, first_name)
-        await restore_bot_commands(chat_id)
         return
 
     elif data == "onboarding_complete":
@@ -5487,20 +5487,25 @@ async def process_update(update_data: dict):
         await handle_uploadkeys_command(chat_id)
 
     elif text.startswith("/resetonboarding"):
-            if chat_id != OWNER_ID:
-                await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
-                return
-            parts = text.split()
-            target_id = int(parts[1]) if len(parts) > 1 else chat_id
-            deleted1 = await redis_client.delete(f"onboarding_done:{target_id}")
-            deleted2 = await redis_client.delete(f"onboarding_step:{target_id}")
-            await tg_app.bot.send_message(
-                chat_id,
-                f"✅ Onboarding reset for <code>{target_id}</code>\n"
-                f"Deleted {deleted1 + deleted2} key(s)\n\n"
-                f"They'll see the tutorial again on next /start.",
-                parse_mode="HTML"
-            )
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+            return
+        parts = text.split()
+        target_id = int(parts[1]) if len(parts) > 1 else chat_id
+        deleted1 = await redis_client.delete(f"onboarding_done:{target_id}")
+        deleted2 = await redis_client.delete(f"onboarding_step:{target_id}")
+        await _sb_patch(        # ← add this
+            f"user_profiles?chat_id=eq.{target_id}",
+            {"onboarding_completed": False}
+        )
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ Onboarding reset for <code>{target_id}</code>\n"
+            f"Redis: {deleted1 + deleted2} key(s) deleted\n"
+            f"Supabase: onboarding_completed → false\n\n"
+            f"They'll see the tutorial again on next /start.",
+            parse_mode="HTML"
+        )
 
     elif text.startswith("/addevent"):
         if chat_id != OWNER_ID:
