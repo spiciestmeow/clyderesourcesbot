@@ -2572,11 +2572,6 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
 async def show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
-    loading = await send_loading(
-        chat_id,
-        f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Opening the ancient scroll of {service_type.title()} cookies...</i>"
-    )
-    try:
         profile   = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
         event      = await get_active_event() 
@@ -2600,7 +2595,7 @@ async def show_paginated_cookie_list(
         data = await get_vamt_data()
         if not data:
             try:
-                await loading.delete()
+                await query.message.delete()
             except Exception:
                 pass
             await send_supabase_error(chat_id)
@@ -2683,11 +2678,6 @@ async def show_paginated_cookie_list(
         await query.message.edit_caption(
             caption=report, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
         )
-    finally:
-        try:
-            await loading.delete()
-        except Exception:
-            pass
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
@@ -3809,14 +3799,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
     cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
 
-    loading = None
     try:
-        # Start loading
-        loading = await send_loading(
-            chat_id,
-            f"{cat_emoji} <i>Opening the {cat_label} key scroll from the ancient library...</i>"
-        )
-
         await query.message.edit_caption(
             caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
             parse_mode="HTML",
@@ -3906,13 +3889,6 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     except Exception as e:
         print(f"🔴 Error in show_winoffice_keys for {chat_id}: {e}")
         await send_supabase_error(chat_id, query)
-    finally:
-        # ALWAYS remove the loading animation
-        if loading:
-            try:
-                await loading.delete()
-            except Exception:
-                pass
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
