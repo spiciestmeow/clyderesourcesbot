@@ -2572,6 +2572,12 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
 async def show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
+        await query.message.edit_caption(
+            caption=f"{emoji} <i>Opening the ancient scroll of {title} cookies...</i>",
+            parse_mode="HTML",
+        )
+        await asyncio.sleep(1)
+
         profile   = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
         event      = await get_active_event() 
@@ -3804,7 +3810,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
             parse_mode="HTML",
         )
-        await asyncio.sleep(0.8)
+        await asyncio.sleep(1)
 
         user_level = profile.get("level", 1)
         internal_cat = normalize_view_category(category)
