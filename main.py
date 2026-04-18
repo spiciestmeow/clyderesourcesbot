@@ -4251,7 +4251,6 @@ async def edit_translated(query, text: str, lang: str = None, **kwargs):
     return await query.message.edit_caption(caption=translated, **kwargs)
 
 async def handle_uploadsteam_command(chat_id: int, raw_text: str):
-    """Upload Steam Account + Save steam_id column"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload Steam accounts.")
         return
@@ -4261,83 +4260,110 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         await send_animated_translated(
             chat_id,
             "🎮 <b>Steam Account Uploader</b>\n\n"
-            "Format:\n"
+            "<b>Single account:</b>\n"
             "<code>/uploadsteam\n"
-            "username_or_email\n"
+            "email\n"
             "password\n"
             "Game Name (optional)\n"
-            "steam_id (17-digit optional)</code>\n\n"
-            "Example:\n"
+            "SteamID64 (optional)</code>\n\n"
+            "<b>Bulk (separate accounts with a blank line):</b>\n"
             "<code>/uploadsteam\n"
-            "HDVL142373\n"
-            "yourpassword123\n"
-            "Silent Hill 2\n"
-            "76561198xxxxxxxxx</code>",
+            "email1\n"
+            "password1\n"
+            "Game Name\n"
+            "76561198XXXXXXXXX\n\n"
+            "email2\n"
+            "password2\n\n"
+            "email3\n"
+            "password3\n"
+            "Only Game Name</code>\n\n"
+            "⚠️ <i>Minimum required: email + password</i>",
             animation_url=STEAM_GIF
         )
         return
 
-    lines = [line.strip() for line in body.split("\n") if line.strip()]
-    if len(lines) < 2:
-        await tg_app.bot.send_message(chat_id, "❌ Need at least: Username/Email + Password")
-        return
+    # Split blocks by blank lines
+    blocks = [b.strip() for b in body.split("\n\n") if b.strip()]
 
-    email = lines[0]
-    password = lines[1]
-    game_name = lines[2] if len(lines) >= 3 else None
-    steam_id = lines[3] if len(lines) >= 4 else None
+    imported = 0
+    skipped = 0
+    results = []
 
-    # Basic validation for steam_id
-    if steam_id and not (steam_id.isdigit() and len(steam_id) == 17):
-        await tg_app.bot.send_message(chat_id, "⚠️ steam_id must be a valid 17-digit SteamID64.")
-        steam_id = None
+    for i, block in enumerate(blocks, start=1):
+        lines = [l.strip() for l in block.split("\n") if l.strip()]
 
-    payload = {
-        "email": email,
-        "password": password,
-        "game_name": game_name,
-        "steam_id": steam_id,          # ← New column
-        "status": "Available",
-        "action": None,
-        "Posted": None,
-    }
+        # Must have at least email + password
+        if len(lines) < 2:
+            skipped += 1
+            results.append(f"❌ Block {i} — Too few fields (need at least email + password)")
+            continue
 
-    async with db_sem:
-        try:
-            r = await asyncio.wait_for(
-                http.post(
-                    f"{SUPABASE_URL}/rest/v1/steamCredentials",
-                    headers=_supabase_headers({
-                        "Content-Type": "application/json",
-                        "Prefer": "resolution=ignore-duplicates,return=minimal",
-                    }),
-                    json=payload,
-                ),
-                timeout=10.0,
-            )
+        email    = lines[0]
+        password = lines[1]
+        game_name = lines[2] if len(lines) >= 3 else None
+        steam_id  = lines[3] if len(lines) >= 4 else None
 
-            if r.status_code in (200, 201):
-                await send_animated_translated(
-                    chat_id,
-                    f"✅ <b>Steam Account Uploaded Successfully!</b>\n\n"
-                    f"📧 Email/Username: <code>{html.escape(email)}</code>\n"
-                    f"🔑 Password: <code>{html.escape(password)}</code>\n"
-                    f"🎮 Game: {game_name or 'Not specified'}\n"
-                    f"🆔 SteamID: {steam_id or 'Not provided'}\n"
-                    f"Status: <b>✅ Available</b>",
-                    animation_url=STEAM_RESULT_GIF,
+        # Validate steam_id if provided
+        steam_id_warning = ""
+        if steam_id is not None:
+            if not (steam_id.isdigit() and len(steam_id) == 17):
+                steam_id_warning = " (invalid SteamID ignored)"
+                steam_id = None
 
+        payload = {
+            "email": email,
+            "password": password,
+            "game_name": game_name,
+            "steam_id": steam_id,
+            "status": "Available",
+            "action": None,
+            "Posted": None,
+        }
+
+        async with db_sem:
+            try:
+                r = await asyncio.wait_for(
+                    http.post(
+                        f"{SUPABASE_URL}/rest/v1/steamCredentials",
+                        headers=_supabase_headers({
+                            "Content-Type": "application/json",
+                            "Prefer": "resolution=ignore-duplicates,return=minimal",
+                        }),
+                        json=payload,
+                    ),
+                    timeout=10.0,
                 )
-                asyncio.create_task(broadcast_new_resources({"steam": 1}))
-            else:
-                await tg_app.bot.send_message(
-                    chat_id,
-                    f"⚠️ Duplicate account detected.\nThe email <code>{html.escape(email)}</code> already exists.",
-                    parse_mode="HTML"
-                )
-        except Exception as e:
-            print(f"Upload error: {e}")
-            await tg_app.bot.send_message(chat_id, "❌ Failed to save to Supabase.", parse_mode="HTML")
+                if r.status_code in (200, 201):
+                    imported += 1
+                    label = f"{game_name or 'No game'}{steam_id_warning}"
+                    results.append(f"✅ <code>{html.escape(email)}</code> — {label}")
+                elif r.status_code == 409:
+                    skipped += 1
+                    results.append(f"⚠️ <code>{html.escape(email)}</code> — Duplicate (already exists)")
+                else:
+                    skipped += 1
+                    results.append(f"⚠️ <code>{html.escape(email)}</code> — Rejected (status {r.status_code})")
+            except asyncio.TimeoutError:
+                skipped += 1
+                results.append(f"❌ <code>{html.escape(email)}</code> — Timed out")
+            except Exception as e:
+                skipped += 1
+                results.append(f"❌ <code>{html.escape(email)}</code> — Error: {str(e)[:50]}")
+
+    # Summary
+    summary = (
+        f"🎮 <b>Upload Complete!</b>\n\n"
+        f"✅ Imported: <b>{imported}</b>\n"
+        f"⚠️ Skipped: <b>{skipped}</b>\n\n"
+        f"<b>Results:</b>\n" + "\n".join(results[:20])
+    )
+    if len(results) > 20:
+        summary += f"\n<i>...and {len(results) - 20} more</i>"
+
+    if imported > 0:
+        asyncio.create_task(broadcast_new_resources({"steam": imported}))
+
+    await send_animated_translated(chat_id, summary, animation_url=STEAM_RESULT_GIF)
 
 async def hide_bot_commands(chat_id: int):
     try:
