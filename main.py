@@ -411,7 +411,7 @@ async def steam_daily_release_scheduler():
         wait_seconds = (next_drop - now).total_seconds()
         print(f"⏰ Next steam drop ({next_label}) in {wait_seconds/3600:.1f}h")
         await asyncio.sleep(wait_seconds)
-
+        await asyncio.sleep(5) 
         count = await release_daily_steam_accounts()
 
         label_text = (
@@ -2956,7 +2956,7 @@ async def show_steam_accounts(
     accounts = []
 
     if level >= 10:
-        # Legend: ALL released accounts (release_at <= now)
+        # ✅ CORRECT - only games with release_at set AND already past release time
         accounts = await _sb_get(
             "steamCredentials",
             **{
@@ -2968,6 +2968,12 @@ async def show_steam_accounts(
             }
         ) or []
 
+        # Extra safety filter in Python — exclude any NULL that slipped through
+        accounts = [
+            a for a in accounts
+            if a.get("release_at") is not None
+        ]
+
     elif level == 9:
         # Lv9: TODAY's daily (early, no 8PM restriction)
         daily_accounts = await _sb_get(
@@ -2978,7 +2984,7 @@ async def show_steam_accounts(
                 "release_type": "eq.daily",
                 "release_at": f"gte.{today_start}",  # from today
                 "order": "release_at.asc",
-                "limit": 200,
+                "limit": 1,
             }
         ) or []
         # ✅ KEY FIX: only today's game, not future days
@@ -2997,7 +3003,7 @@ async def show_steam_accounts(
                     "release_type": "eq.sunday_noon",
                     "release_at": f"gte.{today_start}",  # from today
                     "order": "release_at.asc",
-                    "limit": 200,
+                    "limit": 1,
                 }
             ) or []
             # ✅ KEY FIX: only today's sunday game, not future
@@ -3016,7 +3022,7 @@ async def show_steam_accounts(
                 "release_type": "eq.daily",
                 "release_at": f"gte.{today_start}",  # from today
                 "order": "release_at.asc",
-                "limit": 200,
+                "limit": 1,
             }
         ) or []
         # ✅ KEY FIX: only today's game, not future days
@@ -4763,7 +4769,8 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "email\n"
             "password\n"
             "Game Name (optional)\n"
-            "SteamID64 (optional)</code>\n\n"
+            "SteamID64 (optional)\n"
+            "https://cdn.cloudflare.steamstatic.com/steam/apps/{APPID}/header.jpg (optional)</code>\n\n"
             "<b>Bulk (separate accounts with a blank line):</b>\n"
             "<code>/uploadsteam\n"
             "email1\n"
@@ -4796,10 +4803,11 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             results.append(f"❌ Block {i} — Too few fields (need at least email + password)")
             continue
 
-        email    = lines[0]
-        password = lines[1]
+        email     = lines[0]
+        password  = lines[1]
         game_name = lines[2] if len(lines) >= 3 else None
         steam_id  = lines[3] if len(lines) >= 4 else None
+        image_url = lines[4] if len(lines) >= 5 else None
 
         # Validate steam_id if provided
         steam_id_warning = ""
@@ -4808,14 +4816,19 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
                 steam_id_warning = " (invalid SteamID ignored)"
                 steam_id = None
 
+        # Validate image_url (basic check)
+        if image_url and not image_url.startswith("http"):
+            image_url = None
+
         payload = {
-            "email": email,
-            "password": password,
+            "email":     email,
+            "password":  password,
             "game_name": game_name,
-            "steam_id": steam_id,
-            "status": "Available",
-            "action": None,
-            "Posted": None,
+            "steam_id":  steam_id,
+            "image_url": image_url,
+            "status":    "Available",
+            "action":    None,
+            "Posted":    None,
         }
 
         async with db_sem:
@@ -5522,7 +5535,21 @@ async def handle_callback(update: Update):
             "<i>Enjoy your game, wanderer! 🍃</i>"
         )
 
-        await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
+        image_url = acc.get("image_url", "").strip() if acc.get("image_url") else ""
+
+        if image_url:
+            try:
+                await tg_app.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=image_url,
+                    caption=caption,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                # Fallback to text if image fails to load
+                await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
+        else:
+            await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
         asyncio.create_task(send_temporary_message(
             chat_id,
             f"✨ <i>{html.escape(game_name)} successfully claimed!</i>",
@@ -6140,6 +6167,24 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/uploadkeys"):
         await handle_uploadkeys_command(chat_id)
+
+    elif text.startswith("/resetsteamclaim"):
+        if chat_id != OWNER_ID:
+            return
+        parts = text.split()
+        target_id = int(parts[1]) if len(parts) > 1 else chat_id
+
+        manila = pytz.timezone("Asia/Manila")
+        today_start = datetime.now(manila).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).astimezone(pytz.utc).isoformat()
+
+        ok = await _sb_delete(f"steam_claims?chat_id=eq.{target_id}&claimed_at=gte.{today_start}")
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ Steam claim limit reset for <code>{target_id}</code>",
+            parse_mode="HTML"
+        )
 
     elif text.startswith("/resetonboarding"):
         if chat_id != OWNER_ID:
