@@ -111,8 +111,12 @@ async def release_daily_steam_accounts():
                         "Content-Type": "application/json",
                         "Prefer": "return=representation",
                     }),
-                    params={"status": "eq.Available", "Posted": "is.null"},
-                    json={"Posted": now_iso},
+                    params={
+                        "status": "eq.Available",
+                        "Release": "is.null"
+                        "deleted_at": "is.null",
+                    },
+                    json={"Release": now_iso},
                 ),
                 timeout=10.0,
             )
@@ -2848,7 +2852,7 @@ async def show_steam_accounts(chat_id: int, first_name: str, level: int, query, 
             **{
                 "select": "*",
                 "status": "eq.Available",
-                "Posted": "not.is.null",
+                "Release": "not.is.null",
                 "order": "created_at.asc",
                 "limit": 200,
             }
@@ -5251,26 +5255,73 @@ async def handle_callback(update: Update):
         # Steam
         if category == "steam":
             level = profile.get("level", 1)
-            if level <= 6:
-                msg = ("🎮 <b>Steam Accounts — Public Drop Only</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-                       "Steam accounts are released daily at <b>8:00 PM</b>.\n\n"
-                       "🔗 https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed")
-            elif level <= 8:
-                msg = (f"🎮 <b>Steam Accounts — Early Preview</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-                       f"🌟 Level {level} Wanderer — you have <b>Early Preview</b> access!")
-            elif level == 9:
-                msg = ("🎮 <b>Steam — Early Preview + Sunday Double</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-                       "🌟 Level 9 → Early Preview + Sunday Double Drop!")
-            else:
-                msg = "🎮 <b>Steam Accounts — Legend Tier</b>\n\n👑 You have priority access to all Steam accounts."
-            await query.message.edit_caption(caption=msg, parse_mode="HTML", reply_markup=kb_back_inventory())
-            return
-        
-        if category == "steam":
-            level = profile.get("level", 1)
             await show_steam_accounts(chat_id, first_name, level, query, page=0)
             return
 
+
+        # Cookie types
+        if category in ("netflix", "prime"):
+            await show_paginated_cookie_list(category, chat_id, query, page=0)
+            return
+        
+        # ── NEW: First-time guide for Windows / Office ──────────────────
+        if category in ("win", "windows", "office"):
+                seen = await has_seen_winoffice_guide(chat_id)
+
+                if not seen:
+                    # First time → show guide ONLY (no cap deduction yet)
+                    await redis_client.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
+                    cat_label = "Windows" if category in ("win", "windows") else "Office"
+                    cat_emoji = "🪟" if category in ("win", "windows") else "📑"
+            
+                    await query.message.edit_caption(
+                        caption=(
+                            f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
+                            "━━━━━━━━━━━━━━━━━━\n\n"
+                            "🔵 <b>What is a VAMT Key?</b>\n"
+                            "It is a <b>Volume Activation</b> key. These are official Microsoft keys designed to activate multiple PCs.\n\n"
+                            "━━━━━━━━━━━━━━━━━━\n\n"
+                            "📦 <b>What does \"Remaining\" mean?</b>\n"
+                            "Because these keys are shared, they have a strict activation limit.\n\n"
+                            "• <b>Remaining: 5</b> = Works on exactly 5 more devices.\n"
+                            "• <b>Remaining: 0</b> = The key is fully exhausted.\n\n"
+                            "<i>Apply them swiftly! The highest remaining keys vanish fast.</i> 🍃\n\n"
+                            "━━━━━━━━━━━━━━━━━━"
+                        ),
+                        parse_mode="HTML",
+                        reply_markup=kb_winoffice_guide(),
+                    )
+                    return
+                
+                # Normal flow (guide already seen) → now consume cap
+                allowed, remaining = await try_consume_view_cap(chat_id, category)
+                if not allowed:
+                    cat_label = "Windows" if category in ("win", "windows") else "Office"
+                    cat_emoji = "🪟" if category in ("win", "windows") else "📑"
+                    max_daily = get_max_daily_views(profile.get("level", 1), category)
+                    
+                    await query.message.edit_caption(
+                        caption=(
+                            f"{cat_emoji} <b>{cat_label} Daily Limit Reached</b>\n\n"
+                            f"🌿 You have already viewed your maximum <b>{max_daily}</b> keys today.\n\n"
+                            f"Come back tomorrow after midnight (Manila time) for fresh keys 🍃\n\n"
+                            f"<i>Remaining views today: <b>{remaining}</b></i>"
+                        ),
+                        parse_mode="HTML",
+                        reply_markup=kb_back_inventory(),
+                    )
+                    await query.answer("Daily view limit reached", show_alert=False)
+                    return
+                
+                # Award XP now that we're actually showing the keys
+                action_xp, _ = await add_xp(chat_id, first_name,
+                    "view_windows" if category in ("win","windows") else "view_office")
+                if action_xp:
+                    asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
+                await show_winoffice_keys(chat_id, category, profile, query)
+                return
+        
         # Add these new elif blocks anywhere in handle_callback:
         elif data.startswith("steam_page_"):
             try:
@@ -5362,69 +5413,6 @@ async def handle_callback(update: Update):
             # Refresh the list
             await show_steam_accounts(chat_id, first_name, level, query, page=page)
             return
-
-        # Cookie types
-        if category in ("netflix", "prime"):
-            await show_paginated_cookie_list(category, chat_id, query, page=0)
-            return
-        
-        # ── NEW: First-time guide for Windows / Office ──────────────────
-        if category in ("win", "windows", "office"):
-                seen = await has_seen_winoffice_guide(chat_id)
-
-                if not seen:
-                    # First time → show guide ONLY (no cap deduction yet)
-                    await redis_client.setex(f"winoffice_pending_cat:{chat_id}", 3600, category)
-                    cat_label = "Windows" if category in ("win", "windows") else "Office"
-                    cat_emoji = "🪟" if category in ("win", "windows") else "📑"
-            
-                    await query.message.edit_caption(
-                        caption=(
-                            f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
-                            "━━━━━━━━━━━━━━━━━━\n\n"
-                            "🔵 <b>What is a VAMT Key?</b>\n"
-                            "It is a <b>Volume Activation</b> key. These are official Microsoft keys designed to activate multiple PCs.\n\n"
-                            "━━━━━━━━━━━━━━━━━━\n\n"
-                            "📦 <b>What does \"Remaining\" mean?</b>\n"
-                            "Because these keys are shared, they have a strict activation limit.\n\n"
-                            "• <b>Remaining: 5</b> = Works on exactly 5 more devices.\n"
-                            "• <b>Remaining: 0</b> = The key is fully exhausted.\n\n"
-                            "<i>Apply them swiftly! The highest remaining keys vanish fast.</i> 🍃\n\n"
-                            "━━━━━━━━━━━━━━━━━━"
-                        ),
-                        parse_mode="HTML",
-                        reply_markup=kb_winoffice_guide(),
-                    )
-                    return
-                
-                # Normal flow (guide already seen) → now consume cap
-                allowed, remaining = await try_consume_view_cap(chat_id, category)
-                if not allowed:
-                    cat_label = "Windows" if category in ("win", "windows") else "Office"
-                    cat_emoji = "🪟" if category in ("win", "windows") else "📑"
-                    max_daily = get_max_daily_views(profile.get("level", 1), category)
-                    
-                    await query.message.edit_caption(
-                        caption=(
-                            f"{cat_emoji} <b>{cat_label} Daily Limit Reached</b>\n\n"
-                            f"🌿 You have already viewed your maximum <b>{max_daily}</b> keys today.\n\n"
-                            f"Come back tomorrow after midnight (Manila time) for fresh keys 🍃\n\n"
-                            f"<i>Remaining views today: <b>{remaining}</b></i>"
-                        ),
-                        parse_mode="HTML",
-                        reply_markup=kb_back_inventory(),
-                    )
-                    await query.answer("Daily view limit reached", show_alert=False)
-                    return
-                
-                # Award XP now that we're actually showing the keys
-                action_xp, _ = await add_xp(chat_id, first_name,
-                    "view_windows" if category in ("win","windows") else "view_office")
-                if action_xp:
-                    asyncio.create_task(send_xp_feedback(chat_id, action_xp))
-
-                await show_winoffice_keys(chat_id, category, profile, query)
-                return
 
     elif data.startswith("key_feedback_ok|") or data.startswith("key_feedback_bad|"):
         parts = data.split("|")
