@@ -12,7 +12,7 @@ import redis.asyncio as aioredis
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from telegram import BotCommand
+from telegram import BotCommandScopeChat
 from io import BytesIO
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -4331,26 +4331,14 @@ async def hide_bot_commands(chat_id: int):
         print(f"Could not hide commands for {chat_id}: {e}")
 
 async def restore_bot_commands(chat_id: int):
-    """Restore full command list after onboarding"""
+    """Remove chat-specific override → falls back to BotFather commands"""
     try:
-        await tg_app.bot.set_my_commands(
-            commands=[
-                BotCommand("start", "Begin your journey"),
-                BotCommand("menu", "Return to the Clearing"),
-                BotCommand("profile", "View your Forest Profile"),
-                BotCommand("mystats", "Detailed statistics"),
-                BotCommand("leaderboard", "See Top Wanderers"),
-                BotCommand("history", "View XP history"),
-                BotCommand("myid", "Reveal your Forest ID"),
-                BotCommand("clear", "Cleanse the clearing"),
-                BotCommand("feedback", "Message the caretaker"),
-                BotCommand("update", "View patch notes"),
-                BotCommand("invite", "Invite friends and earn XP"),
-            ],
-            scope={"type": "chat", "chat_id": chat_id}
+        await tg_app.bot.delete_my_commands(
+            scope=BotCommandScopeChat(chat_id=chat_id)  # ← just delete the override
         )
+        print(f"✅ Commands restored to BotFather defaults for {chat_id}")
     except Exception as e:
-        print(f"Could not restore commands for {chat_id}: {e}")
+        print(f"🔴 Could not restore commands for {chat_id}: {e}")
 
 async def handle_callback(update: Update):
     query     = update.callback_query
@@ -4403,12 +4391,13 @@ async def handle_callback(update: Update):
         # Give a small consolation XP for at least starting
         await add_xp(chat_id, first_name, "general")
         await send_initial_welcome(chat_id, first_name)
+        await restore_bot_commands(chat_id)
         return
 
     elif data == "onboarding_complete":
         await mark_onboarding_complete(chat_id)
-        await restore_bot_commands(chat_id)
         await redis_client.delete(f"onboarding_step:{chat_id}")
+        await restore_bot_commands(chat_id)
         try:
             await query.message.delete()
         except Exception:
