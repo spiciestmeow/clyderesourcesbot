@@ -2397,19 +2397,15 @@ async def calculate_streak(chat_id: int) -> int:
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
-# ── NEW: Send animation + auto-translated caption ──
-# ── IMPROVED: Send animation OR text + auto-translated caption + auto-delete support ──
+# ── IMPROVED: Send animation + auto-translated caption ──
 async def send_animated_translated(
     chat_id: int,
     caption: str,
     animation_url: str = None,
     lang: str = None,
-    duration: int = None,
     reply_markup=None,
     **kwargs
 ):
-    """Send GIF animation or plain text message with translation.
-    Supports auto-delete via 'duration' for BOTH animation and text."""
     if lang is None:
         lang = await get_user_language(chat_id)
    
@@ -2425,7 +2421,6 @@ async def send_animated_translated(
             **kwargs
         )
     else:
-        # Safe fallback for language menu, beta notice, etc.
         msg = await tg_app.bot.send_message(
             chat_id=chat_id,
             text=translated_caption,
@@ -2433,16 +2428,6 @@ async def send_animated_translated(
             reply_markup=reply_markup,
             **kwargs
         )
-
-    # if duration and duration > 0:
-    #     async def auto_delete():
-    #         await asyncio.sleep(duration)
-    #         try:
-    #             await msg.delete()
-    #         except Exception:
-    #             pass  # already deleted or chat error
-    #     asyncio.create_task(auto_delete())
-
     return msg
 
 async def send_initial_welcome(chat_id: int, first_name: str):
@@ -4319,7 +4304,7 @@ async def handle_callback(update: Update):
             pass
         await send_animated_translated(
             chat_id=chat_id,
-            animation=INVENTORY_GIF,
+            animation_url=INVENTORY_GIF,
             caption=(
                 "📜 <b>Ancient Library — Resource Scrolls</b>\n\n"
                 "Choose the type of resource you need today:\n\n"
@@ -4354,7 +4339,7 @@ async def handle_callback(update: Update):
                 pass
             await send_animated_translated(
                 chat_id=chat_id,
-                text=immersive_text,
+                caption=immersive_text,
                 animation_url=None;
                 reply_markup=kb_resources()
             )
@@ -5225,14 +5210,15 @@ async def process_update(update_data: dict):
     if not text.startswith("/start"):
         profile = await get_user_profile(chat_id)
         if not profile:
-            await tg_app.bot.send_animation(
-                chat_id=chat_id, animation=HELLO_GIF,
+            await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=HELLO_GIF,
                 caption=(
                     "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
                     "The ancient trees watch you with quiet curiosity.\n\n"
                     "To step into the Enchanted Clearing..."
                 ),
-                parse_mode="HTML", reply_markup=kb_start(),
+                reply_markup=kb_start(),
             )
             return
 
