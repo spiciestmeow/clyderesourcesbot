@@ -172,6 +172,8 @@ RESOURCES_GIF = "https://c.tenor.com/Ypm9KWeMnGwAAAAd/tenor.gif"
 WHEEL_BOARD_GIF = "https://i.makeagif.com/media/2-08-2018/g4YGQ_.mp4"
 ONBOARDING_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
 STEAM_GIF = "https://dolphinhorizongames.com/GIFS/STEAM%20Gif.gif"
+STEAM_RESULT_GIF = "https://64.media.tumblr.com/354a0b3a739d3675f4592b202d083df2/tumblr_pjzi86ixQo1rxlf0fo1_1280.gif"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4188,10 +4190,10 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
         pass  # fallback if edit fails
 
     # Fallback: send new message
-    await tg_app.bot.send_message(
+    await send_animated_translated(
         chat_id=chat_id,
-        text=text,
-        parse_mode="HTML",
+        caption=text,
+        animation_url=STEAM_RESULT_GIF,
         reply_markup=markup
     )
 
@@ -4311,7 +4313,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             )
 
             if r.status_code in (200, 201):
-                await tg_app.bot.send_message(
+                await send_animated_translated(
                     chat_id,
                     f"✅ <b>Steam Account Uploaded Successfully!</b>\n\n"
                     f"📧 Email/Username: <code>{html.escape(email)}</code>\n"
@@ -4319,7 +4321,8 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
                     f"🎮 Game: {game_name or 'Not specified'}\n"
                     f"🆔 SteamID: {steam_id or 'Not provided'}\n"
                     f"Status: <b>✅ Available</b>",
-                    parse_mode="HTML"
+                    animation_url=STEAM_RESULT_GIF,
+
                 )
                 asyncio.create_task(broadcast_new_resources({"steam": 1}))
             else:
