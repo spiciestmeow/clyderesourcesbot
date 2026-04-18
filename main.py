@@ -4028,14 +4028,14 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
             "🔍 <b>Steam Account Search</b>\n\n"
             "• Single: username or email\n"
             "• Bulk: multiple lines (Supabase only)\n\n"
-            "Example:\n<code>/searchsteam HDVL142373</code>",
+            "Example:\n<code>/searchsteam clydeforest</code>",
             animation_url=STEAM_GIF,
         )
         return
 
     lines = [line.strip() for line in body.split("\n") if line.strip()]
 
-# ====================== BULK SEARCH ======================
+    # ====================== BULK SEARCH ======================
     if len(lines) > 1:
         loading_msg = await tg_app.bot.send_message(
             chat_id,
@@ -4056,10 +4056,11 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
         for term in lines:
             acc = account_map.get(term.lower().strip())
             if acc:
+                password = html.escape(acc.get("password", "HIDDEN"))
                 found_results.append(
                     f"✅ <code>{html.escape(term)}</code>\n"
                     f"🎮 {acc.get('game_name', '—')} | {acc.get('status', 'Available')}\n"
-                    f"🔑 <code>{html.escape(acc.get('password', 'HIDDEN'))}</code>"
+                    f"🔑 <tg-spoiler>{password}</tg-spoiler>"
                 )
             else:
                 not_found_results.append(f"❌ <code>{html.escape(term)}</code> — Not found")
@@ -4115,11 +4116,12 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
     supabase_text = ""
     if supabase_acc:
+        password = html.escape(supabase_acc.get("password", "HIDDEN"))
         supabase_text = (
             f"✅ <b>Found in Supabase</b>\n"
             f"🎮 Game: {supabase_acc.get('game_name', '—')}\n"
             f"Status: <b>{supabase_acc.get('status', 'Available')}</b>\n"
-            f"🔑 Password: <code>{html.escape(supabase_acc.get('password', 'HIDDEN'))}</code>\n\n"
+            f"🔑 Password: <tg-spoiler>{password}</tg-spoiler>\n\n"
         )
     else:
         supabase_text = "❌ Not found in Supabase.\n\n"
