@@ -2572,6 +2572,9 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
 async def show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
+        title = "Netflix" if service_type == "netflix" else "PrimeVideo"
+        emoji = "🍿"    if service_type == "netflix" else "🎥"
+
         await query.message.edit_caption(
             caption=f"{emoji} <i>Opening the ancient scroll of {title} cookies...</i>",
             parse_mode="HTML",
@@ -2594,9 +2597,6 @@ async def show_paginated_cookie_list(
                 event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>doubled</b> today!\n\n"
             elif bonus_type == "netflix_max":
                 event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>maximized</b> today!\n\n"
-        
-        title = "Netflix" if service_type == "netflix" else "PrimeVideo"
-        emoji = "🍿"    if service_type == "netflix" else "🎥"
 
         data = await get_vamt_data()
         if not data:
