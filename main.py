@@ -171,7 +171,7 @@ WHEEL_WHISPERS_GIF = "https://c.tenor.com/9Bqw7W6o3m4AAAAC/tenor.gif"
 RESOURCES_GIF = "https://c.tenor.com/Ypm9KWeMnGwAAAAd/tenor.gif"
 WHEEL_BOARD_GIF = "https://i.makeagif.com/media/2-08-2018/g4YGQ_.mp4"
 ONBOARDING_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
-
+STEAM_GIF = "https://dolphinhorizongames.com/GIFS/STEAM%20Gif.gif"
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2508,7 +2508,7 @@ async def send_animated_translated(
         msg = await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=animation_url,
-            caption=translated_caption,
+            caption=translated_caption or None,
             parse_mode="HTML",
             reply_markup=reply_markup,
             **kwargs
@@ -2516,7 +2516,7 @@ async def send_animated_translated(
     else:
         msg = await tg_app.bot.send_message(
             chat_id=chat_id,
-            text=translated_caption,
+            text=translated_caption or None,
             parse_mode="HTML",
             reply_markup=reply_markup,
             **kwargs
@@ -4021,13 +4021,13 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
     body = raw_text.replace("/searchsteam", "").strip()
     if not body:
-        await tg_app.bot.send_message(
+        await send_animated_translated(
             chat_id,
             "🔍 <b>Steam Account Search</b>\n\n"
             "• Single: username or email\n"
             "• Bulk: multiple lines (Supabase only)\n\n"
             "Example:\n<code>/searchsteam HDVL142373</code>",
-            parse_mode="HTML"
+            animation_url=STEAM_GIF,
         )
         return
 
@@ -4252,7 +4252,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
 
     body = raw_text.replace("/uploadsteam", "").strip()
     if not body:
-        await tg_app.bot.send_message(
+        await send_animated_translated(
             chat_id,
             "🎮 <b>Steam Account Uploader</b>\n\n"
             "Format:\n"
@@ -4267,7 +4267,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "yourpassword123\n"
             "Silent Hill 2\n"
             "76561198xxxxxxxxx</code>",
-            parse_mode="HTML"
+            animation_url=STEAM_GIF
         )
         return
 
