@@ -153,9 +153,9 @@ def get_time_until_drop() -> tuple[int, int]:
     return hours, mins
 
 async def release_daily_steam_accounts():
-    """Marks all unposted Available accounts as publicly released"""
+    """Just returns count of accounts that are now past their release_at time"""
     manila = pytz.timezone("Asia/Manila")
-    now_iso = datetime.now(manila).isoformat()
+    now_iso = datetime.now(manila).astimezone(pytz.utc).isoformat()
 
     newly_visible = await _sb_get(
         "steamCredentials",
@@ -163,7 +163,6 @@ async def release_daily_steam_accounts():
             "select": "*",
             "status": "eq.Available",
             "release_at": f"lte.{now_iso}",
-            "order": "release_at.desc",
         }
     ) or []
 
@@ -2892,6 +2891,9 @@ async def show_steam_accounts(
     today_start = now.replace(
         hour=0, minute=0, second=0, microsecond=0
     ).astimezone(pytz.utc).isoformat()
+    today_end = now.replace(
+        hour=23, minute=59, second=59, microsecond=0
+    ).astimezone(pytz.utc).isoformat()
     now_iso = now.astimezone(pytz.utc).isoformat()
 
     # ── Lv1-6: Website only ──
@@ -2922,11 +2924,10 @@ async def show_steam_accounts(
         )
         return
 
-    # ── Check early access ──
-    access_hour = get_early_access_hour(level)
+    # ── Check early access time ──
     if not is_early_access_time(level):
         hours, mins = get_time_until_early_access(level)
-        
+
         tier_badges = {
             7: "⭐ Level 7 Early Access — opens at 6:00 PM",
             8: "⭐ Level 8 Early Access — opens at 4:00 PM",
@@ -2951,50 +2952,104 @@ async def show_steam_accounts(
         )
         return
 
-    # ── FETCH ACCOUNTS ──
+    # ── FETCH ACCOUNTS based on level ──
     accounts = []
 
     if level >= 10:
-        # Legend: all available accounts
+        # Legend: ALL released accounts (release_at <= now)
         accounts = await _sb_get(
             "steamCredentials",
             **{
                 "select": "*",
                 "status": "eq.Available",
-                "order": "id.desc",
+                "release_at": f"lte.{now_iso}",  # already released
+                "order": "release_at.desc",
                 "limit": 200,
             }
         ) or []
 
-    else:
-        # Lv7-9: today's daily account (early access, no 8PM restriction)
+    elif level == 9:
+        # Lv9: TODAY's daily (early, no 8PM restriction)
         daily_accounts = await _sb_get(
             "steamCredentials",
-            select="*",
-            status="eq.Available",
-            release_type="eq.daily",
-            **{"release_at": f"gte.{today_start}", "order": "release_at.asc", "limit": 200}
+            **{
+                "select": "*",
+                "status": "eq.Available",
+                "release_type": "eq.daily",
+                "release_at": f"gte.{today_start}",  # from today
+                "order": "release_at.asc",
+                "limit": 200,
+            }
         ) or []
-        accounts += daily_accounts
+        # ✅ KEY FIX: only today's game, not future days
+        accounts += [
+            a for a in daily_accounts
+            if a.get("release_at") and a["release_at"] <= today_end
+        ]
 
-        # Lv9 only: sunday noon bonus (also early, no noon restriction)
-        if level == 9 and is_sunday_manila():
+        # Lv9 Sunday bonus: today's sunday_noon (early, no noon restriction)
+        if is_sunday_manila():
             sunday_accounts = await _sb_get(
                 "steamCredentials",
-                select="*",
-                status="eq.Available",
-                release_type="eq.sunday_noon",
-                **{"release_at": f"gte.{today_start}", "order": "release_at.asc", "limit": 200}
+                **{
+                    "select": "*",
+                    "status": "eq.Available",
+                    "release_type": "eq.sunday_noon",
+                    "release_at": f"gte.{today_start}",  # from today
+                    "order": "release_at.asc",
+                    "limit": 200,
+                }
             ) or []
-            accounts += sunday_accounts
+            # ✅ KEY FIX: only today's sunday game, not future
+            accounts += [
+                a for a in sunday_accounts
+                if a.get("release_at") and a["release_at"] <= today_end
+            ]
+
+    else:
+        # Lv7-8: TODAY's daily only (early access, no 8PM restriction)
+        daily_accounts = await _sb_get(
+            "steamCredentials",
+            **{
+                "select": "*",
+                "status": "eq.Available",
+                "release_type": "eq.daily",
+                "release_at": f"gte.{today_start}",  # from today
+                "order": "release_at.asc",
+                "limit": 200,
+            }
+        ) or []
+        # ✅ KEY FIX: only today's game, not future days
+        accounts += [
+            a for a in daily_accounts
+            if a.get("release_at") and a["release_at"] <= today_end
+        ]
 
     if not accounts:
-        await query.message.edit_caption(
-            caption=(
+        # Show helpful message based on why no accounts showing
+        if level in (7, 8):
+            no_account_msg = (
+                "🎮 <b>Steam Accounts</b>\n\n"
+                "🌫️ No account scheduled for today yet.\n\n"
+                f"⏰ Check back after your early access time:\n"
+                f"{'6:00 PM' if level == 7 else '4:00 PM'} Manila time 🍃"
+            )
+        elif level == 9:
+            no_account_msg = (
+                "🎮 <b>Steam Accounts</b>\n\n"
+                "🌫️ No account scheduled for today yet.\n\n"
+                "⏰ Check back after 12:00 PM Manila time 🍃"
+                + ("\n🌟 Sunday bonus also coming at 12:00 PM!" if is_sunday_manila() else "")
+            )
+        else:
+            no_account_msg = (
                 "🎮 <b>Steam Accounts</b>\n\n"
                 "🌫️ No accounts available right now.\n\n"
                 "🌿 Check back later! 🍃"
-            ),
+            )
+
+        await query.message.edit_caption(
+            caption=no_account_msg,
             parse_mode="HTML",
             reply_markup=kb_back_inventory(),
         )
