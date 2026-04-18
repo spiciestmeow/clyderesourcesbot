@@ -3543,11 +3543,10 @@ async def handle_invite(chat_id: int, first_name: str):
         [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")]
     ])
 
-    await tg_app.bot.send_animation(
+    await send_animated_translated(
         chat_id=chat_id,
         caption=caption,
-        animation=INVITE_GIF,
-        parse_mode="HTML",
+        animation_url=INVITE_GIF,
         reply_markup=keyboard,
     )
     return
@@ -4927,9 +4926,11 @@ async def handle_callback(update: Update):
         text, keyboard = pages.get(page, pages[1])
 
         if data == "help":
-            msg = await tg_app.bot.send_animation(
-                chat_id=chat_id, animation=GUIDANCE_GIF,
-                caption=text, parse_mode="HTML", reply_markup=keyboard,
+            msg = await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=GUIDANCE_GIF,
+                caption=text,
+                reply_markup=keyboard,
             )
             await _remember(chat_id, msg.message_id)
             if not profile.get("has_seen_menu", False):
@@ -4938,9 +4939,11 @@ async def handle_callback(update: Update):
             try:
                 await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=keyboard)
             except Exception:
-                msg = await tg_app.bot.send_animation(
-                    chat_id=chat_id, animation=GUIDANCE_GIF,
-                    caption=text, parse_mode="HTML", reply_markup=keyboard,
+                msg = await send_animated_translated(
+                    chat_id=chat_id,
+                    animation_url=GUIDANCE_GIF,
+                    caption=text,
+                    reply_markup=keyboard,
                 )
                 await _remember(chat_id, msg.message_id)
 
@@ -5037,9 +5040,11 @@ async def handle_callback(update: Update):
             "<b>Current Rewards:</b> View lists = +8 XP | Reveal Netflix = +14 XP\n\n"
             "<i>May this small enchanted clearing bring you both practical resources and a moment of peace.</i> 🍃✨"
         )
-        final = await tg_app.bot.send_animation(
-            chat_id=chat_id, animation=ABOUT_GIF,
-            caption=lore, parse_mode="HTML", reply_markup=kb_back(),
+        final = await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=ABOUT_GIF,
+            caption=lore,
+            reply_markup=kb_back(),
         )
         try:
             await tg_app.bot.delete_message(loading.chat_id, loading.message_id)
