@@ -12,6 +12,7 @@ import redis.asyncio as aioredis
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from telegram import BotCommand
 from io import BytesIO
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -2519,7 +2520,7 @@ async def send_initial_welcome(chat_id: int, first_name: str):
     onboarding_done = await has_completed_onboarding(chat_id)
 
     if is_new_user and not onboarding_done:
-        # Show Step 1 of onboarding instead of the normal welcome
+        await hide_bot_commands(chat_id)
         await send_onboarding_step(chat_id, first_name, step=1)
         return
     
@@ -4319,6 +4320,38 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             print(f"Upload error: {e}")
             await tg_app.bot.send_message(chat_id, "❌ Failed to save to Supabase.", parse_mode="HTML")
 
+async def hide_bot_commands(chat_id: int):
+    """Hide all bot commands for this user during onboarding"""
+    try:
+        await tg_app.bot.set_my_commands(
+            commands=[],
+            scope={"type": "chat", "chat_id": chat_id}
+        )
+    except Exception as e:
+        print(f"Could not hide commands for {chat_id}: {e}")
+
+async def restore_bot_commands(chat_id: int):
+    """Restore full command list after onboarding"""
+    try:
+        await tg_app.bot.set_my_commands(
+            commands=[
+                BotCommand("start", "Begin your journey"),
+                BotCommand("menu", "Return to the Clearing"),
+                BotCommand("profile", "View your Forest Profile"),
+                BotCommand("mystats", "Detailed statistics"),
+                BotCommand("leaderboard", "See Top Wanderers"),
+                BotCommand("history", "View XP history"),
+                BotCommand("myid", "Reveal your Forest ID"),
+                BotCommand("clear", "Cleanse the clearing"),
+                BotCommand("feedback", "Message the caretaker"),
+                BotCommand("update", "View patch notes"),
+                BotCommand("invite", "Invite friends and earn XP"),
+            ],
+            scope={"type": "chat", "chat_id": chat_id}
+        )
+    except Exception as e:
+        print(f"Could not restore commands for {chat_id}: {e}")
+
 async def handle_callback(update: Update):
     query     = update.callback_query
     if not query or not query.data:
@@ -4331,6 +4364,21 @@ async def handle_callback(update: Update):
     FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|", "copy_ref_link|")
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
+
+    # ── ONBOARDING GUARD FOR CALLBACKS ──
+    ONBOARDING_ALLOWED = (
+        "onboarding_step_", "onboarding_skip", "onboarding_complete", "show_main_menu"
+    )
+    onboarding_done = await has_completed_onboarding(chat_id)
+    profile_check = await get_user_profile(chat_id)
+
+    if not onboarding_done and profile_check is None:
+        if not any(data.startswith(p) for p in ONBOARDING_ALLOWED):
+            await query.answer(
+                "🌿 Please complete the welcome tour first!",
+                show_alert=True
+            )
+            return
 
 # ── ONBOARDING TUTORIAL ──
     if data.startswith("onboarding_step_"):
@@ -4359,6 +4407,7 @@ async def handle_callback(update: Update):
 
     elif data == "onboarding_complete":
         await mark_onboarding_complete(chat_id)
+        await restore_bot_commands(chat_id)
         await redis_client.delete(f"onboarding_step:{chat_id}")
         try:
             await query.message.delete()
@@ -5313,6 +5362,25 @@ async def process_update(update_data: dict):
                 await tg_app.bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
             except:
                 pass
+
+    # ── ONBOARDING GUARD ──
+    if update.message and update.message.text:
+        raw_check = update.message.text.strip()
+        check_chat_id = update.effective_chat.id
+        
+        # Only /start is allowed during onboarding
+        if not raw_check.lower().startswith("/start"):
+            onboarding_done = await has_completed_onboarding(check_chat_id)
+            if not onboarding_done:
+                profile_check = await get_user_profile(check_chat_id)
+                if not profile_check:  # truly new user
+                    await tg_app.bot.send_message(
+                        check_chat_id,
+                        "🌿 <b>Please complete the welcome tour first!</b>\n\n"
+                        "Use /start to begin your journey into the Enchanted Clearing. 🍃",
+                        parse_mode="HTML"
+                    )
+                    return
 
     # ── Maintenance mode ──
     if await get_maintenance_mode():
