@@ -4114,7 +4114,6 @@ async def handle_set_language(chat_id: int, query=None):
     await send_animated_translated(
         chat_id=chat_id,
         caption=text,
-        parse_mode="HTML",
         reply_markup=markup
     )
 
