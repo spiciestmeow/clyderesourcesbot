@@ -3794,7 +3794,7 @@ async def handle_key_feedback(chat_id: int, first_name: str, key_id: str, servic
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 <b>User:</b> {html.escape(str(first_name))} (<code>{chat_id}</code>)\n"
         f"🗂 <b>Service:</b> {service_type.title()}\n\n"
-        f"🔑 <b>Key/Cookie:</b>\n<code>{html.escape(str(key_id))}</code>\n\n"
+        f"🔑 <b>Key/Cookie:</b>\n<tg-spoiler>{html.escape(str(key_id))}</tg-spoiler>\n\n"
         f"Status: {emoji} <b>{label}</b>\n"
         f"🕐 <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         parse_mode="HTML",
@@ -3825,7 +3825,7 @@ async def handle_view_reports(chat_id: int):
         lines.append(
             f"{emoji} <b>{r.get('service_type', '').title()}</b>\n"
             f"└ 👤 {html.escape(str(r.get('first_name', 'Unknown')))}\n"
-            f"└ 🔑 <code>{str(r.get('key_id', ''))[:40]}</code>\n"
+            f"└ 🔑 <tg-spoiler>{str(r.get('key_id', ''))[:40]}</tg-spoiler>\n"
             f"└ 🕐 {str(r.get('reported_at', ''))[:19]}\n"
         )
 
@@ -3973,7 +3973,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             stock = str(item.get("remaining", 0))
             report += (
                 f"✨ <b>{item.get('service_type', 'Unknown')}</b>\n"
-                f"└ 🔑 Key: <code>{item.get('key_id', 'HIDDEN')}</code>\n"
+                f"└ 🔑 Key: <tg-spoiler>{item.get('key_id', 'HIDDEN')}</tg-spoiler>\n"
                 f"└ 📦 Remaining: <b>{stock}</b>\n\n"
             )
 
