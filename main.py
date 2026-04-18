@@ -62,9 +62,48 @@ async def translate_text(text: str, target_lang: str) -> str:
 STEAM_DAILY_LIMITS = {
     7:  1,
     8:  1,
-    9:  2,  # 1 daily + 1 sunday_noon
+    9:  2,
     10: 999,
 }
+
+def get_early_access_hour(level: int) -> int | None:
+    """Returns the hour (Manila time) when this level gets early access. None = no early access."""
+    if level >= 10:
+        return 0   # immediate — sees it as soon as uploaded
+    elif level == 9:
+        return 12  # 12 PM
+    elif level == 8:
+        return 16  # 4 PM
+    elif level == 7:
+        return 18  # 6 PM
+    else:
+        return None  # Lv1-6 = website only, no bot access
+
+def is_early_access_time(level: int) -> bool:
+    """Returns True if current Manila time has passed this level's early access hour."""
+    hour = get_early_access_hour(level)
+    if hour is None:
+        return False
+    manila = pytz.timezone("Asia/Manila")
+    return datetime.now(manila).hour >= hour
+
+def get_time_until_early_access(level: int) -> tuple[int, int]:
+    """Returns (hours, minutes) until this level's early access opens."""
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    access_hour = get_early_access_hour(level)
+    
+    if access_hour is None:
+        return 0, 0
+
+    target = now.replace(hour=access_hour, minute=0, second=0, microsecond=0)
+    if now >= target:
+        return 0, 0  # already unlocked
+
+    diff = target - now
+    hours = int(diff.total_seconds() // 3600)
+    mins = int((diff.total_seconds() % 3600) // 60)
+    return hours, mins
 
 def get_steam_tier(level: int) -> str:
     if level >= 10:
@@ -2845,23 +2884,19 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
 async def show_steam_accounts(
     chat_id: int, first_name: str, level: int, query, page: int = 0
 ):
-    """Display steam accounts based on user level tier"""
     tier = get_steam_tier(level)
     ITEMS_PER_PAGE = 5
 
-    tier_badges = {
-        "public":       "🌍 Public Drop",
-        "early":        "⭐ Early Preview",
-        "early_sunday": "🌟 Early Preview + Sunday Bonus",
-        "legend":       "👑 Legend Tier",
-    }
-
     manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    today_start = now.replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).astimezone(pytz.utc).isoformat()
+    now_iso = now.astimezone(pytz.utc).isoformat()
 
-    # ── LEVEL 1-6: Website only ──
+    # ── Lv1-6: Website only ──
     if tier == "public":
         hours, mins = get_time_until_drop()
-
         if is_public_drop_time():
             drop_note = "✅ Today's account is now live on the website!"
         elif is_sunday_noon_manila():
@@ -2881,18 +2916,46 @@ async def show_steam_accounts(
             ),
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "🌐 Visit Website",
-                    url="https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed"
-                )],
+                [InlineKeyboardButton("🌐 Visit Website", url="https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed")],
                 [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
             ])
         )
         return
 
-    # ── FETCH ACCOUNTS based on tier ──
-    if tier == "legend":
-        # Level 10+: sees ALL available accounts
+    # ── Check early access ──
+    access_hour = get_early_access_hour(level)
+    if not is_early_access_time(level):
+        hours, mins = get_time_until_early_access(level)
+        
+        tier_badges = {
+            7: "⭐ Level 7 Early Access — opens at 6:00 PM",
+            8: "⭐ Level 8 Early Access — opens at 4:00 PM",
+            9: "🌟 Level 9 Early Access — opens at 12:00 PM",
+        }
+
+        await query.message.edit_caption(
+            caption=(
+                "🎮 <b>Steam Accounts</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"🏷️ {tier_badges.get(level, 'Early Access')}\n\n"
+                f"⏰ Your early access opens in <b>{hours}h {mins}m</b>\n\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "🌍 <b>Public drop:</b> 8:00 PM (website)\n"
+                + (f"🌟 <b>Sunday bonus:</b> 12:00 PM (website)\n" if is_sunday_manila() else "")
+                + "\n<i>Higher levels get earlier access. Keep leveling up!</i> 🍃"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+            ])
+        )
+        return
+
+    # ── FETCH ACCOUNTS ──
+    accounts = []
+
+    if level >= 10:
+        # Legend: all available accounts
         accounts = await _sb_get(
             "steamCredentials",
             **{
@@ -2903,30 +2966,27 @@ async def show_steam_accounts(
             }
         ) or []
 
-    elif tier == "early_sunday":
-        # Level 9: sees daily + sunday_noon accounts
-        accounts = await _sb_get(
-            "steamCredentials",
-            **{
-                "select": "*",
-                "status": "eq.Available",
-                "order": "release_at.asc",
-                "limit": 200,
-            }
-        ) or []
-
     else:
-        # Level 7-8: sees only 'daily' accounts
-        accounts = await _sb_get(
+        # Lv7-9: today's daily account (early access, no 8PM restriction)
+        daily_accounts = await _sb_get(
             "steamCredentials",
-            **{
-                "select": "*",
-                "status": "eq.Available",
-                "release_type": "eq.daily",
-                "order": "release_at.asc",
-                "limit": 200,
-            }
+            select="*",
+            status="eq.Available",
+            release_type="eq.daily",
+            **{"release_at": f"gte.{today_start}", "order": "release_at.asc", "limit": 200}
         ) or []
+        accounts += daily_accounts
+
+        # Lv9 only: sunday noon bonus (also early, no noon restriction)
+        if level == 9 and is_sunday_manila():
+            sunday_accounts = await _sb_get(
+                "steamCredentials",
+                select="*",
+                status="eq.Available",
+                release_type="eq.sunday_noon",
+                **{"release_at": f"gte.{today_start}", "order": "release_at.asc", "limit": 200}
+            ) or []
+            accounts += sunday_accounts
 
     if not accounts:
         await query.message.edit_caption(
@@ -2941,37 +3001,39 @@ async def show_steam_accounts(
         return
 
     # ── Daily claim limits ──
-    daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 999) if tier != "legend" else 999
-    claims_today = await get_steam_claims_today(chat_id) if tier != "legend" else 0
-    claims_left = max(0, daily_limit - claims_today) if tier != "legend" else 999
+    daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 999) if level < 10 else 999
+    claims_today = await get_steam_claims_today(chat_id) if level < 10 else 0
+    claims_left = max(0, daily_limit - claims_today) if level < 10 else 999
 
     # ── Pagination ──
     start = page * ITEMS_PER_PAGE
     page_accounts = accounts[start:start + ITEMS_PER_PAGE]
     total_pages = max(1, (len(accounts) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
 
-    # ── Sunday bonus banner ──
+    tier_label = {
+        7: "⭐ Level 7 — Early Access (6 PM)",
+        8: "⭐ Level 8 — Early Access (4 PM)",
+        9: "🌟 Level 9 — Early Access (12 PM) + Sunday Bonus",
+        10: "👑 Legend Tier",
+    }.get(min(level, 10), "⭐ Early Access")
+
     sunday_line = ""
-    if tier == "early_sunday" and is_sunday_manila():
-        sunday_line = "\n🎉 <b>Sunday Double Drop — You see both accounts!</b>"
+    if level == 9 and is_sunday_manila():
+        sunday_line = "\n🎉 <b>Sunday — You get both accounts today!</b>"
 
     report = (
         f"🎮 <b>Steam Accounts</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ {tier_badges.get(tier, '')}{sunday_line}\n"
+        f"🏷️ {tier_label}{sunday_line}\n"
         f"📦 <b>{len(accounts)}</b> account(s) available\n"
     )
 
-    # Show claim status for non-legend
-    if tier != "legend":
+    if level < 10:
         status_emoji = "✅" if claims_left > 0 else "❌"
         report += (
             f"🎯 Claimed today: <b>{claims_today}</b> / <b>{daily_limit}</b>\n"
             f"{status_emoji} Claims left: <b>{claims_left}</b>\n"
         )
-
-    if tier in ("early", "early_sunday"):
-        report += "\n⭐ <b>Early Preview — Not yet public!</b>\n"
 
     report += f"\n📄 Page {page + 1} of {total_pages}\n\n"
 
@@ -2987,7 +3049,7 @@ async def show_steam_accounts(
             f"└ 📧 <tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
         )
 
-        if claims_left > 0 or tier == "legend":
+        if claims_left > 0 or level >= 10:
             buttons.append([
                 InlineKeyboardButton(
                     f"🔓 Claim {game[:25]}",
