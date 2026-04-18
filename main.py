@@ -167,6 +167,9 @@ MORNING_GIF   = "https://i.gifer.com/HYel.gif"
 AFTERNOON_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540.mp4"
 WHEEL_WHISPERS_GIF = "https://c.tenor.com/9Bqw7W6o3m4AAAAC/tenor.gif"
+RESOURCES_GIF = "https://c.tenor.com/Ypm9KWeMnGwAAAAd/tenor.gif"
+WHEEL_BOARD_GIF = "https://i.makeagif.com/media/2-08-2018/g4YGQ_.mp4"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3190,9 +3193,10 @@ async def handle_wheel_leaderboard(chat_id: int):
 
     text += "\n<i>May your spins bring you great fortune, wanderer...</i> 🍃✨"
 
-    await tg_app.bot.send_message(
+    await send_animated_translated(
         chat_id=chat_id,
-        text=text,
+        caption=text,
+        animation_url=WHEEL_BOARD_GIF,
         parse_mode="HTML"
     )
 
@@ -4328,7 +4332,7 @@ async def handle_callback(update: Update):
         try:
             await send_animated_translated(
                 caption=immersive_text,
-                animation_url=None,
+                animation_url=RESOURCES_GIF,
                 reply_markup=kb_resources()
             )
         except Exception:
@@ -4340,7 +4344,7 @@ async def handle_callback(update: Update):
             await send_animated_translated(
                 chat_id=chat_id,
                 caption=immersive_text,
-                animation_url=None,
+                animation_url=RESOURCES_GIF,
                 reply_markup=kb_resources()
             )
         return
