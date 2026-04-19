@@ -4581,12 +4581,13 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
     cat_gif   = WINOS_GIF if pending_cat in ("win", "windows") else OFFICE_GIF
 
     try:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
+        if query and query.message:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
 
-        # ── Send loading with category GIF ──
+        # Send a FRESH animation (never edit — previous msg is deleted)
         loading = await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=cat_gif,
@@ -4595,10 +4596,14 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         )
 
         await asyncio.sleep(1.5)
-        await loading.edit_caption(
-            caption=f"🌿 <i>The ancient {cat_label} scrolls are being unsealed...</i>",
-            parse_mode="HTML",
-        )
+        try:
+            await loading.edit_caption(
+                caption=f"🌿 <i>The ancient {cat_label} scrolls are being unsealed...</i>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
         await asyncio.sleep(1.5)
 
         user_level = profile.get("level", 1)
@@ -4611,11 +4616,14 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
         vamt = await get_vamt_data()
         if not vamt:
             await send_supabase_error(chat_id)
-            await loading.edit_caption(
-                caption="🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
-                parse_mode="HTML",
-                reply_markup=kb_back_inventory(),
-            )
+            try:
+                await loading.edit_caption(
+                    caption="🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=kb_back_inventory(),
+                )
+            except Exception:
+                pass
             return
 
         if pending_cat in ("win", "windows"):
@@ -6538,10 +6546,9 @@ async def handle_callback(update: Update):
             )
         elif data == "caretaker_searchsteam":
             await handle_searchsteam_command(chat_id, "/searchsteam")
+
     elif data == "winoffice_got_it":
         await mark_winoffice_guide_seen(chat_id)
-        
-        # Read which category triggered the guide
         pending_cat = await redis_client.get(f"winoffice_pending_cat:{chat_id}") or "win"
         await redis_client.delete(f"winoffice_pending_cat:{chat_id}")
         await show_winoffice_keys(chat_id, pending_cat, profile, query)
