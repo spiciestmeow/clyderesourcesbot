@@ -2646,18 +2646,41 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITY MESSAGES
 # ══════════════════════════════════════════════════════════════════════════════
-def _greeting(tz_str: str = "Asia/Manila") -> tuple[str, str, str]:
-    """Returns (icon, greeting_text, gif_url)"""
-    hour = datetime.now(pytz.timezone(tz_str)).hour
-    
-    if hour == 0:                                 
-        return "🌌", "Midnight", MIDNIGHT_GIF
-    elif 1 <= hour < 12:                       
-        return "🌅", "Good morning", MORNING_GIF
-    elif 12 <= hour < 18:                      
-        return "🌤️", "Good afternoon", AFTERNOON_GIF
-    else:
-        return "🌙", "Good evening", EVENING_GIF
+def _greeting(tz_str: str = "Asia/Manila", first_name: str = None) -> tuple[str, str, str]:
+    """Returns (icon, greeting_text, gif_url) — fully personalized & immersive"""
+    now = datetime.now(pytz.timezone(tz_str))
+    hour = now.hour
+    is_weekend = now.weekday() >= 5   # Saturday or Sunday
+
+    # Personalize the name (safe fallback)
+    name = html.escape(first_name.strip()) if first_name and first_name.strip() else "wanderer"
+
+    # ── Midnight (most magical) ──
+    if hour == 0:
+        return "🌌", f"Midnight in the Enchanted Clearing, {name}", MIDNIGHT_GIF
+
+    # ── Dawn (peaceful early hours) ──
+    elif 1 <= hour <= 4:
+        return "🌄", f"Dawn whispers through the trees, {name}", DAWN_GIF
+
+    # ── Morning ──
+    elif 5 <= hour < 12:
+        text = f"Good morning, gentle {name}" if not is_weekend else f"Peaceful weekend morning, {name}"
+        return "🌅", text, MORNING_GIF
+
+    # ── Afternoon ──
+    elif 12 <= hour < 18:
+        text = f"Good afternoon, kind {name}" if not is_weekend else f"Relaxed weekend afternoon, {name}"
+        return "🌤️", text, AFTERNOON_GIF
+
+    # ── Late Evening (cozy & quiet) ──
+    elif 22 <= hour <= 23:
+        return "🌃", f"The forest grows quiet, {name}", LATENIGHT_GIF
+
+    # ── Evening ──
+    else:  # 6 PM – 9:59 PM
+        text = f"Good evening, {name}" if not is_weekend else f"Cozy weekend evening, {name}"
+        return "🌙", text, EVENING_GIF
 
 async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
     if xp_amount <= 0:
@@ -2793,7 +2816,8 @@ async def send_animated_translated(
     return msg
 
 async def send_initial_welcome(chat_id: int, first_name: str):
-    icon, greeting, gif_url = _greeting()
+# ✅ Now correctly passes the name to _greeting()
+    icon, greeting, gif_url = _greeting(first_name=first_name)
 
     # ── NEW: New users go through onboarding first ──
     profile = await get_user_profile(chat_id)
@@ -2807,7 +2831,7 @@ async def send_initial_welcome(chat_id: int, first_name: str):
     
     # ── Existing users or those who already completed onboarding ──
     caption = (
-        f"{icon} {greeting}, {html.escape(str(first_name))}!\n\n"
+        f"{icon} {greeting}!\n\n"
         "🌿 Welcome, dear wanderer, to Clyde's Enchanted Clearing.\n\n"
         "Beneath the whispering ancient trees, a world of gentle magic awaits.\n"
         "Hidden wonders and peaceful moments are ready to be discovered.\n\n"
@@ -2824,9 +2848,9 @@ async def send_initial_welcome(chat_id: int, first_name: str):
 
 
 async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = False):
-    icon, greeting, gif_url = _greeting()
-    profile = await get_user_profile(chat_id)
+    icon, greeting, gif_url = _greeting(first_name=first_name)
 
+    profile = await get_user_profile(chat_id)
     level      = profile.get("level", 1) if profile else 1
     title      = get_level_title(level)
     level_info = f"🏷️ {title} • ⭐ Level {level}"
@@ -2868,7 +2892,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
 
     if is_first_time:
         caption = (
-            f"{icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+            f"{icon} {greeting}!\n\n"
             "🌿 <b>Welcome to the Enchanted Clearing</b>\n\n"
             f"{level_info} • {streak_txt}{referral_hint}\n"
             f"{event_banner}"
@@ -2880,7 +2904,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         keyboard = kb_first_time_menu()
     else:
         caption = (
-            f"{icon} {greeting}, <b>{html.escape(str(first_name))}</b>!\n\n"
+            f"{icon} {greeting}!\n\n"
             "🌿 <b>Welcome back to the Enchanted Clearing</b>\n\n"
             f"{level_info} • {streak_txt}\n"
             f"{event_banner}"
