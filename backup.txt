@@ -2452,15 +2452,15 @@ def kb_main_menu():
         [InlineKeyboardButton("🌟 Wheel of Whispers", callback_data="show_wheel_menu")],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [
-            InlineKeyboardButton("👤 My Profile", callback_data="show_profile_page"),
-            InlineKeyboardButton("⚙️ Settings", callback_data="show_settings_page"),
-        ],
-        [
             InlineKeyboardButton("❓ Guidance", callback_data="help"),
             InlineKeyboardButton("ℹ️ Lore", callback_data="about"),
         ],
+        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
-        [InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals")],
+        [
+            InlineKeyboardButton("🌍 Language", callback_data="set_language"),
+            InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals"),
+        ],
     ])
 
 def kb_first_time_menu():
@@ -2468,12 +2468,12 @@ def kb_first_time_menu():
         [InlineKeyboardButton("❓ Start Here → Guidance", callback_data="help")],
         [InlineKeyboardButton("🌿 Check Forest Inventory", callback_data="check_vamt")],
         [InlineKeyboardButton("🌟 Wheel of Whispers", callback_data="show_wheel_menu")],
-        [
-            InlineKeyboardButton("👤 My Profile", callback_data="show_profile_page"),
-            InlineKeyboardButton("⚙️ Settings", callback_data="show_settings_page"),
-        ],
+        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
-        [InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals")],
+        [
+            InlineKeyboardButton("🌍 Language", callback_data="set_language"),
+            InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals"),
+        ],
     ])
 
 def kb_inventory():
@@ -3447,16 +3447,61 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
-async def handle_profile_page(chat_id: int, first_name: str, query=None):
+async def handle_profile(chat_id: int, first_name: str):
+    loading = await send_loading(chat_id, "🌿 <i>Reading your forest soul...</i>")
+
+    # NEW: add_xp now returns TWO values
+    action_xp, _ = await add_xp(chat_id, first_name, "profile")
     profile = await get_user_profile(chat_id)
     if not profile:
-        await send_supabase_error(chat_id, query)
+        await send_supabase_error(chat_id)
         return
 
-    level = profile.get("level", 1)
-    xp = profile.get("xp", 0)
+    level            = profile["level"]
+    current_xp       = profile["xp"]
     xp_required_next = get_cumulative_xp_for_level(level + 1)
-    streak = await calculate_streak(chat_id)
+
+    caption = (
+        f"🌿 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
+        f"⭐ <b>Level:</b> {level}\n\n"
+        f"✨ <b>Experience:</b> {current_xp:,} / {xp_required_next:,} XP\n"
+        f"{create_progress_bar(current_xp, xp_required_next, 10)}\n\n"
+        f"📈 <b>To Next Level:</b> {max(0, xp_required_next - current_xp):,} XP\n\n"
+        "🌱 <b>Quick Rewards:</b>\n"
+        "• View any list → <b>+8 XP</b>\n"
+        "• Reveal Netflix Cookie → <b>+14 XP</b>\n"
+        "• Profile / Clear → <b>+6 XP</b>\n\n"
+        "<i>The more you explore the clearing, the stronger your bond with the forest grows.</i> 🍃"
+    )
+    msg = await tg_app.bot.send_animation(
+        chat_id=chat_id, animation=MYID_GIF, caption=caption, parse_mode="HTML"
+    )
+
+    try:
+        await loading.delete()
+    except:
+        pass
+
+    # ✅ ONLY CHANGE: use action_xp instead of xp
+    if action_xp:
+        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+    
+    await _remember(chat_id, msg.message_id)
+
+
+async def handle_stats(chat_id: int, first_name: str):
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        await tg_app.bot.send_message(
+            chat_id, "🌿 You haven't started your journey yet. Use /profile to begin!"
+        )
+        return
+
+    level            = profile.get("level", 1)
+    xp               = profile.get("xp", 0)
+    xp_required_next = get_cumulative_xp_for_level(level + 1)
 
     joined_date = "Unknown"
     if profile.get("created_at"):
@@ -3469,9 +3514,9 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     last_active = "Just now"
     if profile.get("last_active"):
         try:
-            dt = datetime.fromisoformat(profile["last_active"].replace("Z", "+00:00"))
-            dt = dt.astimezone(pytz.timezone("Asia/Manila"))
-            diff_m = int((datetime.now(pytz.timezone("Asia/Manila")) - dt).total_seconds() / 60)
+            dt      = datetime.fromisoformat(profile["last_active"].replace("Z", "+00:00"))
+            dt      = dt.astimezone(pytz.timezone("Asia/Manila"))
+            diff_m  = int((datetime.now(pytz.timezone("Asia/Manila")) - dt).total_seconds() / 60)
             if diff_m < 2:
                 last_active = "Just now"
             elif diff_m < 60:
@@ -3481,77 +3526,40 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         except Exception:
             pass
 
-    streak_txt = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Just getting started!"
-
     caption = (
-        f"👤 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
+        f"🌲 <b>{html.escape(first_name)}'s Forest Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-
-        f"🏷️ <b>{get_level_title(level)}</b>\n"
-        f"⭐ Level <b>{level}</b> • {streak_txt}\n\n"
-
-        f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
-        f"{create_progress_bar(xp, xp_required_next, 12)}\n"
-        f"📈 To next level: <b>{max(0, xp_required_next - xp):,} XP</b>\n\n"
-
-        "━━━━━━━━━━━━━━━━━━\n"
-        "📊 <b>Activity</b>\n\n"
+        f"🏷️ <b>Title:</b> {get_level_title(level)}\n"
+        f"⭐ <b>Level:</b> {level}\n\n"
+        f"✨ <b>Experience:</b> {xp:,} / {xp_required_next:,} XP\n"
+        f"{create_progress_bar(xp, xp_required_next, 10)}\n\n"
+        "📊 <b>Detailed Stats:</b>\n"
         f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
-        f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n"
-        f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n\n"
-
-        "🎮 <b>Resource Usage</b>\n\n"
+        f"• Profile Views: <b>{profile.get('profile_views', 0)}</b>\n"
         f"• Windows Keys Viewed: <b>{profile.get('windows_views', 0)}</b>\n"
         f"• Office Keys Viewed: <b>{profile.get('office_views', 0)}</b>\n"
-        f"• Netflix Viewed: <b>{profile.get('netflix_views', 0)}</b>\n"
-        f"• Netflix Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
-        f"• PrimeVideo Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
-        f"• PrimeVideo Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
-        f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n\n"
-
-        "🎰 <b>Wheel of Whispers</b>\n\n"
+        f"• Netflix Keys Viewed: <b>{profile.get('netflix_views', 0)}</b>\n"
+        f"• PrimeVideo Keys Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
+        f"• Netflix Cookies Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
+        f"• PrimeVideo Cookies Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
+        f"• Steam Accounts Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n"
+        f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n"
+        f"• Guidance Read: <b>{profile.get('guidance_reads', 0)}</b>\n"
+        f"• Lore Read: <b>{profile.get('lore_reads', 0)}</b>\n"
+        f"\n🎰 <b>Wheel Stats:</b>\n"
         f"• Total Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
         f"• Legendary Spins: <b>{profile.get('legendary_spins', 0)}</b>\n"
-        f"• Wheel XP Earned: <b>{profile.get('wheel_xp_earned', 0):,}</b>\n\n"
-
+        f"• Wheel XP Earned: <b>{profile.get('wheel_xp_earned', 0):,}</b>\n"
+        f"• Times Cleared: <b>{profile.get('times_cleared', 0)}</b>\n\n"
+        f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"🌱 Joined: <b>{joined_date}</b>\n"
-        f"🌲 Last Active: <b>{last_active}</b>\n\n"
-        "<i>The trees remember every step of your journey.</i> 🍃"
+        f"🌱 <b>Joined:</b> {joined_date}\n"
+        f"🌲 <b>Last Active:</b> {last_active}\n\n"
+        "<i>The trees remember every step you've taken...</i> 🍃"
     )
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📜 XP History", callback_data="history_page_0")],
-        [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
-    ])
-
-    if query and query.message:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-    loading = await send_loading(chat_id, "🌿 <i>Reading your forest soul...</i>")
-    
-    # Award XP
-    action_xp, _ = await add_xp(chat_id, first_name, "profile")
-    if action_xp:
-        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
-
-    msg = await send_animated_translated(
-        chat_id=chat_id,
-        animation_url=MYID_GIF,
-        caption=caption,
-        reply_markup=keyboard,
-    )
-
-    try:
-        await loading.delete()
-    except Exception:
-        pass
-
+    msg = await tg_app.bot.send_message(chat_id=chat_id, text=caption, parse_mode="HTML")
     await _remember(chat_id, msg.message_id)
+
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
     limit  = 8
@@ -4444,55 +4452,6 @@ async def handle_steam_feedback(
             except Exception:
                 pass
         asyncio.create_task(remove_undo())
-
-async def handle_settings_page(chat_id: int, first_name: str, query=None):
-    lang = await get_user_language(chat_id)
-    flag, lang_name = SUPPORTED_LANGUAGES.get(lang, ("🇬🇧", "English"))
-    link = await get_referral_link(chat_id)
-    profile = await get_user_profile(chat_id)
-    referral_count = profile.get("referral_count", 0) if profile else 0
-
-    caption = (
-        f"⚙️ <b>Settings</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-
-        f"🌍 <b>Language:</b> {flag} {lang_name}\n\n"
-
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"🌲 <b>Your Referral Link</b>\n\n"
-        f"<code>{link}</code>\n\n"
-        f"👥 Friends referred: <b>{referral_count}</b>\n"
-        f"✨ You earn <b>+{REFERRAL_XP} XP</b> per referral\n"
-        f"🎁 Friend gets <b>+{NEW_USER_WELCOME_BONUS_IF_REFERRED} XP</b> welcome bonus\n\n"
-
-        "━━━━━━━━━━━━━━━━━━\n"
-        "<i>More settings coming soon...</i> 🍃"
-    )
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🌍 Change Language ({flag} {lang_name})", callback_data="set_language")],
-        [
-            InlineKeyboardButton(
-                "🌲 Share Referral Link",
-                url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!"
-            )
-        ],
-        [InlineKeyboardButton("📋 Copy Referral Link", callback_data=f"copy_ref_link|{chat_id}")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
-    ])
-
-    if query and query.message:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-    await send_animated_translated(
-        chat_id=chat_id,
-        animation_url=MYID_GIF,
-        caption=caption,
-        reply_markup=keyboard,
-    )
 
 async def handle_view_reports(chat_id: int):
     reports = await _sb_get(
@@ -5760,18 +5719,6 @@ async def handle_callback(update: Update):
     elif data == "invite_friends":
         await handle_invite(chat_id, first_name)
         return   # important
-    
-    elif data == "show_profile_page":
-        await handle_profile_page(chat_id, first_name, query)
-        return
-
-    elif data == "show_settings_page":
-        await handle_settings_page(chat_id, first_name, query)
-        return
-
-    elif data == "leaderboard_from_profile":
-        await handle_leaderboard(chat_id)
-        return
 
     elif data == "steam_claimed_limit":
         daily_limit = STEAM_DAILY_LIMITS.get(min(profile.get("level", 1), 10), 1)
@@ -6853,7 +6800,7 @@ async def process_update(update_data: dict):
         await handle_uploadsteam_command(chat_id, raw)
 
     elif text.startswith("/profile"):
-        await handle_profile_page(chat_id, first_name)
+        await handle_profile(chat_id, first_name)
 
     elif text.startswith("/viewreports"):
         if chat_id != OWNER_ID:
@@ -6865,7 +6812,7 @@ async def process_update(update_data: dict):
         await handle_caretaker(chat_id, first_name)
 
     elif text.startswith("/mystats"):
-        await handle_profile_page(chat_id, first_name) 
+        await handle_stats(chat_id, first_name)
 
     elif text.startswith("/flushcache"):
         await handle_flushcache(chat_id)
