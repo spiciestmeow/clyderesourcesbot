@@ -2930,9 +2930,9 @@ async def show_steam_accounts(
         hours, mins = get_time_until_early_access(level)
 
         tier_badges = {
-            7: "⭐ Level 7 Early Access — opens at 6:00 PM",
-            8: "⭐ Level 8 Early Access — opens at 4:00 PM",
-            9: "🌟 Level 9 Early Access — opens at 12:00 PM",
+            7: "⭐ Level 7 Early Access — opens at 4:00 PM",
+            8: "⭐ Level 8 Early Access — opens at 12:00 PM",
+            9: "🌟 Level 9 Early Access — opens at 8:00 AM",
         }
 
         await query.message.edit_caption(
@@ -2963,8 +2963,8 @@ async def show_steam_accounts(
             **{
                 "select": "*",
                 "status": "eq.Available",
-                "release_at": f"lte.{now_iso}",  # already released
-                "order": "release_at.desc",
+                "release_at": "not.is.null",   # scheduled only, no future block
+                "order": "release_at.asc",
                 "limit": 200,
             }
         ) or []
@@ -2982,16 +2982,16 @@ async def show_steam_accounts(
             **{
                 "select": "*",
                 "status": "eq.Available",
-                "release_type": "eq.daily",
-                "release_at": f"gte.{today_start}",  # from today
+                "release_at": f"gte.{today_start}",
                 "order": "release_at.asc",
-                "limit": 1,
+                "limit": 5,
             }
         ) or []
-        # ✅ KEY FIX: only today's game, not future days
         accounts += [
             a for a in daily_accounts
-            if a.get("release_at") and a["release_at"] <= today_end
+            if a.get("release_at")
+            and a["release_at"] <= today_end
+            and a.get("release_type") != "sunday_noon"
         ]
 
         # Lv9 Sunday bonus: today's sunday_noon (early, no noon restriction)
@@ -3020,16 +3020,16 @@ async def show_steam_accounts(
             **{
                 "select": "*",
                 "status": "eq.Available",
-                "release_type": "eq.daily",
-                "release_at": f"gte.{today_start}",  # from today
+                "release_at": f"gte.{today_start}",
                 "order": "release_at.asc",
-                "limit": 1,
+                "limit": 5,
             }
         ) or []
-        # ✅ KEY FIX: only today's game, not future days
         accounts += [
             a for a in daily_accounts
-            if a.get("release_at") and a["release_at"] <= today_end
+            if a.get("release_at")
+            and a["release_at"] <= today_end
+            and a.get("release_type") != "sunday_noon"
         ]
 
     if not accounts:
@@ -3039,14 +3039,14 @@ async def show_steam_accounts(
                 "🎮 <b>Steam Accounts</b>\n\n"
                 "🌫️ No account scheduled for today yet.\n\n"
                 f"⏰ Check back after your early access time:\n"
-                f"{'6:00 PM' if level == 7 else '4:00 PM'} Manila time 🍃"
+                f"{'4:00 PM' if level == 7 else '12:00 PM'} Manila time 🍃"
             )
         elif level == 9:
             no_account_msg = (
                 "🎮 <b>Steam Accounts</b>\n\n"
                 "🌫️ No account scheduled for today yet.\n\n"
-                "⏰ Check back after 12:00 PM Manila time 🍃"
-                + ("\n🌟 Sunday bonus also coming at 12:00 PM!" if is_sunday_manila() else "")
+                "⏰ Check back after 08:00 AM Manila time 🍃"
+                + ("\n🌟 Sunday bonus also coming at 08:00 AM!" if is_sunday_manila() else "")
             )
         else:
             no_account_msg = (
@@ -3073,9 +3073,9 @@ async def show_steam_accounts(
     total_pages = max(1, (len(accounts) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
 
     tier_label = {
-        7: "⭐ Level 7 — Early Access (6 PM)",
-        8: "⭐ Level 8 — Early Access (4 PM)",
-        9: "🌟 Level 9 — Early Access (12 PM) + Sunday Bonus",
+        7: "⭐ Level 7 — Early Access (4 PM)",
+        8: "⭐ Level 8 — Early Access (12 PM)",
+        9: "🌟 Level 9 — Early Access (8 AM) + Sunday Bonus",
         10: "👑 Legend Tier",
     }.get(min(level, 10), "⭐ Early Access")
 
@@ -5008,17 +5008,24 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
 
         missing_note = f" ⚠️ ({', '.join(missing)})" if missing else ""
 
-        payload = {
-            "email":     email,
-            "password":  password,
-            "game_name": game_name,
-            "steam_id":  steam_id,
-            "image_url": image_url,
-            "status":    "Available",
-            "action":    None,
-            "Posted":    None,
-        }
+        # ✅ NEW payload — always sets schedule on upload
+        manila = pytz.timezone("Asia/Manila")
+        tonight_8pm = datetime.now(manila).replace(
+            hour=20, minute=0, second=0, microsecond=0
+        ).astimezone(pytz.utc).isoformat()
 
+        payload = {
+            "email":        email,
+            "password":     password,
+            "game_name":    game_name,
+            "steam_id":     steam_id,
+            "image_url":    image_url,
+            "status":       "Available",
+            "release_type": "daily",      # ✅ added
+            "release_at":   tonight_8pm,  # ✅ added
+            "action":       None,
+            "Posted":       None,
+        }
         async with db_sem:
             try:
                 r = await asyncio.wait_for(
