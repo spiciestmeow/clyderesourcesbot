@@ -322,8 +322,12 @@ WHEEL_WHISPERS_GIF = "https://c.tenor.com/9Bqw7W6o3m4AAAAC/tenor.gif"
 RESOURCES_GIF = "https://c.tenor.com/Ypm9KWeMnGwAAAAd/tenor.gif"
 WHEEL_BOARD_GIF = "https://i.makeagif.com/media/2-08-2018/g4YGQ_.mp4"
 ONBOARDING_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
+
 STEAM_GIF = "https://dolphinhorizongames.com/GIFS/STEAM%20Gif.gif"
 STEAM_RESULT_GIF = "https://64.media.tumblr.com/354a0b3a739d3675f4592b202d083df2/tumblr_pjzi86ixQo1rxlf0fo1_1280.gif"
+
+WINOS_GIF = "https://cdn.dribbble.com/userupload/23828782/file/original-8761d5f0eef9c629751c4c95458cfabe.gif"
+OFFICE_GIF = "https://eyantra.net.in/wp-content/uploads/2026/01/30f9a2f05827e643b620238333826b31.gif"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
@@ -4571,20 +4575,27 @@ async def handle_confirm_toggle_maintenance(chat_id: int):
     )
 
 async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query):
-    """Shared key display logic for Windows and Office — guaranteed loading cleanup"""
     pending_cat = category
     cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
     cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
+    cat_gif   = WINOS_GIF if pending_cat in ("win", "windows") else OFFICE_GIF
 
     try:
-        await query.message.edit_caption(
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        # ── Send loading with category GIF ──
+        loading = await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=cat_gif,
             caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
             parse_mode="HTML",
         )
 
         await asyncio.sleep(1.5)
-
-        await query.message.edit_caption(
+        await loading.edit_caption(
             caption=f"🌿 <i>The ancient {cat_label} scrolls are being unsealed...</i>",
             parse_mode="HTML",
         )
@@ -4599,7 +4610,12 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
 
         vamt = await get_vamt_data()
         if not vamt:
-            await send_supabase_error(chat_id, query)
+            await send_supabase_error(chat_id)
+            await loading.edit_caption(
+                caption="🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
+                parse_mode="HTML",
+                reply_markup=kb_back_inventory(),
+            )
             return
 
         if pending_cat in ("win", "windows"):
