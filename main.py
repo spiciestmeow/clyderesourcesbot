@@ -4840,22 +4840,23 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "<code>/uploadsteam\n"
             "email\n"
             "password\n"
-            "Game Name <b>(optional)</b>\n"
-            "SteamID64 <b>(optional)</b>\n"
-            "Banner (optional)</code>\n\n"
+            "Game Name (optional)\n"
+            "SteamID64 (optional)\n"
+            "https://banner-url.jpg (optional)</code>\n\n"
             "<b>Bulk (separate accounts with a blank line):</b>\n"
             "<code>/uploadsteam\n"
             "email1\n"
             "password1\n"
             "Game Name\n"
             "76561198XXXXXXXXX\n"
-            "Banner.jpg\n\n"
+            "https://banner.jpg\n\n"
             "email2\n"
             "password2\n\n"
             "email3\n"
             "password3\n"
             "Only Game Name</code>\n\n"
             "⚠️ <i>Minimum required: email + password</i>\n"
+            "💡 <i>SteamID = 17 digits | Banner = must start with https://</i>\n"
             "<i>Tip: Use /searchsteam first to check for duplicates.</i>",
             animation_url=STEAM_GIF
         )
@@ -4880,19 +4881,35 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         email     = lines[0]
         password  = lines[1]
         game_name = lines[2] if len(lines) >= 3 else None
-        steam_id  = lines[3] if len(lines) >= 4 else None
-        image_url = lines[4] if len(lines) >= 5 else None
 
-        # Validate steam_id if provided
+        # ✅ FIX: Detect steam_id and image_url by CONTENT not POSITION
+        # This allows skipping SteamID without breaking image URL
+        steam_id  = None
+        image_url = None
         steam_id_warning = ""
-        if steam_id is not None:
-            if not (steam_id.isdigit() and len(steam_id) == 17):
-                steam_id_warning = " (invalid SteamID ignored)"
-                steam_id = None
 
-        # Validate image_url (basic check)
-        if image_url and not image_url.startswith("http"):
-            image_url = None
+        for field in lines[3:]:
+            field = field.strip()
+            if not field:
+                continue
+            if field.isdigit() and len(field) == 17:
+                steam_id = field  # ✅ Valid SteamID64
+            elif field.startswith("http"):
+                image_url = field  # ✅ Valid image URL
+            else:
+                # ⚠️ Something provided but unrecognizable
+                steam_id_warning = f" ⚠️ (unrecognized field ignored: {field[:20]})"
+
+        # ✅ Build missing fields note
+        missing = []
+        if not game_name:
+            missing.append("no game name")
+        if not steam_id:
+            missing.append("no SteamID")
+        if not image_url:
+            missing.append("no banner")
+
+        missing_note = f" ⚠️ ({', '.join(missing)})" if missing else ""
 
         payload = {
             "email":     email,
@@ -4920,7 +4937,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
                 )
                 if r.status_code in (200, 201):
                     imported += 1
-                    label = f"{game_name or 'No game'}{steam_id_warning}"
+                    label = f"{game_name or 'Unknown Game'}{steam_id_warning}{missing_note}"
                     results.append(f"✅ <code>{html.escape(email)}</code> — {label}")
                 elif r.status_code == 409:
                     skipped += 1
@@ -4935,12 +4952,14 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
                 skipped += 1
                 results.append(f"❌ <code>{html.escape(email)}</code> — Error: {str(e)[:50]}")
 
-    # Summary
+    # ✅ Summary
     summary = (
-        f"🎮 <b>Upload Complete!</b>\n\n"
+        f"🎮 <b>Upload Complete!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
         f"✅ Imported: <b>{imported}</b>\n"
         f"⚠️ Skipped: <b>{skipped}</b>\n\n"
-        f"<b>Results:</b>\n" + "\n".join(results[:20])
+        f"<b>Results:</b>\n"
+        + "\n".join(results[:20])
     )
     if len(results) > 20:
         summary += f"\n<i>...and {len(results) - 20} more</i>"
@@ -4949,7 +4968,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         asyncio.create_task(broadcast_new_resources({"steam": imported}))
 
     await send_animated_translated(chat_id, summary, animation_url=STEAM_RESULT_GIF)
-
+    
 async def hide_bot_commands(chat_id: int):
     try:
         await tg_app.bot.set_my_commands(
