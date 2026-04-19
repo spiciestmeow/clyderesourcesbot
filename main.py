@@ -71,11 +71,11 @@ def get_early_access_hour(level: int) -> int | None:
     if level >= 10:
         return 0   # immediate — sees it as soon as uploaded
     elif level == 9:
-        return 12  # 12 PM
+        return 8  # 8 AM
     elif level == 8:
-        return 16  # 4 PM
+        return 12  # 12 PM
     elif level == 7:
-        return 18  # 6 PM
+        return 16  # 4 PM
     else:
         return None  # Lv1-6 = website only, no bot access
 
@@ -4356,6 +4356,103 @@ async def handle_key_feedback(chat_id: int, first_name: str, key_id: str, servic
         show_alert=True,
     )
 
+async def handle_steam_feedback(
+    chat_id: int,
+    first_name: str,
+    account_email: str,
+    game_name: str,
+    is_working: bool,
+    query
+):
+    status = "working" if is_working else "not_working"
+    emoji  = "✅" if is_working else "❌"
+    label  = "Working" if is_working else "Not Working"
+
+    # Save to key_reports
+    await _sb_post("key_reports", {
+        "chat_id":      chat_id,
+        "first_name":   first_name,
+        "key_id":       account_email,
+        "service_type": "steam",
+        "status":       status,
+    })
+
+    # ── Only notify owner — NO auto status change yet ──
+    owner_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "🔁 Restore to Available",
+                callback_data=f"owner_restore|{account_email}|{game_name[:25]}"
+            ),
+            InlineKeyboardButton(
+                "🗑 Mark Unavailable",
+                callback_data=f"owner_keep|{account_email}|{game_name[:25]}"
+            ),
+        ]
+    ]) if not is_working else None
+
+    await tg_app.bot.send_message(
+        OWNER_ID,
+        f"🎮 <b>Steam Account Feedback</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 <b>User:</b> {html.escape(str(first_name))} "
+        f"(<code>{chat_id}</code>)\n"
+        f"🎮 <b>Game:</b> {html.escape(game_name)}\n"
+        f"📧 <b>Email:</b> <code>{html.escape(account_email)}</code>\n\n"
+        f"Status: {emoji} <b>{label}</b>\n"
+        f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        + ("⚠️ <i>Account status unchanged — tap below to decide.</i>"
+           if not is_working else
+           "✅ <i>User confirmed this account is working.</i>"),
+        parse_mode="HTML",
+        reply_markup=owner_kb
+    )
+
+    # ── Show undo button to user (only for not working) ──
+    undo_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "↩️ Undo — I made a mistake!",
+                callback_data=f"stfb_undo|{account_email}|{game_name[:30]}"
+            )
+        ]
+    ]) if not is_working else None
+
+    await query.answer(
+        "✅ Thanks! Feedback sent." if is_working else
+        "❌ Reported! You have 30 seconds to undo.",
+        show_alert=True,
+    )
+
+    # ── Edit claim message to show feedback result ──
+    try:
+        current_caption = query.message.caption or query.message.text or ""
+        new_caption = (
+            f"{current_caption}\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{emoji} <b>You reported this as: {label}</b>\n"
+            + ("<i>Made a mistake? Tap Undo within 30 seconds.</i>"
+               if not is_working else
+               "<i>Thank you for your feedback! 🍃</i>")
+        )
+        await query.message.edit_caption(
+            caption=new_caption,
+            parse_mode="HTML",
+            reply_markup=undo_kb
+        )
+    except Exception:
+        pass
+
+    # ── Auto-remove undo button after 30 seconds ──
+    if not is_working:
+        async def remove_undo():
+            await asyncio.sleep(30)
+            try:
+                await query.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        asyncio.create_task(remove_undo())
+
 async def handle_view_reports(chat_id: int):
     reports = await _sb_get(
         "key_reports",
@@ -4998,7 +5095,19 @@ async def handle_callback(update: Update):
     data      = query.data
 
     # Feedback callbacks answer themselves with show_alert — skip early answer
-    FEEDBACK_PREFIXES = ("kfb_ok|", "kfb_bad|", "wkfb_ok|", "wkfb_bad|", "key_feedback_ok|", "key_feedback_bad|", "copy_ref_link|")
+    FEEDBACK_PREFIXES = (
+        "kfb_ok|",
+        "kfb_bad|",
+        "wkfb_ok|",
+        "wkfb_bad|",
+        "key_feedback_ok|",
+        "key_feedback_bad|",
+        "copy_ref_link|",
+        "stfb_ok|", "stfb_bad|",
+        "stfb_undo|",
+        "owner_restore|",
+        "owner_keep|",
+    )
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
 
@@ -5589,6 +5698,173 @@ async def handle_callback(update: Update):
             print(f"Steam page error: {e}")
         return
 
+    # ── STEAM FEEDBACK: Working ──
+    elif data.startswith("stfb_ok|"):
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, account_email, game_name = parts
+
+            # Spam guard
+            fb_key = f"steam_fb:{chat_id}:{account_email}"
+            if not await redis_client.set(fb_key, 1, ex=86400, nx=True):
+                await query.answer(
+                    "🌿 You already submitted feedback for this account!",
+                    show_alert=True
+                )
+                return
+
+            await handle_steam_feedback(
+                chat_id, first_name,
+                account_email, game_name,
+                is_working=True,
+                query=query
+            )
+
+    # ── STEAM FEEDBACK: Not Working ──
+    elif data.startswith("stfb_bad|"):
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, account_email, game_name = parts
+
+            # Spam guard
+            fb_key = f"steam_fb:{chat_id}:{account_email}"
+            if not await redis_client.set(fb_key, 1, ex=86400, nx=True):
+                await query.answer(
+                    "🌿 You already submitted feedback for this account!",
+                    show_alert=True
+                )
+                return
+
+            await handle_steam_feedback(
+                chat_id, first_name,
+                account_email, game_name,
+                is_working=False,
+                query=query
+            )
+
+    # ── STEAM FEEDBACK: User Undo ──
+    elif data.startswith("stfb_undo|"):
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, account_email, game_name = parts
+
+            # One undo only
+            undo_key = f"steam_undo:{chat_id}:{account_email}"
+            if not await redis_client.set(undo_key, 1, ex=60, nx=True):
+                await query.answer(
+                    "⚠️ You've already used your undo!",
+                    show_alert=True
+                )
+                return
+
+            # Reset feedback spam guard so they can resubmit
+            await redis_client.delete(f"steam_fb:{chat_id}:{account_email}")
+
+            # Notify owner of undo
+            await tg_app.bot.send_message(
+                OWNER_ID,
+                f"↩️ <b>Steam Feedback Undone</b>\n\n"
+                f"👤 {html.escape(first_name)} (<code>{chat_id}</code>)\n"
+                f"🎮 {html.escape(game_name)}\n"
+                f"📧 <code>{html.escape(account_email)}</code>\n\n"
+                f"<i>User undid their ❌ report — account status unchanged.</i>",
+                parse_mode="HTML"
+            )
+
+            await query.answer("↩️ Undone! No changes made.", show_alert=True)
+
+            # Restore original feedback buttons
+            try:
+                feedback_kb = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(
+                            "✅ Working",
+                            callback_data=f"stfb_ok|{account_email}|{game_name}"
+                        ),
+                        InlineKeyboardButton(
+                            "❌ Not Working",
+                            callback_data=f"stfb_bad|{account_email}|{game_name}"
+                        ),
+                    ]
+                ])
+                # Strip the "You reported this as" line from caption
+                current = query.message.caption or query.message.text or ""
+                clean_caption = current.split("\n\n━━━")[0]
+                await query.message.edit_caption(
+                    caption=clean_caption,
+                    parse_mode="HTML",
+                    reply_markup=feedback_kb
+                )
+            except Exception:
+                pass
+
+    # ── OWNER: Restore account to Available ──
+    elif data.startswith("owner_restore|"):
+        if chat_id != OWNER_ID:
+            await query.answer(
+                "🌿 Only the Caretaker can do this.",
+                show_alert=True
+            )
+            return
+
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, account_email, game_name = parts
+
+            await _sb_patch(
+                f"steamCredentials?email=eq.{account_email}",
+                {"status": "Available"}
+            )
+
+            try:
+                await query.message.edit_text(
+                    query.message.text +
+                    "\n\n✅ <b>Restored to Available by Caretaker.</b>",
+                    parse_mode="HTML",
+                    reply_markup=None
+                )
+            except Exception:
+                pass
+
+            await query.answer(
+                "✅ Account restored to Available!",
+                show_alert=True
+            )
+
+    # ── OWNER: Confirm mark as Unavailable ──
+    elif data.startswith("owner_keep|"):
+        if chat_id != OWNER_ID:
+            await query.answer(
+                "🌿 Only the Caretaker can do this.",
+                show_alert=True
+            )
+            return
+
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, account_email, game_name = parts
+
+            # ✅ Only NOW mark as unavailable
+            await _sb_patch(
+                f"steamCredentials?email=eq.{account_email}",
+                {"status": "Unavailable"}
+            )
+
+            try:
+                await query.message.edit_text(
+                    query.message.text +
+                    "\n\n🗑 <b>Marked Unavailable by Caretaker.</b>",
+                    parse_mode="HTML",
+                    reply_markup=None
+                )
+            except Exception:
+                pass
+
+            await query.answer(
+                "🗑 Account marked Unavailable.",
+                show_alert=False
+            )
+
     elif data.startswith("claim_steam|"):
         parts = data.split("|")
         if len(parts) < 3:
@@ -5706,19 +5982,42 @@ async def handle_callback(update: Update):
 
         image_url = acc.get("image_url", "").strip() if acc.get("image_url") else ""
 
+        # ── Feedback buttons ──
+        feedback_kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "✅ Working",
+                    callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
+                ),
+                InlineKeyboardButton(
+                    "❌ Not Working",
+                    callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
+                ),
+            ]
+        ])
+
         if image_url:
             try:
                 await tg_app.bot.send_photo(
                     chat_id=chat_id,
                     photo=image_url,
                     caption=caption,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=feedback_kb
                 )
             except Exception:
-                # Fallback to text if image fails to load
-                await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
+                await tg_app.bot.send_message(
+                    chat_id, caption,
+                    parse_mode="HTML",
+                    reply_markup=feedback_kb
+                )
         else:
-            await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
+            await tg_app.bot.send_message(
+                chat_id, caption,
+                parse_mode="HTML",
+                reply_markup=feedback_kb
+            )
+
         asyncio.create_task(send_temporary_message(
             chat_id,
             f"✨ <i>{html.escape(game_name)} successfully claimed!</i>",
