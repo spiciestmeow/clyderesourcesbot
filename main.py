@@ -6100,7 +6100,6 @@ async def handle_callback(update: Update):
             chat_id=chat_id,
             caption=caption_text,
             animation_url=animation_url,
-            parse_mode="HTML"
         )
 
         # Steam
