@@ -727,37 +727,36 @@ async def handle_flushcache(chat_id: int):
         )
 
 async def broadcast_new_resources(added_counts: dict):
-    """Pure notification-bar only (no message left in chat history)"""
     if not added_counts or not any(added_counts.values()):
         return
 
     service_emojis = {
-        "netflix": "🍿", "prime": "🎥", "windows": "🪟", "win": "🪟",
-        "office": "📑", "steam": "🎮",
+        "netflix": "🍿", "prime": "🎥", "windows": "🪟",
+        "win": "🪟", "office": "📑", "steam": "🎮",
     }
     service_names = DISPLAY_NAME_MAP.copy()
     service_names["steam"] = "Steam Account"
 
-    parts = []
+    # Build per-service lines so we can send targeted messages
+    service_lines = {}
     for svc, count in added_counts.items():
         if count > 0:
             emoji = service_emojis.get(svc.lower(), "✨")
-            name = service_names.get(svc.lower(), svc.title())
-            parts.append(f"{emoji} +{count} {name}{'s' if count > 1 else ''}")
+            name  = service_names.get(svc.lower(), svc.title())
+            service_lines[svc.lower()] = (
+                f"🌱 {emoji} +{count} {name}{'s' if count > 1 else ''} just added!"
+            )
 
-    if not parts:
+    if not service_lines:
         return
 
-    final_line = f"🌱 New resources just added! {' • '.join(parts)}"
-
-    # Get all users
+    # Fetch all users including their notif prefs
     all_users = []
-    limit = 1000
-    offset = 0
+    limit, offset = 1000, 0
     while True:
         batch = await _sb_get(
             "user_profiles",
-            select="chat_id",
+            select="chat_id,notif_netflix,notif_prime,notif_windows,notif_steam",
             limit=limit,
             offset=offset,
             order="chat_id.asc"
@@ -767,13 +766,39 @@ async def broadcast_new_resources(added_counts: dict):
             break
         offset += limit
 
-    print(f"📣 Pure notification-bar broadcast started → {len(all_users)} users")
+    print(f"📣 Targeted broadcast → {len(all_users)} users")
 
     sem = asyncio.Semaphore(20)
     success_count = 0
 
-    async def safe_notify(uid: int):
+    # Normalize col names for lookup
+    notif_col = {
+        "netflix": "notif_netflix",
+        "prime":   "notif_prime",
+        "windows": "notif_windows",
+        "win":     "notif_windows",
+        "steam":   "notif_steam",
+    }
+
+    async def safe_notify(user: dict):
         nonlocal success_count
+        uid = int(user.get("chat_id"))
+
+        # Build lines this user is subscribed to
+        user_lines = []
+        for svc, line in service_lines.items():
+            col = notif_col.get(svc)
+            # Default True if column missing; False only if explicitly False
+            subscribed = user.get(col, True)
+            if subscribed is not False:
+                user_lines.append(line)
+
+        if not user_lines:
+            print(f"   ⏭ Skipped (all opted out): {uid}")
+            return
+
+        final_line = "\n".join(user_lines)
+
         async with sem:
             try:
                 msg = await tg_app.bot.send_message(
@@ -784,31 +809,29 @@ async def broadcast_new_resources(added_counts: dict):
                     disable_web_page_preview=True,
                     protect_content=True
                 )
-                
-                # 🔥 UPDATED: 10 seconds duration → users have plenty of time to read
                 await asyncio.sleep(10.0 + random.uniform(0.0, 1.0))
-                
                 await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
                 success_count += 1
-                print(f"   ✓ Push only sent & cleaned: {uid}")
-                
+                print(f"   ✓ Sent & cleaned: {uid}")
             except Exception as e:
                 print(f"   ⚠️ Failed for {uid}: {e}")
 
-    await asyncio.gather(*(safe_notify(int(u.get("chat_id"))) for u in all_users), return_exceptions=True)
+    await asyncio.gather(
+        *(safe_notify(u) for u in all_users),
+        return_exceptions=True
+    )
 
-    # Owner summary
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
-            f"📣 <b>Notification Broadcast Sent</b>\n\n"
-            f"{final_line}\n\n"
-            f"👥 Reached <b>{len(all_users)}</b> wanderers\n"
-            f"✅ Push delivered to <b>{success_count}</b> users\n\n"
-            f"<i>Users see it only in notification bar — nothing in chat history.</i>",
+            f"📣 <b>Targeted Broadcast Complete</b>\n\n"
+            + "\n".join(service_lines.values())
+            + f"\n\n👥 Total users: <b>{len(all_users)}</b>\n"
+            f"✅ Delivered: <b>{success_count}</b>\n\n"
+            f"<i>Users who opted out of a service were skipped.</i>",
             parse_mode="HTML",
         )
-    except:
+    except Exception:
         pass
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1643,6 +1666,7 @@ async def get_bot_uptime() -> str:
         return f"{total_h}h {mins}m"
     except Exception as e:
         return f"Unknown ({e})"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # USER PROFILE
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1656,7 +1680,9 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "windows_views,office_views,netflix_views,netflix_reveals,"
                 "prime_views,prime_reveals,times_cleared,guidance_reads,"
                 "lore_reads,profile_views,"
-                "total_wheel_spins,wheel_xp_earned,legendary_spins, onboarding_completed"
+                "total_wheel_spins,wheel_xp_earned,legendary_spins,"
+                "onboarding_completed,"
+                "notif_netflix,notif_prime,notif_windows,notif_steam"
             ),
         },
     )
@@ -1999,6 +2025,48 @@ async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tu
         bonus, label = 10, "🌅 Daily Login Bonus!"
 
     return bonus, label
+
+# ──────────────────────────────────────────────
+# NOTIFICATION PREFERENCE HELPERS
+# ──────────────────────────────────────────────
+async def get_daily_bonus_notif(chat_id: int) -> bool:
+    """Daily bonus pref lives in Redis. Default = ON (missing key = ON)"""
+    val = await redis_client.get(f"notif:daily_bonus:{chat_id}")
+    return val != "0"
+
+async def toggle_daily_bonus_notif(chat_id: int) -> bool:
+    """Toggle and return NEW state"""
+    current = await get_daily_bonus_notif(chat_id)
+    new_state = not current
+    await redis_client.set(f"notif:daily_bonus:{chat_id}", "1" if new_state else "0")
+    return new_state
+
+async def toggle_service_notif(chat_id: int, service: str) -> bool:
+    """
+    Toggle notif_netflix / notif_prime / notif_windows / notif_steam
+    directly in user_profiles. Returns NEW state.
+    """
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return True
+
+    col_map = {
+        "netflix": "notif_netflix",
+        "prime":   "notif_prime",
+        "windows": "notif_windows",
+        "steam":   "notif_steam",
+    }
+    col = col_map.get(service)
+    if not col:
+        return True
+
+    current = profile.get(col, True)
+    new_state = not current
+    await _sb_patch(
+        f"user_profiles?chat_id=eq.{chat_id}",
+        {col: new_state}
+    )
+    return new_state
 
 # ══════════════════════════════════════════════════════════════════════════════
 # REFERRAL SYSTEM (new dedicated table)
@@ -2617,10 +2685,10 @@ async def send_loading(
     return msg
 
 async def _announce_daily_bonus(chat_id: int, bonus: int, label: str):
-    """
-    Announces daily bonus after a short delay so it doesn't race
-    with menu animations or other UI updates.
-    """
+    # ── Respect user preference (Redis) ──
+    if not await get_daily_bonus_notif(chat_id):
+        return
+
     await asyncio.sleep(2.5)
     await send_temporary_message(
         chat_id,
@@ -4453,17 +4521,68 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
     lang = await get_user_language(chat_id)
     flag, lang_name = SUPPORTED_LANGUAGES.get(lang, ("🇬🇧", "English"))
 
+    # Fetch all prefs in parallel
+    profile = await get_user_profile(chat_id)
+    daily_on = await get_daily_bonus_notif(chat_id)
+
+    # Read service prefs from profile (default True if missing)
+    netflix_on = profile.get("notif_netflix", True) if profile else True
+    prime_on   = profile.get("notif_prime",   True) if profile else True
+    windows_on = profile.get("notif_windows", True) if profile else True
+    steam_on   = profile.get("notif_steam",  False) if profile else False
+
+    def _icon(state: bool, on="🔔", off="🔕") -> str:
+        return on if state else off
+
     caption = (
         f"⚙️ <b>Settings</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"🌍 <b>Language:</b> {flag} {lang_name}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "<i>More settings coming soon...</i> 🍃"
+        "🔔 <b>Notifications</b>\n\n"
+        f"{_icon(daily_on)} <b>Daily Bonus Alert:</b> {'ON' if daily_on else 'OFF'}\n"
+        f"<i>Popup when your daily login XP is added.</i>\n\n"
+        f"{_icon(netflix_on, '🍿', '🔇')} <b>Netflix Alerts:</b> {'ON' if netflix_on else 'OFF'}\n"
+        f"{_icon(prime_on,   '🎥', '🔇')} <b>Prime Alerts:</b> {'ON' if prime_on else 'OFF'}\n"
+        f"{_icon(windows_on, '🪟', '🔇')} <b>Windows/Office Alerts:</b> {'ON' if windows_on else 'OFF'}\n"
+        f"{_icon(steam_on,   '🎮', '🔇')} <b>Steam Alerts:</b> {'ON' if steam_on else 'OFF'}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "<i>Tap any button to toggle it on or off.</i> 🍃"
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🌍 Change Language ({flag} {lang_name})", callback_data="set_language")],
-        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
+        [InlineKeyboardButton(
+            f"🌍 Change Language ({flag} {lang_name})",
+            callback_data="set_language"
+        )],
+        [InlineKeyboardButton(
+            f"{_icon(daily_on)} Daily Bonus Alert: {'ON' if daily_on else 'OFF'}",
+            callback_data="toggle_notif|daily_bonus"
+        )],
+        [
+            InlineKeyboardButton(
+                f"{_icon(netflix_on, '🍿', '🔇')} Netflix: {'ON' if netflix_on else 'OFF'}",
+                callback_data="toggle_notif|netflix"
+            ),
+            InlineKeyboardButton(
+                f"{_icon(prime_on, '🎥', '🔇')} Prime: {'ON' if prime_on else 'OFF'}",
+                callback_data="toggle_notif|prime"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                f"{_icon(windows_on, '🪟', '🔇')} Windows: {'ON' if windows_on else 'OFF'}",
+                callback_data="toggle_notif|windows"
+            ),
+            InlineKeyboardButton(
+                f"{_icon(steam_on, '🎮', '🔇')} Steam: {'ON' if steam_on else 'OFF'}",
+                callback_data="toggle_notif|steam"
+            ),
+        ],
+        [InlineKeyboardButton(
+            "🌲 Invite Friends & Earn 25 XP",
+            callback_data="invite_friends"
+        )],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
 
@@ -5330,6 +5449,40 @@ async def handle_callback(update: Update):
 
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
+        return
+    
+    elif data.startswith("toggle_notif|"):
+        notif_type = data.split("|")[1]
+
+        SUPABASE_SERVICES = ("netflix", "prime", "windows", "steam")
+        REDIS_SERVICES    = ("daily_bonus",)
+
+        if notif_type not in (*SUPABASE_SERVICES, *REDIS_SERVICES):
+            await query.answer("❌ Unknown setting.", show_alert=True)
+            return
+
+        if notif_type == "daily_bonus":
+            new_state = await toggle_daily_bonus_notif(chat_id)
+        else:
+            new_state = await toggle_service_notif(chat_id, notif_type)
+
+        label_map = {
+            "daily_bonus": "Daily Bonus Alert",
+            "netflix":     "Netflix Alerts",
+            "prime":       "Prime Alerts",
+            "windows":     "Windows/Office Alerts",
+            "steam":       "Steam Alerts",
+        }
+        icon   = "🔔" if new_state else "🔕"
+        status = "ON"  if new_state else "OFF"
+
+        await query.answer(
+            f"{icon} {label_map.get(notif_type, notif_type)} is now {status}",
+            show_alert=False
+        )
+
+        # Refresh settings to show updated buttons
+        await handle_settings_page(chat_id, first_name, query=None)
         return
 
     elif data.startswith("lang_set|"):
