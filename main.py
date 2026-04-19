@@ -4658,7 +4658,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             ])
 
         buttons.append([InlineKeyboardButton(
-            "❓ What is VAMT / Remaining?", callback_data="explain_vamt"
+            "❓ What is VAMT / Remaining?", callback_data=f"explain_vamt|{internal_cat}"
         )])
         buttons.append([InlineKeyboardButton(
             "⬅️ Back to Inventory", callback_data="check_vamt"
@@ -5650,9 +5650,9 @@ async def handle_callback(update: Update):
         await query.message.edit_text("❌ Reset cancelled. Your data is safe.")
 
     # ── VAMT HELP POPUP (shortened - max 200 chars)
-    elif data == "explain_vamt" or data == "winoffice_help":  # supports both names during transition
-        # Get which category we are showing (win or office)
-        pending_cat = await redis_client.get(f"winoffice_pending_cat:{chat_id}") or "win"
+    elif data.startswith("explain_vamt") or data == "winoffice_help":
+        parts = data.split("|")
+        pending_cat = parts[1] if len(parts) > 1 else (await redis_client.get(f"winoffice_pending_cat:{chat_id}") or "win")
         cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
         cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
 
