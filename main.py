@@ -3580,7 +3580,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"• Netflix Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
         f"• PrimeVideo Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
         f"• PrimeVideo Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
-        f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n"
+        f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n\n"
 
         "🎰 <b>Wheel of Whispers</b>\n\n"
         f"• Total Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
