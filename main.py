@@ -3498,7 +3498,11 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         "📊 <b>Activity</b>\n\n"
         f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
         f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n"
-        f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n\n"
+        f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n"
+        f"• Profile Views: <b>{profile.get('profile_views', 0)}</b>\n"
+        f"• Guidance Read: <b>{profile.get('guidance_reads', 0)}</b>\n"
+        f"• Lore Read: <b>{profile.get('lore_reads', 0)}</b>\n"
+        f"• Times Cleared: <b>{profile.get('times_cleared', 0)}</b>\n\n"
 
         "🎮 <b>Resource Usage</b>\n\n"
         f"• Windows Keys Viewed: <b>{profile.get('windows_views', 0)}</b>\n"
@@ -3507,7 +3511,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"• Netflix Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
         f"• PrimeVideo Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
         f"• PrimeVideo Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
-        f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n\n"
+        f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n"
 
         "🎰 <b>Wheel of Whispers</b>\n\n"
         f"• Total Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
@@ -4448,36 +4452,18 @@ async def handle_steam_feedback(
 async def handle_settings_page(chat_id: int, first_name: str, query=None):
     lang = await get_user_language(chat_id)
     flag, lang_name = SUPPORTED_LANGUAGES.get(lang, ("🇬🇧", "English"))
-    link = await get_referral_link(chat_id)
-    profile = await get_user_profile(chat_id)
-    referral_count = profile.get("referral_count", 0) if profile else 0
 
     caption = (
         f"⚙️ <b>Settings</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-
         f"🌍 <b>Language:</b> {flag} {lang_name}\n\n"
-
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"🌲 <b>Your Referral Link</b>\n\n"
-        f"<code>{link}</code>\n\n"
-        f"👥 Friends referred: <b>{referral_count}</b>\n"
-        f"✨ You earn <b>+{REFERRAL_XP} XP</b> per referral\n"
-        f"🎁 Friend gets <b>+{NEW_USER_WELCOME_BONUS_IF_REFERRED} XP</b> welcome bonus\n\n"
-
         "━━━━━━━━━━━━━━━━━━\n"
         "<i>More settings coming soon...</i> 🍃"
     )
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"🌍 Change Language ({flag} {lang_name})", callback_data="set_language")],
-        [
-            InlineKeyboardButton(
-                "🌲 Share Referral Link",
-                url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!"
-            )
-        ],
-        [InlineKeyboardButton("📋 Copy Referral Link", callback_data=f"copy_ref_link|{chat_id}")],
+        [InlineKeyboardButton("🌲 Invite Friends & Earn 25 XP", callback_data="invite_friends")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
 
