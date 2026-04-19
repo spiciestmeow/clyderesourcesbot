@@ -3733,7 +3733,7 @@ async def handle_wheel_leaderboard(chat_id: int):
         **{
             "select": "chat_id,first_name,total_wheel_spins,wheel_xp_earned,legendary_spins,level",
             "total_wheel_spins": "gt.0",
-            "order": "total_wheel_spins.desc",
+            "order": "wheel_xp_earned.desc",
             "limit": 10
         }
     ) or []
@@ -3773,12 +3773,11 @@ async def handle_wheel_leaderboard(chat_id: int):
     if profile and profile.get("total_wheel_spins", 0) > 0:
         user_spins = profile.get("total_wheel_spins", 0)
 
-        # Count how many users have strictly more spins → that + 1 = your rank
         rank_data = await _sb_get(
             "user_profiles",
             **{
                 "select": "chat_id",
-                "total_wheel_spins": f"gt.{user_spins}",
+                "wheel_xp_earned": f"gt.{profile.get('wheel_xp_earned', 0)}",
             }
         ) or []
         user_rank = len(rank_data) + 1
@@ -3794,9 +3793,9 @@ async def handle_wheel_leaderboard(chat_id: int):
             display_name = "The Forest Warden" if chat_id == OWNER_ID else "You"
             text += (
                 f"📍 <b>{display_name} — Rank #{user_rank}</b>\n"
-                f"   🌿 {user_spins} spins • "
+                f"   ✨ {profile.get('wheel_xp_earned', 0):,} Wheel XP • "
+                f"🌿 {user_spins} spins • "
                 f"🔥 {profile.get('legendary_spins', 0)} Legendaries\n"
-                f"   ✨ {profile.get('wheel_xp_earned', 0):,} Wheel XP\n"
             )
         else:
             text += f"📍 <b>You are ranked #{user_rank} in the forest!</b>\n"
@@ -3920,14 +3919,51 @@ async def handle_updates(chat_id: int):
     if not data:
         await tg_app.bot.send_message(chat_id, "🌱 No patch notes yet.")
         return
-    
-    text = "🌿 <b>Patch Notes — Recent Updates</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-    for i, u in enumerate(data, 1):
-        prefix = f"✨ <b>{i}. {u.get('date', '')}</b>\n" if len(data) > 1 else f"✨ <b>{u.get('date', '')}</b>\n"
-        text += prefix + f"<b>{u.get('title', '')}</b>\n\n{u.get('content', '').strip()}\n\n━━━━━━━━━━━━━━━━━━\n\n"
-    text += "🍃 <i>May these updates bring more magic to your journey.</i> ✨"
 
-    await tg_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
+    text = "🌿 <b>Patch Notes — Recent Updates</b>\n"
+    text += "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
+
+    for i, u in enumerate(data, 1):
+        # ── Entry header ──
+        if len(data) > 1:
+            text += f"✨ <b>{i}. {u.get('date', '')}</b>\n"
+        else:
+            text += f"✨ <b>{u.get('date', '')}</b>\n"
+
+        text += f"<b>📌 {u.get('title', '')}</b>\n"
+        text += "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
+
+        # ── Content: render each line individually ──
+        content_lines = u.get('content', '').strip().split('\n')
+        for line in content_lines:
+            line = line.strip()
+            if not line:
+                text += "\n"
+            elif line.startswith("━"):
+                # Dividers inside content → keep as-is
+                text += f"{line}\n"
+            elif line.startswith("🔹") or line.startswith("•") or line.startswith("-"):
+                # Bullet lines → indent slightly
+                text += f"  {line}\n"
+            elif line.startswith("⚠️") or line.startswith("Note:"):
+                # Warnings → italic
+                text += f"<i>  {line}</i>\n"
+            elif any(line.startswith(e) for e in ["🌍", "🎮", "🌿", "✨", "🎉", "🔧", "🌟"]):
+                # Section headers inside content → bold
+                text += f"\n<b>{line}</b>\n"
+            else:
+                text += f"{line}\n"
+
+        text += "\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
+
+    text += "<i>🍃 May these updates bring more magic to your journey.</i> ✨"
+
+    await tg_app.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENTS
@@ -6060,7 +6096,7 @@ async def handle_callback(update: Update):
             await tg_app.bot.send_animation(
                 chat_id=chat_id, animation=ABOUT_GIF,
                 caption=(
-                    "📜 <b>Add New Patch Note</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "📜 <b>Add New Patch Note</b>\n━━━━━━━━━━━━━━━━━━\n"
                     "Reply with:\n\n"
                     "<code>/addupdate\nYour Title Here\nYour full description here...</code>"
                 ),
