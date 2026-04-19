@@ -3104,7 +3104,17 @@ async def show_steam_accounts(
         game = html.escape(acc.get("game_name") or "Unknown Game")
         email = acc.get("email", "")
         release_type = acc.get("release_type", "daily")
-        type_badge = "🌟" if release_type == "sunday_noon" else "📅"
+
+        # Dynamic date from release_at
+        release_date_str = ""
+        if acc.get("release_at"):
+            try:
+                release_dt = datetime.fromisoformat(acc["release_at"].replace("Z", "+00:00")).astimezone(manila)
+                release_date_str = release_dt.strftime("%b %d")
+            except Exception:
+                release_date_str = ""
+
+        type_badge = f"🌟 {release_date_str}" if release_type == "sunday_noon" else f"📅 {release_date_str}"
 
         report += (
             f"🎮 <b>{game}</b> {type_badge}\n"
