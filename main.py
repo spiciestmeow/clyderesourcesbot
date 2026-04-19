@@ -4632,7 +4632,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             ]
 
         if not filtered:
-            await query.message.edit_caption(
+            await loading.edit_caption(
                 caption=f"🍃 No {cat_label} keys available right now. Check back later!",
                 parse_mode="HTML",
                 reply_markup=kb_back_inventory(),
@@ -4680,7 +4680,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             "⬅️ Back to Inventory", callback_data="check_vamt"
         )])
 
-        await query.message.edit_caption(
+        await loading.edit_caption(
             caption=report,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(buttons),
