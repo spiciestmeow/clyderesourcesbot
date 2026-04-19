@@ -22,6 +22,7 @@ from fastapi.responses import PlainTextResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from deep_translator import GoogleTranslator
+from gifs import *
 
 # ──────────────────────────────────────────────
 # AUTO TRANSLATION SYSTEM — English + Tagalog + Bisaya (using deep-translator)
@@ -299,35 +300,6 @@ return current
 
 limiter = Limiter(key_func=get_remote_address)
 
-# ──────────────────────────────────────────────
-# GIFS
-# ──────────────────────────────────────────────
-WELCOME_GIF   = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWZzOHRrYjRycTI4d2Z2eXR6bWNiMm1yYXVqbzVrb3NmczB2ZHdmayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wsKqNQmHYZfs4/giphy.gif"
-MENU_GIF      = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
-INVENTORY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM1OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
-ABOUT_GIF     = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTFqMHB0ODVxdmFoMHl3dzZyM2swanlicmRibGk1bjdpcjFsdnl1biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/x5HlLDaLMZNVS/giphy.gif"
-HELP_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWxybTY5bXA0ejg1cGxxNTY3d3IyY3A4NGtkZ2gyOXkxcnlwZzN2NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/J4FsxFgZgN2HS/giphy.gif"
-LOADING_GIF   = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
-MYID_GIF      = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ29vdXY3cW1uOWkyajNkcHN2bXM1OTJ3dDNzejBzZnViNnRobDE2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ym6PmLonLGfv2/giphy.gif"
-CLEAN_GIF     = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXkxbmR2bjF1bXdpd2Y1eDI5OWgzcmNxeGRnOHVqdmQ1bHN2ZTlxOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/VGACXbkf0AeGs/giphy.gif"
-GUIDANCE_GIF  = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
-HELLO_GIF     = "https://i.pinimg.com/originals/6a/a3/7f/6aa37fd0017bdb291ca8cbdd8b0ede52.gif"
-CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef75e9aeb09.gif"
-INVITE_GIF = "https://images.gr-assets.com/hostedimages/1489696457ra/22241153.gif"
-NEW_UPLOAD_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExejlsMjBxanUwOWhzYXMxZjZkM29yeHY0Mmt3bHY5OGF2bnhleGw5MCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Lo6BKNnNjKFy4A0Gc8/giphy.gif"
-MORNING_GIF   = "https://i.gifer.com/HYel.gif"
-AFTERNOON_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
-EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540.mp4"
-WHEEL_WHISPERS_GIF = "https://c.tenor.com/9Bqw7W6o3m4AAAAC/tenor.gif"
-RESOURCES_GIF = "https://c.tenor.com/Ypm9KWeMnGwAAAAd/tenor.gif"
-WHEEL_BOARD_GIF = "https://i.makeagif.com/media/2-08-2018/g4YGQ_.mp4"
-ONBOARDING_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/tumblr_oui1cvflgE1r9i2iuo1_r7_540.gif"
-
-STEAM_GIF = "https://dolphinhorizongames.com/GIFS/STEAM%20Gif.gif"
-STEAM_RESULT_GIF = "https://64.media.tumblr.com/354a0b3a739d3675f4592b202d083df2/tumblr_pjzi86ixQo1rxlf0fo1_1280.gif"
-
-WINOS_GIF = "https://cdn.dribbble.com/userupload/23828782/file/original-8761d5f0eef9c629751c4c95458cfabe.gif"
-OFFICE_GIF = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExbDdzZ3psOTI4MXV5cWhwOTc3bjdjZHZnZWUwejc2OWR0czg3MnN1dyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/e8GyS582vsduh7lSLP/giphy.gif"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SINGLETONS  (initialised in lifespan, never re-created)
@@ -6106,8 +6078,29 @@ async def handle_callback(update: Update):
                 if action_xp:
                     asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-        await query.message.edit_caption(
-            caption=f"✨ <i>Searching the glade for {category.upper()}...</i>", parse_mode="HTML"
+        # ── Choose correct GIF + caption using send_animated_translated ──
+        if category in ("win", "windows"):
+            animation_url = WINOS_GIF
+            caption_text = "🪟 <i>Opening the Windows key scrolls...</i>"
+        elif category == "office":
+            animation_url = OFFICE_GIF
+            caption_text = "📑 <i>Opening the Office key scrolls...</i>"
+        else:
+            animation_url = LOADING_GIF
+            caption_text = f"✨ <i>Searching the glade for {category.upper()}...</i>"
+
+        # Delete old inventory message first (clean UX)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        # Send beautiful animated message using your existing function
+        loading = await send_animated_translated(
+            chat_id=chat_id,
+            caption=caption_text,
+            animation_url=animation_url,
+            parse_mode="HTML"
         )
 
         # Steam
@@ -6132,7 +6125,7 @@ async def handle_callback(update: Update):
                     cat_label = "Windows" if category in ("win", "windows") else "Office"
                     cat_emoji = "🪟" if category in ("win", "windows") else "📑"
             
-                    await query.message.edit_caption(
+                    await loading.edit_caption(
                         caption=(
                             f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
                             "━━━━━━━━━━━━━━━━━━\n\n"
