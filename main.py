@@ -1853,6 +1853,13 @@ def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> 
     bar     = "🟩" * filled + "⬜" * (length - filled)
     return f"[{bar}] {int(pct * 100)}%"
 
+def create_daily_progress_bar(used: int, max_allowed: int, length: int = 10) -> str:
+    """Visual bar for daily limits (Netflix, Prime, Windows, Office)"""
+    if max_allowed <= 0:
+        return "🟩" * length
+    pct = min(used / max_allowed, 1.0)
+    filled = int(pct * length)
+    return "🟩" * filled + "⬜" * (length - filled)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ANTI-ABUSE  (Redis-backed)
@@ -3527,6 +3534,24 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     streak = await calculate_streak(chat_id)
 
+    # ── NEW: Daily limits progress
+    rem = await get_remaining_reveals_and_views(chat_id)
+    level_for_calc = profile.get("level", 1)
+
+    daily_section = (
+        "📊 <b>Today's Forest Limits</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🍿 Netflix Reveals: <b>{rem['netflix']}</b> left\n"
+        f"{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'netflix') - rem['netflix'], get_max_daily_reveals(level_for_calc, 'netflix'))}\n\n"
+        f"🎥 Prime Reveals: <b>{rem['prime']}</b> left\n"
+        f"{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'prime') - rem['prime'], get_max_daily_reveals(level_for_calc, 'prime'))}\n\n"
+        f"🪟 Windows Keys: <b>{rem['windows']}</b> left\n"
+        f"{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'windows') - rem['windows'], get_max_daily_views(level_for_calc, 'windows'))}\n\n"
+        f"📑 Office Keys: <b>{rem['office']}</b> left\n"
+        f"{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'office') - rem['office'], get_max_daily_views(level_for_calc, 'office'))}\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+    )
+
     joined_date = "Unknown"
     if profile.get("created_at"):
         try:
@@ -3562,8 +3587,8 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
         f"{create_progress_bar(xp, xp_required_next, 12)}\n"
         f"📈 To next level: <b>{max(0, xp_required_next - xp):,} XP</b>\n\n"
-
         "━━━━━━━━━━━━━━━━━━\n"
+        f"{daily_section}"
         "📊 <b>Activity</b>\n\n"
         f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
         f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n"
@@ -6926,6 +6951,20 @@ async def process_update(update_data: dict):
                     pass
 
         await send_initial_welcome(chat_id, first_name)
+
+    elif text.startswith("/start"):
+        # ── SOFT RATE LIMIT ON /START
+        start_key = f"start_cd:{chat_id}"
+        if await redis_client.exists(start_key):
+            await tg_app.bot.send_message(
+                chat_id,
+                "🌿 <b>Slow down, wanderer!</b>\n\n"
+                "The ancient trees are still greeting you...\n"
+                "Please wait a moment before trying again 🍃",
+                parse_mode="HTML"
+            )
+            return
+        await redis_client.setex(start_key, 10, 1)   # 10-second cooldown
 
     elif text.startswith("/uploadkeys"):
         await handle_uploadkeys_command(chat_id)
