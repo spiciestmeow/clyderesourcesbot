@@ -15,6 +15,7 @@ CARETAKER_GIF = "https://i.pinimg.com/originals/86/d1/25/86d1259e1a62106509575ef
 INVITE_GIF = "https://images.gr-assets.com/hostedimages/1489696457ra/22241153.gif"
 NEW_UPLOAD_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExejlsMjBxanUwOWhzYXMxZjZkM29yeHY0Mmt3bHY5OGF2bnhleGw5MCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Lo6BKNnNjKFy4A0Gc8/giphy.gif"
 MORNING_GIF   = "https://i.gifer.com/HYel.gif"
+MIDNIGHT_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExcHY2Z2hmZ3psMWk1bjM3NHk0czh3aWx0OHlsNndqeDZqejFicjVtZCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/b29IZK1dP4aWs/giphy.gif"
 AFTERNOON_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N2twOHhmNWRsd3N6eWlyZ3N5M29pdmxsdDMzOHVscCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/cBKMTJGAE8y2Y/giphy.gif"
 EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540.mp4"
 WHEEL_WHISPERS_GIF = "https://c.tenor.com/9Bqw7W6o3m4AAAAC/tenor.gif"
