@@ -3122,7 +3122,7 @@ async def show_steam_accounts(
             buttons.append([
                 InlineKeyboardButton(
                     f"🔒 {game[:30]} — Limit Reached",
-                    callback_data="noop"
+                    callback_data="steam_claimed_limit"
                 )
             ])
 
@@ -3141,11 +3141,17 @@ async def show_steam_accounts(
         "<i>Shared accounts — be respectful.</i> 🍃"
     )
 
-    await query.message.edit_caption(
-        caption=report,
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+    try:
+        await query.message.edit_caption(
+            caption=report,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+    except Exception as e:
+        if "not modified" in str(e).lower():
+            pass
+        else:
+            raise
 
 # ══════════════════════════════════════════════════════════════════════════════
 # INVENTORY — PAGINATED COOKIES
@@ -5694,6 +5700,15 @@ async def handle_callback(update: Update):
     elif data == "invite_friends":
         await handle_invite(chat_id, first_name)
         return   # important
+
+    elif data == "steam_claimed_limit":
+        daily_limit = STEAM_DAILY_LIMITS.get(min(profile.get("level", 1), 10), 1)
+        await query.answer(
+            f"❌ You've already claimed your {daily_limit} account(s) for today!\n"
+            "Come back tomorrow 🍃",
+            show_alert=True
+        )
+        return
     
     # Add these new elif blocks anywhere in handle_callback:
     elif data.startswith("steam_page_"):
@@ -6013,6 +6028,7 @@ async def handle_callback(update: Update):
                     reply_markup=feedback_kb
                 )
             except Exception:
+                print(f"⚠️ Photo failed for {account_email}: {e} | URL: {image_url[:60]}")
                 await tg_app.bot.send_message(
                     chat_id, caption,
                     parse_mode="HTML",
