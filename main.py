@@ -4537,8 +4537,8 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
 
     caption = (
         f"⚙️ <b>Settings</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🌍 <b>Language:</b> {flag} {lang_name}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🌍 <b>Language:</b> {flag} {lang_name}\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "🔔 <b>Notifications</b>\n\n"
         f"{_icon(daily_on)} <b>Daily Bonus Alert:</b> {'ON' if daily_on else 'OFF'}\n"
@@ -4547,7 +4547,7 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
         f"{_icon(prime_on,   '🎥', '🔇')} <b>Prime Alerts:</b> {'ON' if prime_on else 'OFF'}\n"
         f"{_icon(windows_on, '🪟', '🔇')} <b>Windows/Office Alerts:</b> {'ON' if windows_on else 'OFF'}\n"
         f"{_icon(steam_on,   '🎮', '🔇')} <b>Steam Alerts:</b> {'ON' if steam_on else 'OFF'}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
+        "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
         "<i>Tap any button to toggle it on or off.</i> 🍃"
     )
 
