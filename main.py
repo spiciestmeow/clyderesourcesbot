@@ -777,6 +777,7 @@ async def broadcast_new_resources(added_counts: dict):
         "prime":   "notif_prime",
         "windows": "notif_windows",
         "win":     "notif_windows",
+        "office":  "notif_windows",
         "steam":   "notif_steam",
     }
 
@@ -5473,16 +5474,49 @@ async def handle_callback(update: Update):
             "windows":     "Windows/Office Alerts",
             "steam":       "Steam Alerts",
         }
-        icon   = "🔔" if new_state else "🔕"
-        status = "ON"  if new_state else "OFF"
 
-        await query.answer(
-            f"{icon} {label_map.get(notif_type, notif_type)} is now {status}",
-            show_alert=False
-        )
+        context_map = {
+            "daily_bonus": (
+                "You'll see a popup when your daily XP is added.",
+                "No popup when daily XP is added. XP still counts!"
+            ),
+            "netflix": (
+                "You'll be notified when new Netflix cookies drop.",
+                "You won't receive Netflix upload notifications."
+            ),
+            "prime": (
+                "You'll be notified when new Prime cookies drop.",
+                "You won't receive Prime upload notifications."
+            ),
+            "windows": (
+                "You'll be notified when new Windows/Office keys drop.",
+                "You won't receive Windows/Office upload notifications."
+            ),
+            "steam": (
+                "You'll be notified when Steam accounts are uploaded.",
+                "You won't receive Steam upload notifications."
+            ),
+        }
 
-        # Refresh settings to show updated buttons
-        await handle_settings_page(chat_id, first_name, query=None)
+        icon    = "🔔" if new_state else "🔕"
+        status  = "ON"  if new_state else "OFF"
+        label   = label_map.get(notif_type, notif_type)
+        context_on, context_off = context_map.get(notif_type, ("", ""))
+        context = context_on if new_state else context_off
+
+        # ✅ Answer query first — stops spinner immediately
+        await query.answer(f"{icon} {label} is now {status}", show_alert=False)
+
+        # 3-second confirmation message
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            f"{icon} <b>{label} is now {status}</b>\n\n"
+            f"<i>{context}</i> 🍃",
+            duration=3
+        ))
+
+        # ✅ Pass query so old settings page is deleted before new one appears
+        await handle_settings_page(chat_id, first_name, query=query)
         return
 
     elif data.startswith("lang_set|"):
