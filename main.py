@@ -266,6 +266,7 @@ COOLDOWN_SECONDS = {
     "guidance":      30,
     "lore":          30,
     "general":        5,
+    "steam_claim": 86400,
 }
 
 EVENT_BONUS_TIERS = {
@@ -2136,6 +2137,7 @@ _XP_TABLE = {
     "wheel_spin": 0,
     "onboarding_complete": 15,
     "onboarding_skip": 0,
+    "steam_claim": 0,
 }
 
 _STAT_FIELD = {
@@ -2149,6 +2151,7 @@ _STAT_FIELD = {
     "guidance":       "guidance_reads",
     "lore":           "lore_reads",
     "profile":        "profile_views",
+    "steam_claim": "steam_claims_count",
 }
 
 async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_override: int = None) -> tuple[int, int]:
@@ -3539,6 +3542,12 @@ async def handle_stats(chat_id: int, first_name: str):
         f"• PrimeVideo Keys Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
         f"• Netflix Cookies Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
         f"• PrimeVideo Cookies Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
+        f"• Steam Accounts Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n"
+        f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n"
+        f"\n🎰 <b>Wheel Stats:</b>\n"
+        f"• Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
+        f"• Legendaries: <b>{profile.get('legendary_spins', 0)}</b>\n"
+        f"• Wheel XP Earned: <b>{profile.get('wheel_xp_earned', 0):,}</b>\n"
         f"• Times Cleared: <b>{profile.get('times_cleared', 0)}</b>\n"
         f"• Guidance Read: <b>{profile.get('guidance_reads', 0)}</b>\n"
         f"• Lore Read: <b>{profile.get('lore_reads', 0)}</b>\n\n"
@@ -6056,6 +6065,18 @@ async def handle_callback(update: Update):
             f"✨ <i>{html.escape(game_name)} successfully claimed!</i>",
             duration=3
         ))
+
+        # ── Award XP for successful Steam claim ──
+        if tier == "legend":
+            steam_claim_xp = 15
+        elif release_type == "sunday_noon":
+            steam_claim_xp = 30
+        else:
+            steam_claim_xp = 20
+
+        action_xp, _ = await add_xp(chat_id, first_name, "steam_claim", xp_override=steam_claim_xp)
+        if action_xp:
+            asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
         # Refresh the list
         await show_steam_accounts(chat_id, first_name, level, query, page=page)
