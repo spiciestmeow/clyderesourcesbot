@@ -3244,7 +3244,6 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
             [InlineKeyboardButton("🎮 Back to Steam Accounts", callback_data="vamt_filter_steam")],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
         ])
-
         if query and query.message:
             await query.message.edit_caption(text, parse_mode="HTML", reply_markup=keyboard)
         else:
@@ -3252,13 +3251,10 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         return
 
     total = len(claims)
-
     claims_today = await get_steam_claims_today(chat_id)
     level = (await get_user_profile(chat_id) or {}).get("level", 1)
     daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 1)
 
-    lines.insert(3, f"🎯 Today: <b>{claims_today}</b> / <b>{daily_limit}</b> claimed\n")
-    
     total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
     start = page * ITEMS_PER_PAGE
     page_claims = claims[start:start + ITEMS_PER_PAGE]
@@ -3267,7 +3263,8 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
     lines = [
         "📜 <b>Your Claimed Treasures</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"🌿 You have claimed <b>{total}</b> account(s) so far\n",
+        f"🌿 You have claimed <b>{total}</b> account(s) so far",
+        f"🎯 Today: <b>{claims_today}</b> / <b>{daily_limit}</b> claimed",
         f"📄 Page {page + 1} of {total_pages}\n\n"
     ]
 
@@ -3286,7 +3283,7 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 
     text = "\n".join(lines)
 
-    # Navigation
+    # Navigation buttons
     buttons = []
     nav = []
     if page > 0:
@@ -3307,7 +3304,7 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         try:
             await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
             return
-        except:
+        except Exception:
             pass
 
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
