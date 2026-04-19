@@ -5107,7 +5107,6 @@ async def handle_callback(update: Update):
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
     data      = query.data
 
-    # Feedback callbacks answer themselves with show_alert — skip early answer
     FEEDBACK_PREFIXES = (
         "kfb_ok|",
         "kfb_bad|",
@@ -5120,6 +5119,7 @@ async def handle_callback(update: Update):
         "stfb_undo|",
         "owner_restore|",
         "owner_keep|",
+        "steam_claimed_limit",
     )
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
