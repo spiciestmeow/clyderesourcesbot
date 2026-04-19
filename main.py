@@ -23,7 +23,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from deep_translator import GoogleTranslator
 from gifs import *
-
 # ──────────────────────────────────────────────
 # AUTO TRANSLATION SYSTEM — English + Tagalog + Bisaya (using deep-translator)
 # ──────────────────────────────────────────────
@@ -6078,28 +6077,8 @@ async def handle_callback(update: Update):
                 if action_xp:
                     asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-        # ── Choose correct GIF + caption using send_animated_translated ──
-        if category in ("win", "windows"):
-            animation_url = WINOS_GIF
-            caption_text = "🪟 <i>Opening the Windows key scrolls...</i>"
-        elif category == "office":
-            animation_url = OFFICE_GIF
-            caption_text = "📑 <i>Opening the Office key scrolls...</i>"
-        else:
-            animation_url = LOADING_GIF
-            caption_text = f"✨ <i>Searching the glade for {category.upper()}...</i>"
-
-        # Delete old inventory message first (clean UX)
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-        # Send beautiful animated message using your existing function
-        loading = await send_animated_translated(
-            chat_id=chat_id,
-            caption=caption_text,
-            animation_url=animation_url,
+        await query.message.edit_caption(
+            caption=f"✨ <i>Searching the glade for {category.upper()}...</i>", parse_mode="HTML"
         )
 
         # Steam
@@ -6124,7 +6103,7 @@ async def handle_callback(update: Update):
                     cat_label = "Windows" if category in ("win", "windows") else "Office"
                     cat_emoji = "🪟" if category in ("win", "windows") else "📑"
             
-                    await loading.edit_caption(
+                    await query.message.edit_caption(
                         caption=(
                             f"{cat_emoji} <b>Before you open the {cat_label} scrolls...</b>\n\n"
                             "━━━━━━━━━━━━━━━━━━\n\n"
