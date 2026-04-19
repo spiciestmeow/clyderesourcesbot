@@ -2974,6 +2974,7 @@ async def show_steam_accounts(
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🌐 Visit Website", url="https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed")],
+                [InlineKeyboardButton("📋 My Claims", callback_data="my_steam_claims")],
                 [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
             ])
         )
@@ -3197,6 +3198,7 @@ async def show_steam_accounts(
         nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"steam_page_{page+1}"))
     if nav:
         buttons.append(nav)
+    buttons.append([InlineKeyboardButton("📋 My Claims", callback_data="my_steam_claims")])
     buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
 
     report += (
@@ -3216,6 +3218,99 @@ async def show_steam_accounts(
             pass
         else:
             raise
+
+async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: int = 0):
+    """📜 My Claims — Shows all Steam accounts the user has ever claimed"""
+    ITEMS_PER_PAGE = 8
+
+    claims = await _sb_get(
+        "steam_claims",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "select": "game_name,account_email,claimed_at",
+            "order": "claimed_at.desc",
+            "limit": 500,
+        }
+    ) or []
+
+    if not claims:
+        text = (
+            "📜 <b>Your Claimed Treasures</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌫️ You haven't claimed any Steam accounts yet.\n\n"
+            "Go explore the Steam section and bring some games home! 🎮🍃"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎮 Back to Steam Accounts", callback_data="vamt_filter_steam")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+        ])
+
+        if query and query.message:
+            await query.message.edit_caption(text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
+        return
+
+    total = len(claims)
+
+    claims_today = await get_steam_claims_today(chat_id)
+    level = (await get_user_profile(chat_id) or {}).get("level", 1)
+    daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 1)
+
+    lines.insert(3, f"🎯 Today: <b>{claims_today}</b> / <b>{daily_limit}</b> claimed\n")
+    
+    total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+    start = page * ITEMS_PER_PAGE
+    page_claims = claims[start:start + ITEMS_PER_PAGE]
+
+    manila = pytz.timezone("Asia/Manila")
+    lines = [
+        "📜 <b>Your Claimed Treasures</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🌿 You have claimed <b>{total}</b> account(s) so far\n",
+        f"📄 Page {page + 1} of {total_pages}\n\n"
+    ]
+
+    for i, c in enumerate(page_claims, start + 1):
+        game = html.escape(c.get("game_name", "Unknown Game"))
+        email = html.escape(c.get("account_email", "—"))
+        try:
+            dt = datetime.fromisoformat(c["claimed_at"].replace("Z", "+00:00"))
+            time_str = dt.astimezone(manila).strftime("%b %d, %Y • %I:%M %p")
+        except:
+            time_str = "—"
+
+        lines.append(f"{i}. 🎮 <b>{game}</b>")
+        lines.append(f"   └ 📧 <tg-spoiler>{email}</tg-spoiler>")
+        lines.append(f"   └ 📅 {time_str}\n")
+
+    text = "\n".join(lines)
+
+    # Navigation
+    buttons = []
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"myclaims_page_{page-1}"))
+    if start + ITEMS_PER_PAGE < total:
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"myclaims_page_{page+1}"))
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([
+        InlineKeyboardButton("🎮 Back to Steam Accounts", callback_data="vamt_filter_steam"),
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+    ])
+
+    markup = InlineKeyboardMarkup(buttons)
+
+    if query and query.message:
+        try:
+            await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
+            return
+        except:
+            pass
+
+    await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # INVENTORY — PAGINATED COOKIES
@@ -5988,6 +6083,20 @@ async def handle_callback(update: Update):
             await show_steam_accounts(chat_id, first_name, level, query, page=page)
         except Exception as e:
             print(f"Steam page error: {e}")
+        return
+    
+    # ── MY STEAM CLAIMS ──
+    elif data == "my_steam_claims":
+        await show_my_steam_claims(chat_id, first_name, query, page=0)
+        return
+
+    elif data.startswith("myclaims_page_"):
+        try:
+            page = int(data.split("_")[2])
+            await show_my_steam_claims(chat_id, first_name, query, page=page)
+        except Exception as e:
+            print(f"My claims page error: {e}")
+            await query.answer("Error loading page", show_alert=True)
         return
 
     # ── STEAM FEEDBACK: Working ──
