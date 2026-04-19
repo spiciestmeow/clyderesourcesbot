@@ -36,6 +36,13 @@ async def get_user_language(chat_id: int) -> str:
     profile = await get_user_profile(chat_id)
     return profile.get("preferred_language", "en") if profile else "en"
 
+async def set_user_profile_gif(chat_id: int, file_id: str) -> bool:
+    """Save custom GIF as profile logo"""
+    return await _sb_patch(
+        f"user_profiles?chat_id=eq.{chat_id}",
+        {"profile_gif_id": file_id}
+    )
+
 async def set_user_language(chat_id: int, lang_code: str):
     if lang_code not in SUPPORTED_LANGUAGES:
         lang_code = "en"
@@ -1324,6 +1331,39 @@ async def handle_document(update: Update):
     chat_id = message.chat_id
     if chat_id != OWNER_ID:
         return
+    
+    # ── USER CUSTOM PROFILE GIF UPLOAD ──
+    waiting = await redis_client.get(f"waiting_for_logo:{chat_id}")
+    if waiting:
+        await redis_client.delete(f"waiting_for_logo:{chat_id}")
+        
+        document = message.document
+        animation = message.animation
+        
+        file_id = None
+        if animation:
+            file_id = animation.file_id
+        elif document and (document.mime_type == "image/gif" or document.file_name.lower().endswith(".gif")):
+            if document.file_size and document.file_size > 10 * 1024 * 1024:
+                await message.reply_text("❌ GIF is too big. Maximum 10 MB.")
+                return
+            file_id = document.file_id
+        else:
+            await message.reply_text("❌ Please send a real GIF (animation or .gif file).")
+            return
+
+        if file_id:
+            success = await set_user_profile_gif(chat_id, file_id)
+            if success:
+                await message.reply_animation(
+                    animation=file_id,
+                    caption="✨ <b>Your profile logo has been enchanted!</b>\n\n"
+                            "It will now appear every time you view your profile 🌿",
+                    parse_mode="HTML"
+                )
+            else:
+                await message.reply_text("❌ Failed to save your logo. Please try again.")
+        return
 
     document = message.document
     if not document:
@@ -1683,7 +1723,8 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "lore_reads,profile_views,"
                 "total_wheel_spins,wheel_xp_earned,legendary_spins,"
                 "onboarding_completed,"
-                "notif_netflix,notif_prime,notif_windows,notif_steam"
+                "notif_netflix,notif_prime,notif_windows,notif_steam,"
+                "profile_gif_id"
             ),
         },
     )
@@ -3755,12 +3796,24 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     if action_xp:
         asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-    msg = await send_animated_translated(
-        chat_id=chat_id,
-        animation_url=MYID_GIF,
-        caption=caption,
-        reply_markup=keyboard,
-    )
+    profile = await get_user_profile(chat_id)
+    gif_id = profile.get("profile_gif_id") if profile else None
+
+    if gif_id:
+        await tg_app.bot.send_animation(
+            chat_id=chat_id,
+            animation=gif_id,
+            caption=caption,  
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    else:
+        msg = await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=MYID_GIF,
+            caption=caption,
+            reply_markup=keyboard,
+        )
 
     try:
         await loading.delete()
@@ -7096,7 +7149,18 @@ async def process_update(update_data: dict):
                 parse_mode="HTML"
             )
             return
-        await redis_client.setex(start_key, 10, 1)   # 10-second cooldown
+        await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/setlogo"):
+        await redis_client.setex(f"waiting_for_logo:{chat_id}", 300, "1")
+        await tg_app.bot.send_message(
+            chat_id,
+            "🌿 <b>Upload Your Profile Logo</b>\n\n"
+            "Send me a <b>GIF</b> (as animation or document).\n"
+            "Maximum 10 MB.\n\n"
+            "<i>This will become your personal emblem in the forest.</i> ✨",
+            parse_mode="HTML"
+        )
 
     elif text.startswith("/uploadkeys"):
         await handle_uploadkeys_command(chat_id)
