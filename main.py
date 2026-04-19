@@ -2650,9 +2650,11 @@ def _greeting(tz_str: str = "Asia/Manila") -> tuple[str, str, str]:
     """Returns (icon, greeting_text, gif_url)"""
     hour = datetime.now(pytz.timezone(tz_str)).hour
     
-    if 5 <= hour < 12:
+    if hour == 0:                                 
+        return "🌌", "Midnight", MIDNIGHT_GIF
+    elif 1 <= hour < 12:                       
         return "🌅", "Good morning", MORNING_GIF
-    elif 12 <= hour < 18:
+    elif 12 <= hour < 18:                      
         return "🌤️", "Good afternoon", AFTERNOON_GIF
     else:
         return "🌙", "Good evening", EVENING_GIF
