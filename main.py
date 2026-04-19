@@ -3541,14 +3541,14 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     daily_section = (
         "📊 <b>Today's Forest Limits</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"🍿 Netflix Reveals: <b>{rem['netflix']}</b> left\n"
-        f"{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'netflix') - rem['netflix'], get_max_daily_reveals(level_for_calc, 'netflix'))}\n\n"
-        f"🎥 Prime Reveals: <b>{rem['prime']}</b> left\n"
-        f"{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'prime') - rem['prime'], get_max_daily_reveals(level_for_calc, 'prime'))}\n\n"
-        f"🪟 Windows Keys: <b>{rem['windows']}</b> left\n"
-        f"{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'windows') - rem['windows'], get_max_daily_views(level_for_calc, 'windows'))}\n\n"
-        f"📑 Office Keys: <b>{rem['office']}</b> left\n"
-        f"{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'office') - rem['office'], get_max_daily_views(level_for_calc, 'office'))}\n"
+        f"╭🍿 Netflix Reveals: <b>{rem['netflix']}</b> left\n"
+        f"╰{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'netflix') - rem['netflix'], get_max_daily_reveals(level_for_calc, 'netflix'))}\n\n"
+        f"╭🎥 Prime Reveals: <b>{rem['prime']}</b> left\n"
+        f"╰{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'prime') - rem['prime'], get_max_daily_reveals(level_for_calc, 'prime'))}\n\n"
+        f"╭🪟 Windows Keys: <b>{rem['windows']}</b> left\n"
+        f"╰{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'windows') - rem['windows'], get_max_daily_views(level_for_calc, 'windows'))}\n\n"
+        f"╭📑 Office Keys: <b>{rem['office']}</b> left\n"
+        f"╰{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'office') - rem['office'], get_max_daily_views(level_for_calc, 'office'))}\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
     )
 
