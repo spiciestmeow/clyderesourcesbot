@@ -33,4 +33,4 @@ EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540
 MIDNIGHT_GIF = "https://i.pinimg.com/originals/35/5b/93/355b93af809c3f62ac1645494283d070.gif"
 LATENIGHT_GIF = "https://i.pinimg.com/originals/9d/07/a0/9d07a0a457837aad2465da3290bd41c4.gif"
 
-QR_IMAGE_URL = "https://i.imgur.com/RtDgp0M.jpeg"
+QR_IMAGE_URL = "https://i.ibb.co/Fb3wKDfy/photo-2026-04-20-10-31-23.jpg"
