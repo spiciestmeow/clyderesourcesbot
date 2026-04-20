@@ -4203,12 +4203,27 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
 
         for code, ach in page_achs:
             is_unlocked = code in unlocked_codes
-            rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}.get(
-                ach.get("rarity", "epic"), "🌱"
-            )
+            is_secret = ach.get("is_secret", False)
+
+            if is_secret and not is_unlocked:
+                hidden_count += 1
+                continue
+
+            # Use database icon first, fallback to rarity-based emoji
+            icon = ach.get("icon") or ""
+            if not icon:
+                rarity_map = {
+                    "common": "🌿", 
+                    "rare": "✨", 
+                    "epic": "🌟", 
+                    "legendary": "🌠", 
+                    "mythic": "🪐"
+                }
+                icon = rarity_map.get(ach.get("rarity", "epic"), "🌱")
+
             status = "✅" if is_unlocked else "🔒"
 
-            text += f"{status} {rarity_emoji} <b>{ach['name']}</b>\n"
+            text += f"{status} {icon} <b>{ach['name']}</b>\n"
             text += f"   {ach['description']}\n"
 
             if not is_unlocked and ach.get("condition", {}).get("type") == "count":
