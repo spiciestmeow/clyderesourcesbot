@@ -4023,7 +4023,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_profile_page(chat_id: int, first_name: str, query=None):
-    """Fixed version — no more UnboundLocalError + shows custom GIF"""
+    """Fixed version — shows achievement summary directly in profile"""
     profile = await get_user_profile(chat_id)
     if not profile:
         await tg_app.bot.send_message(chat_id, "🌿 Please use /start first.")
@@ -4034,10 +4034,21 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     xp_required_next = get_cumulative_xp_for_level(level + 1)
     streak = await calculate_streak(chat_id)
 
+    # === ACHIEVEMENT SUMMARY ===
+    user_achs = await get_user_achievements(chat_id)
+    unlocked = [a for a in user_achs if a.get("unlocked_at")]
+    visible_total = len([a for a in ACHIEVEMENTS_CACHE.values() if not a.get("is_secret", False)])
+    unlocked_count = len(unlocked)
+
+    ach_summary = (
+        f"🏆 <b>Achievements</b>: {unlocked_count}/{visible_total} visible "
+        f"({round((unlocked_count / visible_total) * 100) if visible_total > 0 else 0}%)\n"
+        f"{create_progress_bar(unlocked_count, visible_total, length=10)}\n\n"
+    )
+
     # ── NEW: Daily limits progress
     rem = await get_remaining_reveals_and_views(chat_id)
     level_for_calc = profile.get("level", 1)
-
     daily_section = (
         "📊 <b>Today's Forest Limits</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
@@ -4080,14 +4091,13 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     caption = (
         f"👤 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-
         f"🏷️ <b>{get_level_title(level)}</b>\n"
         f"⭐ Level <b>{level}</b> • {streak_txt}\n\n"
-
         f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
         f"{create_progress_bar(xp, xp_required_next, 12)}\n"
         f"📈 To next level: <b>{max(0, xp_required_next - xp):,} XP</b>\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
+        f"{ach_summary}"
         f"{daily_section}"
         "📊 <b>Activity</b>\n\n"
         f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
@@ -4098,7 +4108,6 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"• Guidance Read: <b>{profile.get('guidance_reads', 0)}</b>\n"
         f"• Lore Read: <b>{profile.get('lore_reads', 0)}</b>\n"
         f"• Times Cleared: <b>{profile.get('times_cleared', 0)}</b>\n\n"
-
         "🎮 <b>Resource Usage</b>\n\n"
         f"• Windows Keys Viewed: <b>{profile.get('windows_views', 0)}</b>\n"
         f"• Office Keys Viewed: <b>{profile.get('office_views', 0)}</b>\n"
@@ -4107,12 +4116,10 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"• PrimeVideo Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
         f"• PrimeVideo Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
         f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n\n"
-
         "🎰 <b>Wheel of Whispers</b>\n\n"
         f"• Total Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
         f"• Legendary Spins: <b>{profile.get('legendary_spins', 0)}</b>\n"
         f"• Wheel XP Earned: <b>{profile.get('wheel_xp_earned', 0):,}</b>\n\n"
-
         "━━━━━━━━━━━━━━━━━━\n"
         f"🌱 Joined: <b>{joined_date}</b>\n"
         f"🌲 Last Active: <b>{last_active}</b>\n\n"
@@ -4167,45 +4174,80 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     await _remember(chat_id, msg.message_id)
 
 
-async def show_achievements_page(chat_id: int, query=None):
-    """Shows the user's achievements page"""
-    user_achs = await get_user_achievements(chat_id)
-    unlocked = [a for a in user_achs if a.get("unlocked_at")]
-    
-    text = "🏆 <b>Your Forest Trophies</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-    
-    if not unlocked:
-        text += "🌱 You haven't unlocked any achievements yet...\nKeep exploring the forest to earn them! 🍃\n"
-    else:
-        for u in unlocked[:10]:  # Show max 10 for clean look
-            ach = ACHIEVEMENTS_CACHE.get(u["achievement_code"])
-            if ach:
-                rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
-                emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
-                text += f"{emoji} <b>{ach['name']}</b> — {ach.get('rarity', 'epic').title()}\n"
-                text += f"   {ach['description']}\n\n"
+async def show_achievements_page(chat_id: int, query=None, page: int = 0):
+    """Paginated achievements page — hides secret ones until unlocked"""
+    ITEMS_PER_PAGE = 8   # You can change this (recommended 6–10)
 
-    # Buttons
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")]
-    ])
+    user_achs = await get_user_achievements(chat_id)
+    unlocked_codes = {u["achievement_code"] for u in user_achs if u.get("unlocked_at")}
+
+    # Filter out hidden secret achievements
+    visible_achs = []
+    for code, ach in ACHIEVEMENTS_CACHE.items():
+        if ach.get("is_secret", False) and code not in unlocked_codes:
+            continue
+        visible_achs.append((code, ach))
+
+    total_achs = len(visible_achs)
+    total_pages = (total_achs + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+
+    if total_achs == 0:
+        text = "🌿 No achievements found yet."
+    else:
+        start = page * ITEMS_PER_PAGE
+        end = start + ITEMS_PER_PAGE
+        page_achs = visible_achs[start:end]
+
+        text = f"🏆 <b>Forest Achievements</b>  ({page+1}/{total_pages})\n"
+        text += "━━━━━━━━━━━━━━━━━━\n\n"
+
+        for code, ach in page_achs:
+            is_unlocked = code in unlocked_codes
+            rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}.get(
+                ach.get("rarity", "epic"), "🌱"
+            )
+            status = "✅" if is_unlocked else "🔒"
+
+            text += f"{status} {rarity_emoji} <b>{ach['name']}</b>\n"
+            text += f"   {ach['description']}\n"
+
+            if not is_unlocked and ach.get("condition", {}).get("type") == "count":
+                field = ach["condition"].get("field")
+                required = ach["condition"].get("required", 0)
+                current = (await get_user_profile(chat_id) or {}).get(field, 0)
+                text += f"   Progress: {current}/{required} {create_progress_bar(current, required, length=8)}\n"
+
+            text += "\n"
+
+        text += f"━━━━━━━━━━━━━━━━━━\n📄 Page {page+1} of {total_pages} • {total_achs} visible achievements"
+
+    # Navigation buttons
+    buttons = []
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"ach_page_{page-1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"ach_page_{page+1}"))
+
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
+
+    markup = InlineKeyboardMarkup(buttons)
 
     if query and query.message:
         try:
-            await query.message.edit_caption(
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+            await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
             return
-        except:
-            pass
+        except Exception:
+            pass  # fallback if edit fails
 
-    # Fallback if edit fails
     await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=MIDNIGHT_GIF,
+        reply_markup=markup
     )
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
@@ -5916,8 +5958,7 @@ async def handle_callback(update: Update):
         return
     
     elif data == "show_achievements":
-        await show_achievements_page(chat_id, query)
-        return
+        await show_achievements_page(chat_id, query, page=0)
     
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
@@ -7253,6 +7294,13 @@ async def handle_callback(update: Update):
             await query.message.delete()
         except Exception:
             pass
+
+    elif data.startswith("ach_page_"):
+        try:
+            page = int(data.split("_")[2])
+            await show_achievements_page(chat_id, query, page=page)
+        except Exception:
+            await show_achievements_page(chat_id, query, page=0)
 
     # ── REVEAL COOKIE ──
     elif data.startswith("reveal_netflix|") or data.startswith("reveal_prime|"):
