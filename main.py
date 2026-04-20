@@ -34,6 +34,42 @@ SUPPORTED_LANGUAGES = {
     "ceb": ("🇵🇭", "Bisaya"),
 }
 
+async def get_forest_patrons() -> list:
+    """Fetch visible patrons from Supabase (cached 1 hour)"""
+    cached = await redis_client.get("patrons_cache")
+    if cached:
+        return json.loads(cached)
+
+    data = await _sb_get(
+        "forest_patrons",
+        **{
+            "select": "display_name,title",
+            "is_visible": "eq.true",
+            "order": "donated_at.desc"
+        }
+    ) or []
+
+    # Cache for 1 hour
+    await redis_client.setex("patrons_cache", 3600, json.dumps(data))
+    return data
+
+
+async def add_patron(username: str, title: str = "Kind Wanderer") -> bool:
+    """Add a new donor"""
+    display = username if username.startswith("@") else f"@{username}"
+    
+    payload = {
+        "username": username.strip(),
+        "display_name": display,
+        "title": title.strip()
+    }
+    
+    success = await _sb_upsert("forest_patrons", payload, on_conflict="username")
+    
+    if success:
+        await redis_client.delete("patrons_cache")   # clear cache so new patron shows instantly
+    return success
+
 async def get_user_language(chat_id: int) -> str:
     profile = await get_user_profile(chat_id)
     return profile.get("preferred_language", "en") if profile else "en"
@@ -2693,6 +2729,7 @@ def kb_main_menu():
             InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals")
         ],
         [InlineKeyboardButton("🌳 Support the Enchanted Clearing", callback_data="donate")],
+        [InlineKeyboardButton("🌟 Forest Patrons", callback_data="patrons")],
     ])
 
 def kb_first_time_menu():
@@ -2713,6 +2750,12 @@ def kb_donate():
         [InlineKeyboardButton("💰 GCash QR Code", callback_data="gcash_qr")],
         [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
     ])
+
+def kb_patrons():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+    ])
+
 def kb_inventory():
     return InlineKeyboardMarkup([
         [
@@ -2753,6 +2796,51 @@ def kb_back_to_wheel():
 # ══════════════════════════════════════════════════════════════════════════════
 # KEYBOARDS (final version)
 # ══════════════════════════════════════════════════════════════════════════════
+async def show_patrons_page(chat_id: int, query=None):
+    """Dynamic Forest Patrons page from Supabase"""
+    patrons = await get_forest_patrons()
+
+    if not patrons:
+        text = (
+            "🌟 <b>The Grove of Eternal Gratitude</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "No kind souls have planted a tree for the forest yet...\n\n"
+            "<i>Be the first to support the clearing and have your name remembered forever.</i> 🍃"
+        )
+    else:
+        lines = [f"• {p.get('display_name', '')} - {p.get('title', 'Kind Wanderer')}" for p in patrons]
+        text = (
+            "🌟 <b>The Grove of Eternal Gratitude</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "These kind wanderers have helped the ancient trees thrive.\n"
+            "Every donation keeps the forest alive and full of magic.\n\n"
+            + "\n".join(lines) +
+            "\n\n<i>The forest remembers every generous heart. "
+            "Thank you for helping the clearing grow. 🍃✨</i>"
+        )
+
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")]
+    ])
+
+    if query and query.message:
+        try:
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+            return
+        except:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=ABOUT_GIF,
+        reply_markup=markup
+    )
+
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
     """Always await this — it fetches the active event from Redis/Supabase."""
     event = await get_active_event()
@@ -5654,6 +5742,11 @@ async def handle_callback(update: Update):
         )
         return
     
+    # ── FOREST PATRONS / DONOR WALL ──
+    elif data == "patrons":
+        await show_patrons_page(chat_id, query)
+        return
+    
         # ── GCASH QR CODE SCREEN ──
     elif data == "gcash_qr":
         await show_gcash_qr(chat_id, query)
@@ -7330,6 +7423,38 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/addpatron"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add patrons.")
+            return
+
+        parts = raw.split(maxsplit=2)
+        if len(parts) < 2:
+            await tg_app.bot.send_message(
+                chat_id,
+                "📜 Usage:\n\n"
+                "<code>/addpatron @username</code>\n"
+                "<code>/addpatron @username Legendary Guardian</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        username = parts[1]
+        title = parts[2] if len(parts) > 2 else "Kind Wanderer"
+
+        success = await add_patron(username, title)
+        
+        if success:
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ <b>Added to the Grove of Gratitude!</b>\n\n"
+                f"🌟 {username} — {title}\n\n"
+                f"The forest now remembers this generous heart. 🍃",
+                parse_mode="HTML"
+            )
+        else:
+            await tg_app.bot.send_message(chat_id, "❌ Failed to add patron. Check logs.")
 
     elif text.startswith("/setlogo"):
         can_change, hours_left = await can_change_profile_gif(chat_id)
