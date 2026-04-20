@@ -86,7 +86,7 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
         should_unlock = False
 
         try:
-            # ── EXISTING ──
+            # ── ALREADY SUPPORTED ──
             if cond_type == "count":
                 field = condition.get("field")
                 required = condition.get("required", 0)
@@ -99,9 +99,14 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 if streak >= condition.get("days", 0):
                     should_unlock = True
 
-            # ── NEW SUPPORTED TYPES ──
+            # ── NEWLY SUPPORTED TYPES ──
             elif cond_type == "level":
                 if profile.get("level", 1) >= condition.get("required_level", 1):
+                    should_unlock = True
+
+            elif cond_type == "level_streak":
+                streak = await calculate_streak(chat_id)
+                if streak >= condition.get("required_streak", 1):
                     should_unlock = True
 
             elif cond_type == "reveal_netflix":
@@ -112,8 +117,9 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 if profile.get("prime_reveals", 0) >= condition.get("required", 0):
                     should_unlock = True
 
-            elif cond_type == "view_windows" or cond_type == "view_office":
-                if profile.get("windows_views", 0) + profile.get("office_views", 0) >= condition.get("required", 0):
+            elif cond_type in ("view_windows", "view_office"):
+                views = profile.get("windows_views", 0) + profile.get("office_views", 0)
+                if views >= condition.get("required", 0):
                     should_unlock = True
 
             elif cond_type == "wheel_spin":
@@ -124,11 +130,20 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 if profile.get("legendary_spins", 0) >= condition.get("required", 0):
                     should_unlock = True
 
-            elif cond_type == "daily_xp":
-                # You can track daily XP if you want, but for now we skip or use total
-                pass
+            elif cond_type == "steam_claim":
+                if profile.get("steam_claims_count", 0) >= condition.get("required", 0):
+                    should_unlock = True
 
-            # Add more types here in the future...
+            elif cond_type == "referral_total":
+                if profile.get("referral_count", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "daily_xp":
+                # This one is tricky — for now we use total_xp_earned as approximation
+                if profile.get("total_xp_earned", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            # You can add more later (phoenix_cycle, secret_time, etc.)
 
             if should_unlock:
                 await _sb_post("user_achievements", {
@@ -139,7 +154,7 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                     "tier": 4 if ach.get("rarity") in ["legendary", "mythic"] else 3
                 })
 
-                # Apply reward if any
+                # Apply reward if exists
                 reward = ach.get("reward", {})
                 if reward.get("type") == "permanent_slot":
                     col = reward.get("column")
@@ -153,20 +168,62 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 awarded_count += 1
 
         except Exception as e:
-            print(f"🔴 Error checking achievement {code}: {e}")
+            print(f"🔴 Error checking achievement {code} for {chat_id}: {e}")
 
     if awarded_count > 0:
         print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
 
+async def handle_award_beta_guardian(chat_id: int, target_id: int):
+    """Manually award the Beta Guardian achievement"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can award this.")
+        return
+
+    # Check if already unlocked
+    user_achs = await get_user_achievements(target_id)
+    if any(u["achievement_code"] == "beta_guardian" and u.get("unlocked_at") for u in user_achs):
+        await tg_app.bot.send_message(chat_id, f"⚠️ User {target_id} already has **Beta Guardian**.")
+        return
+
+    # Award it
+    success = await _sb_post("user_achievements", {
+        "chat_id": target_id,
+        "achievement_code": "beta_guardian",
+        "progress": 100,
+        "unlocked_at": datetime.now(pytz.utc).isoformat(),
+        "tier": 4  # mythic tier
+    })
+
+    if success:
+        profile = await get_user_profile(target_id)
+        first_name = profile.get("first_name", "Wanderer") if profile else "Wanderer"
+
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ **Beta Guardian** successfully awarded to user `{target_id}` ({first_name})"
+        )
+
+        # Send epic unlock to the user
+        ach = ACHIEVEMENTS_CACHE.get("beta_guardian")
+        if ach:
+            await send_achievement_unlock(target_id, ach, first_name)
+    else:
+        await tg_app.bot.send_message(chat_id, "❌ Failed to award. Check logs.")
+
 async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
-    """Epic unlock message with animation"""
+    """Epic unlock message with animation + special note for manual achievements"""
     rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
     emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
+
+    # Special note for manual achievements
+    is_manual = ach.get("condition", {}).get("type") == "manual"
+    manual_note = "\n\n🌟 <i>This is a special manual achievement awarded by the Forest Caretaker.</i>" if is_manual else ""
 
     caption = (
         f"{emoji} <b>A HIDDEN ACHIEVEMENT WAS REVEALED!</b>\n\n"
         f"🏆 <b>{ach['name']}</b>\n"
-        f"{ach['description']}\n\n"
+        f"{ach['description']}"
+        f"{manual_note}\n\n"
         f"<i>The ancient forest spirits have recognized you, {html.escape(first_name)}!</i> 🌲✨"
     )
 
@@ -7755,6 +7812,18 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/award_beta"):
+        try:
+            parts = text.split()
+            target_id = int(parts[1])
+            await handle_award_beta_guardian(chat_id, target_id)
+        except:
+            await tg_app.bot.send_message(
+                chat_id,
+                "📌 Usage:\n`/award_beta <user_chat_id>`\nExample: `/award_beta 123456789`",
+                parse_mode="HTML"
+            )
 
     elif text.startswith("/test_achievements"):
         await handle_test_achievements(chat_id)
