@@ -2648,8 +2648,11 @@ def kb_main_menu():
             InlineKeyboardButton("❓ Guidance", callback_data="help"),
             InlineKeyboardButton("ℹ️ Lore", callback_data="about"),
         ],
-        [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
-        [InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals")],
+        [
+            InlineKeyboardButton("📦 Resources", callback_data="show_resources"),
+            InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals")
+        ],
+        [InlineKeyboardButton("🌳 Support the Enchanted Clearing", callback_data="donate")],
     ])
 
 def kb_first_time_menu():
@@ -2663,6 +2666,14 @@ def kb_first_time_menu():
         ],
         [InlineKeyboardButton("📦 Resources", callback_data="show_resources")],
         [InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals")],
+    ])
+
+def kb_donate():
+    """Beautiful donation menu — GCash first (best for Philippines)"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💰 GCash (Recommended)", url="https://YOUR_GCASH_LINK_HERE")],
+        [InlineKeyboardButton("🌍 PayPal / International", url="https://YOUR_PAYPAL_LINK_HERE")],
+        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
     ])
 
 def kb_inventory():
@@ -5584,6 +5595,26 @@ async def handle_callback(update: Update):
         except Exception:
             pass
         await send_onboarding_step(chat_id, first_name, step=step)
+        return
+    
+    elif data == "show_settings_page":
+        await handle_settings_page(chat_id, first_name, query)
+        return
+    
+    # ── DONATE / SUPPORT THE FOREST ──
+    elif data == "donate":
+        await query.message.edit_caption(
+            caption=(
+                "🌳 <b>Support the Enchanted Clearing</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "Every donation helps keep the ancient trees alive, "
+                "the servers running smoothly, and new treasures appearing daily.\n\n"
+                "Even the smallest act of kindness grows into something beautiful in the forest.\n\n"
+                "<i>Thank you, kind wanderer. The trees remember you. 🍃✨</i>"
+            ),
+            parse_mode="HTML",
+            reply_markup=kb_donate()
+        )
         return
 
     elif data == "onboarding_skip":
