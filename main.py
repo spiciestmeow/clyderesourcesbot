@@ -37,11 +37,31 @@ async def get_user_language(chat_id: int) -> str:
     return profile.get("preferred_language", "en") if profile else "en"
 
 async def set_user_profile_gif(chat_id: int, file_id: str) -> bool:
-    """Save custom GIF as profile logo"""
-    return await _sb_patch(
-        f"user_profiles?chat_id=eq.{chat_id}",
-        {"profile_gif_id": file_id}
+    """Save custom GIF as profile logo — now uses safe UPSERT"""
+    payload = {
+        "chat_id": chat_id,
+        "profile_gif_id": file_id
+    }
+    
+    success = await _sb_upsert(
+        "user_profiles", 
+        payload, 
+        on_conflict="chat_id"
     )
+    
+    if success:
+        print(f"✅ Profile GIF saved for user {chat_id} → {file_id[:30]}...")
+        # Extra safety: verify it actually wrote to DB
+        profile = await get_user_profile(chat_id)
+        if profile and profile.get("profile_gif_id") == file_id:
+            print(f"✅ Verified in Supabase: profile_gif_id = {file_id}")
+            return True
+        else:
+            print(f"🔴 Save succeeded but verification failed for {chat_id}")
+    else:
+        print(f"🔴 Failed to save GIF for {chat_id}")
+    
+    return success
 
 async def set_user_language(chat_id: int, lang_code: str):
     if lang_code not in SUPPORTED_LANGUAGES:
@@ -1357,13 +1377,14 @@ async def handle_document(update: Update):
             if success:
                 await message.reply_animation(
                     animation=file_id,
-                    caption="✨ <b>Your profile logo has been enchanted!</b>\n\n"
-                            "It will now appear every time you view your profile 🌿",
+                    caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
+                            "It will now appear every time you view your profile 🌿\n\n"
+                            "<i>Try /profile to see it live.</i>",
                     parse_mode="HTML"
                 )
             else:
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
-        return
+            return
 
     document = message.document
     if not document:
