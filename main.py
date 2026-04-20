@@ -2837,8 +2837,7 @@ async def show_patrons_page(chat_id: int, query=None):
     await send_animated_translated(
         chat_id=chat_id,
         caption=text,
-        animation_url=ABOUT_GIF,
-        reply_markup=markup
+        animation_url=DONOR_GIF,
     )
 
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:

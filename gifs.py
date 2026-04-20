@@ -34,3 +34,4 @@ MIDNIGHT_GIF = "https://i.pinimg.com/originals/35/5b/93/355b93af809c3f62ac164549
 LATENIGHT_GIF = "https://i.pinimg.com/originals/9d/07/a0/9d07a0a457837aad2465da3290bd41c4.gif"
 
 QR_IMAGE_URL = "https://i.ibb.co/Fb3wKDfy/photo-2026-04-20-10-31-23.jpg"
+DONOR_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
