@@ -64,18 +64,17 @@ async def get_user_achievements(chat_id: int) -> list:
 
 async def check_and_award_achievements(chat_id: int, first_name: str, action: str = None):
     if not ACHIEVEMENTS_CACHE:
-        print("⚠️ Achievement cache is empty — reloading...")
         await load_achievements_cache()
 
     profile = await get_user_profile(chat_id)
     if not profile:
-        print(f"🔴 No profile for {chat_id} — skipping achievements")
         return
 
     user_achs = await get_user_achievements(chat_id)
     unlocked_codes = {u["achievement_code"] for u in user_achs if u.get("unlocked_at")}
 
     awarded_count = 0
+
     for code, ach in ACHIEVEMENTS_CACHE.items():
         if code in unlocked_codes:
             continue
@@ -83,24 +82,53 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
             continue
 
         condition = ach.get("condition", {})
+        cond_type = condition.get("type")
         should_unlock = False
 
         try:
-            if condition.get("type") == "count":
+            # ── EXISTING ──
+            if cond_type == "count":
                 field = condition.get("field")
                 required = condition.get("required", 0)
                 current = profile.get(field, 0)
                 if current >= required:
                     should_unlock = True
-                    print(f"✅ Achievement {code} unlocked by count ({field}: {current} >= {required})")
 
-            elif condition.get("type") == "streak" and action == "daily_bonus":
+            elif cond_type == "streak" and action == "daily_bonus":
                 streak = await calculate_streak(chat_id)
                 if streak >= condition.get("days", 0):
                     should_unlock = True
-                    print(f"✅ Achievement {code} unlocked by streak ({streak} days)")
 
-            # Add more condition types here later (e.g. "has_revealed_netflix", etc.)
+            # ── NEW SUPPORTED TYPES ──
+            elif cond_type == "level":
+                if profile.get("level", 1) >= condition.get("required_level", 1):
+                    should_unlock = True
+
+            elif cond_type == "reveal_netflix":
+                if profile.get("netflix_reveals", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "reveal_prime":
+                if profile.get("prime_reveals", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "view_windows" or cond_type == "view_office":
+                if profile.get("windows_views", 0) + profile.get("office_views", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "wheel_spin":
+                if profile.get("total_wheel_spins", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "legendary_spin":
+                if profile.get("legendary_spins", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "daily_xp":
+                # You can track daily XP if you want, but for now we skip or use total
+                pass
+
+            # Add more types here in the future...
 
             if should_unlock:
                 await _sb_post("user_achievements", {
@@ -111,7 +139,7 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                     "tier": 4 if ach.get("rarity") in ["legendary", "mythic"] else 3
                 })
 
-                # Apply reward
+                # Apply reward if any
                 reward = ach.get("reward", {})
                 if reward.get("type") == "permanent_slot":
                     col = reward.get("column")
@@ -125,7 +153,7 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 awarded_count += 1
 
         except Exception as e:
-            print(f"🔴 Error checking achievement {code} for {chat_id}: {e}")
+            print(f"🔴 Error checking achievement {code}: {e}")
 
     if awarded_count > 0:
         print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
@@ -3838,7 +3866,7 @@ async def show_paginated_cookie_list(
         # FIXED: Get first_name safely from profile
         profile = await get_user_profile(chat_id)
         first_name = profile.get("first_name") if profile else "Wanderer"
-        
+
         asyncio.create_task(
             check_and_award_achievements(chat_id, first_name, action=action_name)
         )
@@ -4583,45 +4611,42 @@ async def handle_feedback(chat_id: int, first_name: str, feedback_text: str):
         print(f"Owner notify failed: {e}")
 
 async def handle_test_achievements(chat_id: int):
-    """Debug command to check achievement system status"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
         return
 
-    await tg_app.bot.send_message(chat_id, "🔍 Running achievement system diagnostics...\n")
+    await tg_app.bot.send_message(chat_id, "🔍 Running full achievement diagnostics...\n\n")
 
-    # 1. Check cache
-    if not ACHIEVEMENTS_CACHE:
-        await tg_app.bot.send_message(chat_id, "❌ ACHIEVEMENTS_CACHE is empty!")
-        await load_achievements_cache()
+    total = len(ACHIEVEMENTS_CACHE)
+    count = sum(1 for a in ACHIEVEMENTS_CACHE.values() if a.get("condition", {}).get("type") == "count")
+    streak = sum(1 for a in ACHIEVEMENTS_CACHE.values() if a.get("condition", {}).get("type") == "streak")
+    manual = sum(1 for a in ACHIEVEMENTS_CACHE.values() if a.get("condition", {}).get("type") == "manual")
+    others = total - count - streak - manual
 
-    total_achs = len(ACHIEVEMENTS_CACHE)
-    count_types = sum(1 for ach in ACHIEVEMENTS_CACHE.values() if ach.get("condition", {}).get("type") == "count")
-    streak_types = sum(1 for ach in ACHIEVEMENTS_CACHE.values() if ach.get("condition", {}).get("type") == "streak")
-    manual_types = sum(1 for ach in ACHIEVEMENTS_CACHE.values() if ach.get("condition", {}).get("type") == "manual")
-
-    msg = (
+    text = (
         f"📊 **Achievement System Status**\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"Total Achievements in DB: <b>{total_achs}</b>\n"
-        f"• Count-based: <b>{count_types}</b>\n"
-        f"• Streak-based: <b>{streak_types}</b>\n"
-        f"• Manual: <b>{manual_types}</b>\n\n"
-        f"✅ Currently supported triggers:\n"
-        f"• count (views, reveals, etc.)\n"
-        f"• streak (only on daily_bonus)\n\n"
+        f"Total Achievements: <b>{total}</b>\n"
+        f"• Count-based: <b>{count}</b>\n"
+        f"• Streak-based: <b>{streak}</b>\n"
+        f"• Manual: <b>{manual}</b>\n"
+        f"• Other types: <b>{others}</b>\n\n"
+        f"✅ Currently supported: count + streak (daily_bonus)\n\n"
+        f"📋 All Achievements & Their Condition:\n"
     )
 
-    # Show first 10 achievements as example
-    msg += "📋 First 10 Achievements:\n"
-    for i, (code, ach) in enumerate(list(ACHIEVEMENTS_CACHE.items())[:10], 1):
-        cond_type = ach.get("condition", {}).get("type", "unknown")
+    for code, ach in ACHIEVEMENTS_CACHE.items():
+        cond = ach.get("condition", {})
+        cond_type = cond.get("type", "unknown")
         icon = ach.get("icon", "❓")
-        msg += f"{i}. {icon} <code>{code}</code> → {ach.get('name')} [{cond_type}]\n"
+        rarity = ach.get("rarity", "common")
+        name = ach.get("name", "Unnamed")
 
-    msg += "\n<i>Use this to see which achievements are actually wired up.</i>"
+        text += f"{icon} <code>{code}</code> → {name} [{cond_type}]\n"
 
-    await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
+    text += "\n<i>Copy this output and send it to me if you want me to expand specific ones.</i>"
+
+    await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
 
 async def handle_view_feedback(chat_id: int):
     if chat_id != OWNER_ID:
