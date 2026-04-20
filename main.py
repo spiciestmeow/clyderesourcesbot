@@ -79,14 +79,13 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
         if code in unlocked_codes:
             continue
         if ach.get("condition", {}).get("type") == "manual":
-            continue
+            continue 
 
         condition = ach.get("condition", {})
         cond_type = condition.get("type")
         should_unlock = False
 
         try:
-            # ── ALREADY SUPPORTED ──
             if cond_type == "count":
                 field = condition.get("field")
                 required = condition.get("required", 0)
@@ -98,15 +97,17 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 streak = await calculate_streak(chat_id)
                 if streak >= condition.get("days", 0):
                     should_unlock = True
-
-            # ── NEWLY SUPPORTED TYPES ──
+                    
+        # ── FIXED: Combined level + streak condition (Eternal Sprout) ──
             elif cond_type == "level":
                 if profile.get("level", 1) >= condition.get("required_level", 1):
                     should_unlock = True
 
             elif cond_type == "level_streak":
+                level_ok = profile.get("level", 1) >= condition.get("required_level", 1)
                 streak = await calculate_streak(chat_id)
-                if streak >= condition.get("required_streak", 1):
+                streak_ok = streak >= condition.get("required_streak", 1)
+                if level_ok and streak_ok:          # ← BOTH must be true
                     should_unlock = True
 
             elif cond_type == "reveal_netflix":
@@ -143,18 +144,19 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 if profile.get("total_xp_earned", 0) >= condition.get("required", 0):
                     should_unlock = True
 
-            # You can add more later (phoenix_cycle, secret_time, etc.)
-
             if should_unlock:
+                progress_value = 100 if cond_type in ("level", "level_streak") else \
+                                profile.get(condition.get("field"), 0)
+
                 await _sb_post("user_achievements", {
                     "chat_id": chat_id,
                     "achievement_code": code,
-                    "progress": profile.get(condition.get("field"), 0),
+                    "progress": progress_value,
                     "unlocked_at": datetime.now(pytz.utc).isoformat(),
                     "tier": 4 if ach.get("rarity") in ["legendary", "mythic"] else 3
                 })
-
-                # Apply reward if exists
+                
+                # Apply reward + send message
                 reward = ach.get("reward", {})
                 if reward.get("type") == "permanent_slot":
                     col = reward.get("column")
@@ -4695,7 +4697,7 @@ async def handle_test_achievements(chat_id: int):
     others = total - count - streak - manual
 
     text = (
-        f"📊 **Achievement System Status**\n"
+        f"📊 <b>Achievement System Status</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"Total Achievements: <b>{total}</b>\n"
         f"• Count-based: <b>{count}</b>\n"
