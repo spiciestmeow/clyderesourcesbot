@@ -229,7 +229,7 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
 
     await tg_app.bot.send_animation(
         chat_id=chat_id,
-        animation=ach.get("gif_url") or "https://i.imgur.com/8zK9vL2.gif",
+        animation=ach.get("gif_url") or "https://i.pinimg.com/originals/35/5b/93/355b93af809c3f62ac1645494283d070.gif",
         caption=caption,
         parse_mode="HTML"
     )
