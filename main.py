@@ -1378,13 +1378,21 @@ async def handle_document(update: Update):
             # Reset waiting key so they can retry immediately
             await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
             
-            await send_temporary_message(
-                chat_id,
-                "❌ <b>That's not a GIF, wanderer!</b>\n\n"
-                "🌿 Please send an actual <b>GIF</b> file or animation.\n"
-                "<i>The forest only accepts GIF magic... 🍃</i>",
-                duration=2
+            msg = await tg_app.bot.send_animation(
+                chat_id=chat_id,
+                animation=LOADING_GIF,
+                caption=(
+                    "❌ <b>That's not a GIF, wanderer!</b>\n\n"
+                    "🌿 Please send an actual <b>GIF</b> file or animation.\n"
+                    "<i>The forest only accepts GIF magic... 🍃</i>"
+                ),
+                parse_mode="HTML"
             )
+            await asyncio.sleep(3)
+            try:
+                await msg.delete()
+            except Exception:
+                pass
             return
 
         if file_id:
@@ -3812,7 +3820,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"{daily_section}"
         "📊 <b>Activity</b>\n\n"
         f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
-        f"• Profile Logo Changes: <b>{profile.get('profile_gif_changes', 0)}</b>\n\n"
+        f"• Profile Logo Changes: <b>{profile.get('profile_gif_changes', 0)}</b>\n"
         f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n"
         f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n"
         f"• Profile Views: <b>{profile.get('profile_views', 0)}</b>\n"
@@ -6218,9 +6226,6 @@ async def handle_callback(update: Update):
                 f"⏳ Come back in <b>{time_text}</b> to update it again.\n\n"
                 f"<i>The forest remembers your emblem, wanderer. 🍃</i>",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")]
-                ])
             )
             return
 
