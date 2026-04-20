@@ -1375,13 +1375,31 @@ async def handle_document(update: Update):
                 return
             file_id = document.file_id
         else:
-            await message.reply_text("❌ Please send a real GIF (animation or .gif file).")
+            # Reset waiting key so they can retry immediately
+            await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
+            
+            await send_temporary_message(
+                chat_id,
+                "❌ <b>That's not a GIF, wanderer!</b>\n\n"
+                "🌿 Please send an actual <b>GIF</b> file or animation.\n"
+                "<i>The forest only accepts GIF magic... 🍃</i>",
+                duration=2
+            )
             return
 
         if file_id:
             success = await set_user_profile_gif(chat_id, file_id)
             if success:
                 await redis_client.setex(f"profile_gif_cooldown:{chat_id}", 7*24*3600, "1")
+
+                # ── Increment per-user counter in DB ──
+                profile = await get_user_profile(chat_id)
+                current_count = (profile.get("profile_gif_changes") or 0) + 1
+                await _sb_patch(
+                    f"user_profiles?chat_id=eq.{chat_id}",
+                    {"profile_gif_changes": current_count}
+                )
+
                 await message.reply_animation(
                     animation=file_id,
                     caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
@@ -1770,7 +1788,7 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "total_wheel_spins,wheel_xp_earned,legendary_spins,"
                 "onboarding_completed,"
                 "notif_netflix,notif_prime,notif_windows,notif_steam,"
-                "profile_gif_id"
+                "profile_gif_id,profile_gif_changes"
             ),
         },
     )
@@ -3794,6 +3812,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"{daily_section}"
         "📊 <b>Activity</b>\n\n"
         f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
+        f"• Profile Logo Changes: <b>{profile.get('profile_gif_changes', 0)}</b>\n\n"
         f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n"
         f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n"
         f"• Profile Views: <b>{profile.get('profile_views', 0)}</b>\n"
