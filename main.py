@@ -4121,6 +4121,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo")],
+        [InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements")],
         [InlineKeyboardButton("📜 XP History", callback_data="history_page_0")],
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
@@ -4164,6 +4165,48 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         pass
 
     await _remember(chat_id, msg.message_id)
+
+
+async def show_achievements_page(chat_id: int, query=None):
+    """Shows the user's achievements page"""
+    user_achs = await get_user_achievements(chat_id)
+    unlocked = [a for a in user_achs if a.get("unlocked_at")]
+    
+    text = "🏆 <b>Your Forest Trophies</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    
+    if not unlocked:
+        text += "🌱 You haven't unlocked any achievements yet...\nKeep exploring the forest to earn them! 🍃\n"
+    else:
+        for u in unlocked[:10]:  # Show max 10 for clean look
+            ach = ACHIEVEMENTS_CACHE.get(u["achievement_code"])
+            if ach:
+                rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
+                emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
+                text += f"{emoji} <b>{ach['name']}</b> — {ach.get('rarity', 'epic').title()}\n"
+                text += f"   {ach['description']}\n\n"
+
+    # Buttons
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")]
+    ])
+
+    if query and query.message:
+        try:
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            return
+        except:
+            pass
+
+    # Fallback if edit fails
+    await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=MIDNIGHT_GIF,
+    )
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
     limit  = 8
@@ -5874,6 +5917,7 @@ async def handle_callback(update: Update):
     
     elif data == "show_achievements":
         await show_achievements_page(chat_id, query)
+        return
     
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
@@ -7416,28 +7460,6 @@ async def handle_callback(update: Update):
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN UPDATE PROCESSOR
 # ══════════════════════════════════════════════════════════════════════════════
-async def show_achievements_page(chat_id: int, query=None):
-    user_achs = await get_user_achievements(chat_id)
-    unlocked = [a for a in user_achs if a.get("unlocked_at")]
-    in_progress = [a for a in user_achs if not a.get("unlocked_at")]
-
-    text = "🏆 <b>Your Forest Trophies</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-
-    for u in unlocked[:8]:  # show top 8
-        ach = ACHIEVEMENTS_CACHE.get(u["achievement_code"])
-        if ach:
-            text += f"{ach['icon']} <b>{ach['name']}</b> — {ach['rarity'].title()}\n"
-
-    if not unlocked:
-        text += "🌱 No achievements yet...\nKeep exploring the forest!\n"
-
-    buttons = [[InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")]]
-
-    if query and query.message:
-        await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
-    else:
-        await send_animated_translated(chat_id, text, animation_url="https://i.imgur.com/achievements.gif", reply_markup=InlineKeyboardMarkup(buttons))
-
 async def process_update(update_data: dict):
     update = Update.de_json(update_data, tg_app.bot)
 
