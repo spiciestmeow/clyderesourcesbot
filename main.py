@@ -3846,10 +3846,10 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     gif_id = profile.get("profile_gif_id") if profile else None
 
     if gif_id:
-        await tg_app.bot.send_animation(
+        msg = await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=gif_id,
-            caption=caption,  
+            caption=caption,
             parse_mode="HTML",
             reply_markup=keyboard
         )
