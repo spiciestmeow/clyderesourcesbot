@@ -4175,7 +4175,11 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     # === ACHIEVEMENT SUMMARY ===
     user_achs = await get_user_achievements(chat_id)
     unlocked = [a for a in user_achs if a.get("unlocked_at")]
-    visible_total = len([a for a in ACHIEVEMENTS_CACHE.values() if not a.get("is_secret", False)])
+    unlocked_codes_set = {u["achievement_code"] for u in user_achs if u.get("unlocked_at")}
+    visible_total = len([
+        code for code, a in ACHIEVEMENTS_CACHE.items()
+        if not a.get("is_secret", False) or code in unlocked_codes_set
+    ])
     unlocked_count = len(unlocked)
 
     ach_summary = (
@@ -4275,7 +4279,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo")],
-        # [InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements")],
+        [InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements")],
         [InlineKeyboardButton("📜 XP History", callback_data="history_page_0")],
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
@@ -4322,10 +4326,6 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
 
 
 async def show_achievements_page(chat_id: int, query=None, page: int = 0):
-    if chat_id != OWNER_ID:
-        await query.answer("🌿 Achievements are coming soon! Stay tuned.", show_alert=True)
-        return
-    
     """Paginated achievements page — hides secret ones until unlocked"""
     ITEMS_PER_PAGE = 8   # You can change this (recommended 6–10)
 
