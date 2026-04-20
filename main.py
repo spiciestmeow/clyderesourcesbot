@@ -1357,6 +1357,15 @@ async def handle_document(update: Update):
     if waiting:
         await redis_client.delete(f"waiting_for_logo:{chat_id}")
         
+        # Check weekly cooldown
+        can_change, hours_left = await can_change_profile_gif(chat_id)
+        if not can_change:
+            await message.reply_text(
+                f"🌿 You can only change your profile logo once per week.\n"
+                f"Come back in {hours_left} hours!"
+            )
+            return
+
         document = message.document
         animation = message.animation
         
@@ -1375,6 +1384,9 @@ async def handle_document(update: Update):
         if file_id:
             success = await set_user_profile_gif(chat_id, file_id)
             if success:
+                # Set 7-day cooldown
+                await redis_client.setex(f"profile_gif_cooldown:{chat_id}", 7*24*3600, "1")
+                
                 await message.reply_animation(
                     animation=file_id,
                     caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
@@ -1384,7 +1396,7 @@ async def handle_document(update: Update):
                 )
             else:
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
-            return
+        return
 
     document = message.document
     if not document:
@@ -1584,6 +1596,20 @@ async def mark_winoffice_guide_seen(chat_id: int):
 # ──────────────────────────────────────────────
 # ONBOARDING TUTORIAL (3-step flow for new users)
 # ──────────────────────────────────────────────
+async def can_change_profile_gif(chat_id: int) -> tuple[bool, int]:
+    """
+    Returns (can_change: bool, hours_remaining: int)
+    Cooldown = 7 days (1 change per week)
+    """
+    key = f"profile_gif_cooldown:{chat_id}"
+    ttl = await redis_client.ttl(key)
+    
+    if ttl > 0:
+        hours_left = ttl // 3600
+        return False, max(1, hours_left)
+    
+    return True, 0
+
 async def has_completed_onboarding(chat_id: int) -> bool:
     if await redis_client.get(f"onboarding_done:{chat_id}"):
         return True
@@ -2908,7 +2934,6 @@ async def send_initial_welcome(chat_id: int, first_name: str):
     )
     await _remember(chat_id, msg.message_id)
 
-
 async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = False):
     icon, greeting, gif_url = _greeting(first_name=first_name)
 
@@ -2984,7 +3009,6 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
     )
     await _remember(chat_id, msg.message_id)
 
-
 async def send_level_up_message(chat_id: int, first_name: str, old_level: int, new_level: int):
 
     # Show what they unlocked
@@ -3020,7 +3044,6 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
         )
     except Exception:
         pass
-
 
 #STEAM CLAIM
 async def show_steam_accounts(
@@ -3704,9 +3727,10 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
 async def handle_profile_page(chat_id: int, first_name: str, query=None):
+    """Fixed version — no more UnboundLocalError + shows custom GIF"""
     profile = await get_user_profile(chat_id)
     if not profile:
-        await send_supabase_error(chat_id, query)
+        await tg_app.bot.send_message(chat_id, "🌿 Please use /start first.")
         return
 
     level = profile.get("level", 1)
@@ -3799,6 +3823,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     )
 
     keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo")],
         [InlineKeyboardButton("📜 XP History", callback_data="history_page_0")],
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
@@ -6154,6 +6179,23 @@ async def handle_callback(update: Update):
     elif data == "show_profile_page":
         await handle_profile_page(chat_id, first_name, query)
         return
+    
+    elif data == "change_profile_logo":
+        can_change, hours_left = await can_change_profile_gif(chat_id)
+        if not can_change:
+            await query.answer(f"🌿 Only 1 change per week.\n{hours_left} hours left!", show_alert=True)
+            return
+
+        await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")  # 10 min window
+        await query.answer("✅ Send your new GIF now!", show_alert=False)
+
+        await tg_app.bot.send_message(
+            chat_id,
+            "🌿 <b>Upload new profile logo</b>\n\n"
+            "Send me a GIF (animation or document) within 10 minutes.\n"
+            "Maximum 10 MB.",
+            parse_mode="HTML"
+        )
 
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
@@ -7173,7 +7215,18 @@ async def process_update(update_data: dict):
         await redis_client.setex(start_key, 10, 1)
 
     elif text.startswith("/setlogo"):
-        await redis_client.setex(f"waiting_for_logo:{chat_id}", 300, "1")
+        can_change, hours_left = await can_change_profile_gif(chat_id)
+        
+        if not can_change:
+            await tg_app.bot.send_message(
+                chat_id,
+                f"🌿 <b>You can only change your profile logo once per week.</b>\n\n"
+                f"Come back in <b>{hours_left}</b> hours! ✨",
+                parse_mode="HTML"
+            )
+            return
+
+        await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")  # 10 min to upload
         await tg_app.bot.send_message(
             chat_id,
             "🌿 <b>Upload Your Profile Logo</b>\n\n"
