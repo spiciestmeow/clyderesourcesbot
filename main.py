@@ -3827,11 +3827,18 @@ async def show_paginated_cookie_list(
         report += "⚠️ Cookies can stop working without notice. Test quickly after revealing."
 
         await query.message.edit_caption(
-            caption=report, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
+            caption=report,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
 
         # Check achievements after viewing the list
         action_name = f"view_{service_type}"
+        
+        # FIXED: Get first_name safely from profile
+        profile = await get_user_profile(chat_id)
+        first_name = profile.get("first_name") if profile else "Wanderer"
+        
         asyncio.create_task(
             check_and_award_achievements(chat_id, first_name, action=action_name)
         )
@@ -4575,6 +4582,46 @@ async def handle_feedback(chat_id: int, first_name: str, feedback_text: str):
     except Exception as e:
         print(f"Owner notify failed: {e}")
 
+async def handle_test_achievements(chat_id: int):
+    """Debug command to check achievement system status"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+        return
+
+    await tg_app.bot.send_message(chat_id, "🔍 Running achievement system diagnostics...\n")
+
+    # 1. Check cache
+    if not ACHIEVEMENTS_CACHE:
+        await tg_app.bot.send_message(chat_id, "❌ ACHIEVEMENTS_CACHE is empty!")
+        await load_achievements_cache()
+
+    total_achs = len(ACHIEVEMENTS_CACHE)
+    count_types = sum(1 for ach in ACHIEVEMENTS_CACHE.values() if ach.get("condition", {}).get("type") == "count")
+    streak_types = sum(1 for ach in ACHIEVEMENTS_CACHE.values() if ach.get("condition", {}).get("type") == "streak")
+    manual_types = sum(1 for ach in ACHIEVEMENTS_CACHE.values() if ach.get("condition", {}).get("type") == "manual")
+
+    msg = (
+        f"📊 **Achievement System Status**\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Total Achievements in DB: <b>{total_achs}</b>\n"
+        f"• Count-based: <b>{count_types}</b>\n"
+        f"• Streak-based: <b>{streak_types}</b>\n"
+        f"• Manual: <b>{manual_types}</b>\n\n"
+        f"✅ Currently supported triggers:\n"
+        f"• count (views, reveals, etc.)\n"
+        f"• streak (only on daily_bonus)\n\n"
+    )
+
+    # Show first 10 achievements as example
+    msg += "📋 First 10 Achievements:\n"
+    for i, (code, ach) in enumerate(list(ACHIEVEMENTS_CACHE.items())[:10], 1):
+        cond_type = ach.get("condition", {}).get("type", "unknown")
+        icon = ach.get("icon", "❓")
+        msg += f"{i}. {icon} <code>{code}</code> → {ach.get('name')} [{cond_type}]\n"
+
+    msg += "\n<i>Use this to see which achievements are actually wired up.</i>"
+
+    await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
 
 async def handle_view_feedback(chat_id: int):
     if chat_id != OWNER_ID:
@@ -7683,6 +7730,9 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/test_achievements"):
+        await handle_test_achievements(chat_id)
 
     elif text.startswith("/addpatron"):
         if chat_id != OWNER_ID:
