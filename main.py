@@ -2268,7 +2268,9 @@ async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool,
     try:
         profile = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
-        max_reveals = get_max_daily_reveals(user_level, service_type)
+        netflix_bonus = profile.get("netflix_reveals_bonus", 0)
+        all_bonus = profile.get("all_slots_bonus", 0)
+        max_reveals = get_max_daily_reveals(user_level, service_type) + netflix_bonus + all_bonus
 
         key = f"daily_reveals:{chat_id}:{service_type}"
 
@@ -2348,7 +2350,9 @@ async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
     try:
         profile = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
-        max_views = get_max_daily_views(user_level, category)
+        windows_bonus = profile.get("windows_views_bonus", 0)
+        all_bonus = profile.get("all_slots_bonus", 0)
+        max_views = get_max_daily_views(user_level, category) + windows_bonus + all_bonus
         
         # ←←← FIXED: Use normalized key
         normalized = normalize_view_category(category)

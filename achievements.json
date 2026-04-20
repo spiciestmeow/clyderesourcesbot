@@ -1,0 +1,1145 @@
+[
+  {
+    "json_agg": [
+      {
+        "id": 142,
+        "code": "eternal_sprout",
+        "name": "Eternal Sprout",
+        "description": "Reach Level 10 and stay there for 60 consecutive days",
+        "category": "progression",
+        "rarity": "legendary",
+        "icon": "🌱",
+        "condition": {
+          "days": 60,
+          "type": "level_streak",
+          "level": 10
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 25,
+          "column": "netflix_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/eternalsprout.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 143,
+        "code": "ancient_root",
+        "name": "Ancient Root",
+        "description": "Accumulate 25,000 total XP (lifetime)",
+        "category": "progression",
+        "rarity": "legendary",
+        "icon": "🌳",
+        "condition": {
+          "type": "count",
+          "field": "total_xp_earned",
+          "required": 25000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 15,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/ancientroot.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 144,
+        "code": "timeless_wanderer",
+        "name": "Timeless Wanderer",
+        "description": "Be active every single day for 180 days",
+        "category": "progression",
+        "rarity": "mythic",
+        "icon": "🌲",
+        "condition": {
+          "days": 180,
+          "type": "streak"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.5
+        },
+        "gif_url": "https://i.imgur.com/timelesswanderer.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 145,
+        "code": "forest_phoenix",
+        "name": "Forest Phoenix",
+        "description": "Drop from Level 10 to Level 7, then climb back to Level 10",
+        "category": "progression",
+        "rarity": "mythic",
+        "icon": "🔥",
+        "condition": {
+          "type": "phoenix_cycle"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 30,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/forestphoenix.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 146,
+        "code": "eternal_guardian",
+        "name": "Eternal Guardian",
+        "description": "Reach Level 10 with zero negative feedback ever given",
+        "category": "progression",
+        "rarity": "legendary",
+        "icon": "🛡️",
+        "condition": {
+          "type": "level_no_negative"
+        },
+        "reward": {
+          "type": "title",
+          "title": "Eternal Guardian"
+        },
+        "gif_url": "https://i.imgur.com/eternalguardian.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 147,
+        "code": "dawn_breaker",
+        "name": "Dawn Breaker",
+        "description": "Claim daily bonus at exactly 00:00–00:03 Manila time for 30 days",
+        "category": "progression",
+        "rarity": "epic",
+        "icon": "🌅",
+        "condition": {
+          "days": 30,
+          "hour": 0,
+          "type": "secret_time",
+          "minutes": 3
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.4
+        },
+        "gif_url": "https://i.imgur.com/dawnbreaker.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 148,
+        "code": "moonlit_soul",
+        "name": "Moonlit Soul",
+        "description": "Maintain 100-day streak while never missing a Sunday drop",
+        "category": "progression",
+        "rarity": "epic",
+        "icon": "🌕",
+        "condition": {
+          "days": 100,
+          "type": "sunday_streak"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 5,
+          "column": "steam_bonus"
+        },
+        "gif_url": "https://i.imgur.com/moonlitsoul.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 149,
+        "code": "oak_heart",
+        "name": "Oak Heart",
+        "description": "Clear the forest 100 times",
+        "category": "progression",
+        "rarity": "epic",
+        "icon": "🪵",
+        "condition": {
+          "type": "count",
+          "field": "times_cleared",
+          "required": 100
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 12,
+          "column": "windows_views_bonus"
+        },
+        "gif_url": "https://i.imgur.com/oakheart.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 150,
+        "code": "star_weaver",
+        "name": "Star Weaver",
+        "description": "Earn 500 XP in a single day",
+        "category": "progression",
+        "rarity": "legendary",
+        "icon": "✨",
+        "condition": {
+          "type": "daily_xp",
+          "required": 500
+        },
+        "reward": {
+          "type": "title",
+          "title": "Star Weaver"
+        },
+        "gif_url": "https://i.imgur.com/starweaver.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 151,
+        "code": "eternal_flame",
+        "name": "Eternal Flame",
+        "description": "Have all 5 main categories fully unlocked",
+        "category": "progression",
+        "rarity": "mythic",
+        "icon": "🔥",
+        "condition": {
+          "type": "meta_all_categories"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.6
+        },
+        "gif_url": "https://i.imgur.com/eternalflame.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 152,
+        "code": "whispers_of_eternity",
+        "name": "Whispers of Eternity",
+        "description": "Stay at Level 10 for 100 days total",
+        "category": "progression",
+        "rarity": "legendary",
+        "icon": "🌬️",
+        "condition": {
+          "days": 100,
+          "type": "total_level10_days"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 20,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/whisperseternity.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 153,
+        "code": "the_final_leaf",
+        "name": "The Final Leaf",
+        "description": "Reach 50,000 total XP earned",
+        "category": "progression",
+        "rarity": "mythic",
+        "icon": "🍃",
+        "condition": {
+          "type": "count",
+          "field": "total_xp_earned",
+          "required": 50000
+        },
+        "reward": {
+          "type": "title",
+          "title": "The Final Leaf"
+        },
+        "gif_url": "https://i.imgur.com/finalleaf.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 154,
+        "code": "eternal_silence",
+        "name": "Eternal Silence",
+        "description": "Stay completely silent (only /start and daily bonus) for 30 full days, then claim daily bonus on day 31",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌫️",
+        "condition": {
+          "type": "silent_month"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.8
+        },
+        "gif_url": "https://i.imgur.com/eternalsilence.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 155,
+        "code": "cookie_ascendant",
+        "name": "Cookie Ascendant",
+        "description": "Reveal 1,000 Netflix cookies (lifetime)",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🍿",
+        "condition": {
+          "type": "count",
+          "field": "netflix_reveals",
+          "required": 1000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 30,
+          "column": "netflix_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/cookieascendant.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 156,
+        "code": "prime_sovereign",
+        "name": "Prime Sovereign",
+        "description": "Reveal 750 PrimeVideo cookies (lifetime)",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🎥",
+        "condition": {
+          "type": "count",
+          "field": "prime_reveals",
+          "required": 750
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 25,
+          "column": "prime_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/primesovereign.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 157,
+        "code": "key_emperor",
+        "name": "Key Emperor",
+        "description": "View 3,000 Windows/Office keys (lifetime)",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "🔑",
+        "condition": {
+          "type": "count",
+          "field": "windows_views",
+          "required": 3000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 20,
+          "column": "windows_views_bonus"
+        },
+        "gif_url": "https://i.imgur.com/keyemperor.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 158,
+        "code": "steam_archmage",
+        "name": "Steam Archmage",
+        "description": "Successfully claim 200 Steam accounts",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🎮",
+        "condition": {
+          "type": "count",
+          "field": "steam_claims_count",
+          "required": 200
+        },
+        "reward": {
+          "type": "title",
+          "title": "Steam Archmage"
+        },
+        "gif_url": "https://i.imgur.com/steamarchmage.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 159,
+        "code": "wheel_of_fate",
+        "name": "Wheel of Fate",
+        "description": "Hit 25 Legendary spins on the Wheel of Whispers",
+        "category": "mastery",
+        "rarity": "mythic",
+        "icon": "🌠",
+        "condition": {
+          "type": "count",
+          "field": "legendary_spins",
+          "required": 25
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 15,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/wheelfate.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 160,
+        "code": "rainbow_master",
+        "name": "Rainbow Master",
+        "description": "Reveal both Netflix + Prime on the same day for 30 consecutive days",
+        "category": "mastery",
+        "rarity": "mythic",
+        "icon": "🌈",
+        "condition": {
+          "days": 30,
+          "type": "daily_combo",
+          "services": [
+            "netflix",
+            "prime"
+          ]
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.35
+        },
+        "gif_url": "https://i.imgur.com/rainbowmaster.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 161,
+        "code": "vamt_legend",
+        "name": "VAMT Legend",
+        "description": "View keys with total remaining activations > 10,000",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "📦",
+        "condition": {
+          "type": "vamt_total",
+          "required": 10000
+        },
+        "reward": {
+          "type": "title",
+          "title": "VAMT Legend"
+        },
+        "gif_url": "https://i.imgur.com/vamtlegend.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 162,
+        "code": "cookie_reaper",
+        "name": "Cookie Reaper",
+        "description": "Reveal 500 cookies in a single month",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🍂",
+        "condition": {
+          "type": "monthly_reveals",
+          "required": 500
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 18,
+          "column": "netflix_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/cookiereaper.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 163,
+        "code": "steam_sage",
+        "name": "Steam Sage",
+        "description": "Claim 50 Sunday Noon accounts",
+        "category": "mastery",
+        "rarity": "mythic",
+        "icon": "🧙",
+        "condition": {
+          "type": "sunday_claims",
+          "required": 50
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 10,
+          "column": "steam_bonus"
+        },
+        "gif_url": "https://i.imgur.com/steamsage.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 164,
+        "code": "silent_harvester",
+        "name": "Silent Harvester",
+        "description": "Reveal 400 cookies while giving 100% positive feedback",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "🌾",
+        "condition": {
+          "type": "positive_only_reveals",
+          "required": 400
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.25
+        },
+        "gif_url": "https://i.imgur.com/silentharvester.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 165,
+        "code": "wheel_whisperer",
+        "name": "Wheel Whisperer",
+        "description": "Spin the wheel 300 times",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🌬️",
+        "condition": {
+          "type": "count",
+          "field": "total_wheel_spins",
+          "required": 300
+        },
+        "reward": {
+          "type": "title",
+          "title": "Wheel Whisperer"
+        },
+        "gif_url": "https://i.imgur.com/wheelwhisperer.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 166,
+        "code": "resource_hoarder",
+        "name": "Resource Hoarder",
+        "description": "Have all daily caps maxed out simultaneously for 14 days",
+        "category": "mastery",
+        "rarity": "mythic",
+        "icon": "📚",
+        "condition": {
+          "days": 14,
+          "type": "maxed_caps_streak"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 25,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/resourcehoarder.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 167,
+        "code": "perfect_balance",
+        "name": "Perfect Balance",
+        "description": "Reach exactly the same number of Netflix + Prime reveals (±5)",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "⚖️",
+        "condition": {
+          "type": "balanced_reveals"
+        },
+        "reward": {
+          "type": "title",
+          "title": "Perfect Balance"
+        },
+        "gif_url": "https://i.imgur.com/perfectbalance.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 168,
+        "code": "forest_steward",
+        "name": "Forest Steward",
+        "description": "Refer 30 users who each reach Level 7+",
+        "category": "social",
+        "rarity": "legendary",
+        "icon": "🌲",
+        "condition": {
+          "type": "referral_level7",
+          "required": 30
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 20,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/foreststeward.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 169,
+        "code": "caretaker_favorite",
+        "name": "Caretaker’s Favorite",
+        "description": "Send 50 feedback messages that the owner marks as helpful",
+        "category": "social",
+        "rarity": "mythic",
+        "icon": "📜",
+        "condition": {
+          "type": "owner_approved_feedback",
+          "required": 50
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.8
+        },
+        "gif_url": "https://i.imgur.com/caretakerfavorite.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 170,
+        "code": "silent_guardian",
+        "name": "Silent Guardian",
+        "description": "Give 200 positive feedbacks with zero negative ever",
+        "category": "social",
+        "rarity": "legendary",
+        "icon": "🛡️",
+        "condition": {
+          "type": "feedback_ratio",
+          "negative": 0,
+          "positive": 200
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 15,
+          "column": "windows_views_bonus"
+        },
+        "gif_url": "https://i.imgur.com/silentguardian.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 171,
+        "code": "bridge_builder",
+        "name": "Bridge Builder",
+        "description": "Have 10 different users claim Steam accounts you referred",
+        "category": "social",
+        "rarity": "epic",
+        "icon": "🌉",
+        "condition": {
+          "type": "referral_steam_claims",
+          "required": 10
+        },
+        "reward": {
+          "type": "title",
+          "title": "Bridge Builder"
+        },
+        "gif_url": "https://i.imgur.com/bridgebuilder.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 172,
+        "code": "community_elder",
+        "name": "Community Elder",
+        "description": "Be in the global top 5 leaderboard for 30 days",
+        "category": "social",
+        "rarity": "mythic",
+        "icon": "👴",
+        "condition": {
+          "days": 30,
+          "type": "leaderboard_top5_streak"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 22,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/communityelder.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 173,
+        "code": "gift_of_the_glade",
+        "name": "Gift of the Glade",
+        "description": "Gift 20 cookies to other users",
+        "category": "social",
+        "rarity": "epic",
+        "icon": "🎁",
+        "condition": {
+          "type": "gifts_sent",
+          "required": 20
+        },
+        "reward": {
+          "type": "title",
+          "title": "Gift of the Glade"
+        },
+        "gif_url": "https://i.imgur.com/giftoftheglade.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 174,
+        "code": "echo_of_kindness",
+        "name": "Echo of Kindness",
+        "description": "Receive 100 thanks from other users",
+        "category": "social",
+        "rarity": "legendary",
+        "icon": "🗣️",
+        "condition": {
+          "type": "thanks_received",
+          "required": 100
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.3
+        },
+        "gif_url": "https://i.imgur.com/echokindness.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 175,
+        "code": "one_with_the_grove",
+        "name": "One With The Grove",
+        "description": "Be the #1 referrer for an entire month",
+        "category": "social",
+        "rarity": "mythic",
+        "icon": "🌳",
+        "condition": {
+          "type": "top_referrer_month"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 2
+        },
+        "gif_url": "https://i.imgur.com/onewiththegrove.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 176,
+        "code": "midnight_wanderer",
+        "name": "Midnight Wanderer",
+        "description": "Claim daily bonus at exactly 00:00–00:01 Manila time for 42 consecutive days",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌙",
+        "condition": {
+          "days": 42,
+          "hour": 0,
+          "type": "secret_time",
+          "minutes": 1
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 25,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/midnightwanderer.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 177,
+        "code": "ghost_of_the_glade",
+        "name": "Ghost of the Glade",
+        "description": "Use /clear exactly at 03:33 Manila time 15 times",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "👻",
+        "condition": {
+          "hour": 3,
+          "type": "exact_time_clear",
+          "times": 15,
+          "minute": 33
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.45
+        },
+        "gif_url": "https://i.imgur.com/ghostglade.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 178,
+        "code": "whisper_in_the_wind",
+        "name": "Whisper in the Wind",
+        "description": "Spin the wheel exactly 7 times in one day and get only Legendary",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌬️",
+        "condition": {
+          "type": "perfect_legendary_day"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 30,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/whisperwind.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 179,
+        "code": "forgotten_path",
+        "name": "Forgotten Path",
+        "description": "Read Guidance + Lore exactly 77 times combined",
+        "category": "secret",
+        "rarity": "epic",
+        "icon": "📜",
+        "condition": {
+          "lore": 77,
+          "type": "exact_reads",
+          "guidance": 77
+        },
+        "reward": {
+          "type": "title",
+          "title": "Forgotten Path"
+        },
+        "gif_url": "https://i.imgur.com/forgottenpath.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 180,
+        "code": "blood_moon_ritual",
+        "name": "Blood Moon Ritual",
+        "description": "Claim a Steam account on a full moon night 5 times",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌑",
+        "condition": {
+          "type": "full_moon_claims",
+          "required": 5
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 12,
+          "column": "steam_bonus"
+        },
+        "gif_url": "https://i.imgur.com/bloodmoon.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 181,
+        "code": "rainbow_at_dusk",
+        "name": "Rainbow at Dusk",
+        "description": "Reveal a cookie exactly when a Sunday Noon drop happens",
+        "category": "secret",
+        "rarity": "epic",
+        "icon": "🌈",
+        "condition": {
+          "type": "sunday_noon_reveal"
+        },
+        "reward": {
+          "type": "title",
+          "title": "Rainbow at Dusk"
+        },
+        "gif_url": "https://i.imgur.com/rainbowdusk.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 182,
+        "code": "the_unseen_leaf",
+        "name": "The Unseen Leaf",
+        "description": "Stay completely silent for 14 days then claim daily bonus",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🍃",
+        "condition": {
+          "type": "silent_return"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.55
+        },
+        "gif_url": "https://i.imgur.com/unseenleaf.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 183,
+        "code": "hidden_star",
+        "name": "Hidden Star",
+        "description": "Unlock 8 secret achievements",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "⭐",
+        "condition": {
+          "type": "meta",
+          "required_secret": 8
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 1.7
+        },
+        "gif_url": "https://i.imgur.com/hiddenstar.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 184,
+        "code": "the_final_whisper",
+        "name": "The Final Whisper",
+        "description": "Be the first user in the bot’s history to unlock every Legendary achievement",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌬️",
+        "condition": {
+          "type": "first_to_legendary"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 3
+        },
+        "gif_url": "https://i.imgur.com/finalwhisper.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 185,
+        "code": "clyde_chosen",
+        "name": "Clyde’s Chosen",
+        "description": "Be the first user to send a feedback message that the Caretaker replies to with a custom GIF",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌟",
+        "condition": {
+          "type": "first_caretaker_gif_feedback"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 35,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/clydechosen.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 186,
+        "code": "perfect_cycle",
+        "name": "Perfect Cycle",
+        "description": "On a single Sunday: Reveal exactly 7 Netflix + 7 Prime cookies, then spin the Wheel exactly 7 times",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🔄",
+        "condition": {
+          "type": "perfect_sunday_cycle"
+        },
+        "reward": {
+          "type": "title",
+          "title": "Perfect Cycle"
+        },
+        "gif_url": "https://i.imgur.com/perfectcycle.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 187,
+        "code": "the_last_whisper",
+        "name": "The Last Whisper",
+        "description": "Unlock all 12 other secret achievements — and be the only user who has ever done so",
+        "category": "legendary",
+        "rarity": "mythic",
+        "icon": "🌬️",
+        "condition": {
+          "type": "meta_all_secrets"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 3
+        },
+        "gif_url": "https://i.imgur.com/lastwhisper.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 188,
+        "code": "perfect_moon_ritual",
+        "name": "Perfect Moon Ritual",
+        "description": "Claim a Steam account on a full moon night while having a 100-day streak active",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌕",
+        "condition": {
+          "type": "full_moon_with_streak"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 40,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/perfectmoonritual.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 189,
+        "code": "legendary_harvester",
+        "name": "Legendary Harvester",
+        "description": "Reveal 2,000 cookies in total (Netflix + Prime)",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🍪",
+        "condition": {
+          "type": "count",
+          "field": "total_reveals",
+          "required": 2000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 20,
+          "column": "netflix_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/legendaryharvester.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 190,
+        "code": "key_master",
+        "name": "Key Master",
+        "description": "View 5,000 Windows/Office keys (lifetime)",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "🔑",
+        "condition": {
+          "type": "count",
+          "field": "windows_views",
+          "required": 5000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 15,
+          "column": "windows_views_bonus"
+        },
+        "gif_url": "https://i.imgur.com/keymaster.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 191,
+        "code": "social_legend",
+        "name": "Social Legend",
+        "description": "Have 50 users join from your referral link",
+        "category": "social",
+        "rarity": "legendary",
+        "icon": "🌍",
+        "condition": {
+          "type": "referral_total",
+          "required": 50
+        },
+        "reward": {
+          "type": "title",
+          "title": "Social Legend"
+        },
+        "gif_url": "https://i.imgur.com/sociallegend.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 192,
+        "code": "daily_perfection",
+        "name": "Daily Perfection",
+        "description": "Claim daily bonus every day for 365 days",
+        "category": "progression",
+        "rarity": "mythic",
+        "icon": "🌟",
+        "condition": {
+          "days": 365,
+          "type": "streak"
+        },
+        "reward": {
+          "type": "xp_multiplier",
+          "multiplier": 2
+        },
+        "gif_url": "https://i.imgur.com/dailyperfection.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 193,
+        "code": "feedback_saint",
+        "name": "Feedback Saint",
+        "description": "Give 500 positive feedback messages",
+        "category": "social",
+        "rarity": "epic",
+        "icon": "🙏",
+        "condition": {
+          "type": "count",
+          "field": "positive_feedback",
+          "required": 500
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 10,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/feedbacksaint.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 194,
+        "code": "steam_legend",
+        "name": "Steam Legend",
+        "description": "Claim 300 Steam accounts",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🎮",
+        "condition": {
+          "type": "count",
+          "field": "steam_claims_count",
+          "required": 300
+        },
+        "reward": {
+          "type": "title",
+          "title": "Steam Legend"
+        },
+        "gif_url": "https://i.imgur.com/steamlegend.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 195,
+        "code": "wheel_master",
+        "name": "Wheel Master",
+        "description": "Spin the wheel 500 times",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "🌟",
+        "condition": {
+          "type": "count",
+          "field": "total_wheel_spins",
+          "required": 500
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 10,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/wheelmaster.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 196,
+        "code": "beta_guardian",
+        "name": "Beta Guardian",
+        "description": "You were among the very first wanderers to step into the Enchanted Clearing during its beta phase.",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌿✨",
+        "condition": {
+          "type": "manual"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "title": "Pioneer of the Glade",
+          "amount": 30,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:34:06.431215+00:00"
+      }
+    ]
+  }
+]

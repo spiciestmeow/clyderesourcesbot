@@ -1,0 +1,237 @@
+      {
+        "id": 143,
+        "code": "ancient_root",
+        "name": "Ancient Root",
+        "description": "Accumulate 25,000 total XP (lifetime)",
+        "category": "progression",
+        "rarity": "legendary",
+        "icon": "🌳",
+        "condition": {
+          "type": "count",
+          "field": "total_xp_earned",
+          "required": 25000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 15,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://i.imgur.com/ancientroot.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 149,
+        "code": "oak_heart",
+        "name": "Oak Heart",
+        "description": "Clear the forest 100 times",
+        "category": "progression",
+        "rarity": "epic",
+        "icon": "🪵",
+        "condition": {
+          "type": "count",
+          "field": "times_cleared",
+          "required": 100
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 12,
+          "column": "windows_views_bonus"
+        },
+        "gif_url": "https://i.imgur.com/oakheart.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 155,
+        "code": "cookie_ascendant",
+        "name": "Cookie Ascendant",
+        "description": "Reveal 1,000 Netflix cookies (lifetime)",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🍿",
+        "condition": {
+          "type": "count",
+          "field": "netflix_reveals",
+          "required": 1000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 30,
+          "column": "netflix_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/cookieascendant.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 156,
+        "code": "prime_sovereign",
+        "name": "Prime Sovereign",
+        "description": "Reveal 750 PrimeVideo cookies (lifetime)",
+        "category": "mastery",
+        "rarity": "legendary",
+        "icon": "🎥",
+        "condition": {
+          "type": "count",
+          "field": "prime_reveals",
+          "required": 750
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 25,
+          "column": "prime_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/primesovereign.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 157,
+        "code": "key_emperor",
+        "name": "Key Emperor",
+        "description": "View 3,000 Windows/Office keys (lifetime)",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "🔑",
+        "condition": {
+          "type": "count",
+          "field": "windows_views",
+          "required": 3000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 20,
+          "column": "windows_views_bonus"
+        },
+        "gif_url": "https://i.imgur.com/keyemperor.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+      {
+        "id": 159,
+        "code": "wheel_of_fate",
+        "name": "Wheel of Fate",
+        "description": "Hit 25 Legendary spins on the Wheel of Whispers",
+        "category": "mastery",
+        "rarity": "mythic",
+        "icon": "🌠",
+        "condition": {
+          "type": "count",
+          "field": "legendary_spins",
+          "required": 25
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 15,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/wheelfate.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:30:29.487545+00:00"
+      },
+            {
+        "id": 190,
+        "code": "key_master",
+        "name": "Key Master",
+        "description": "View 5,000 Windows/Office keys (lifetime)",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "🔑",
+        "condition": {
+          "type": "count",
+          "field": "windows_views",
+          "required": 5000
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 15,
+          "column": "windows_views_bonus"
+        },
+        "gif_url": "https://i.imgur.com/keymaster.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+            {
+        "id": 195,
+        "code": "wheel_master",
+        "name": "Wheel Master",
+        "description": "Spin the wheel 500 times",
+        "category": "mastery",
+        "rarity": "epic",
+        "icon": "🌟",
+        "condition": {
+          "type": "count",
+          "field": "total_wheel_spins",
+          "required": 500
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "amount": 10,
+          "column": "daily_reveals_bonus"
+        },
+        "gif_url": "https://i.imgur.com/wheelmaster.gif",
+        "is_secret": false,
+        "created_at": "2026-04-20T03:31:32.52956+00:00"
+      },
+      {
+        "id": 196,
+        "code": "beta_guardian",
+        "name": "Beta Guardian",
+        "description": "You were among the very first wanderers to step into the Enchanted Clearing during its beta phase.",
+        "category": "secret",
+        "rarity": "mythic",
+        "icon": "🌿✨",
+        "condition": {
+          "type": "manual"
+        },
+        "reward": {
+          "type": "permanent_slot",
+          "title": "Pioneer of the Glade",
+          "amount": 30,
+          "column": "all_slots_bonus"
+        },
+        "gif_url": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
+        "is_secret": true,
+        "created_at": "2026-04-20T03:34:06.431215+00:00"
+      }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
