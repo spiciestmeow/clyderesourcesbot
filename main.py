@@ -63,6 +63,10 @@ async def get_user_achievements(chat_id: int) -> list:
     return data
 
 async def check_and_award_achievements(chat_id: int, first_name: str, action: str = None):
+    # ── TEMPORARILY DISABLED while fixing ──
+    if chat_id != OWNER_ID:
+        return
+    
     if not ACHIEVEMENTS_CACHE:
         await load_achievements_cache()
 
@@ -4236,7 +4240,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo")],
-        [InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements")],
+        # [InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements")],
         [InlineKeyboardButton("📜 XP History", callback_data="history_page_0")],
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile")],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
@@ -4283,6 +4287,10 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
 
 
 async def show_achievements_page(chat_id: int, query=None, page: int = 0):
+    if chat_id != OWNER_ID:
+        await query.answer("🌿 Achievements are coming soon! Stay tuned.", show_alert=True)
+        return
+    
     """Paginated achievements page — hides secret ones until unlocked"""
     ITEMS_PER_PAGE = 8   # You can change this (recommended 6–10)
 
