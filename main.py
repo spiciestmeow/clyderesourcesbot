@@ -229,7 +229,7 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
 
     await tg_app.bot.send_animation(
         chat_id=chat_id,
-        animation=ach.get("gif_url") or "https://i.pinimg.com/originals/35/5b/93/355b93af809c3f62ac1645494283d070.gif",
+        animation=ach.get("gif_url") or "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
         caption=caption,
         parse_mode="HTML"
     )
@@ -4858,8 +4858,8 @@ async def handle_remove_achievement(chat_id: int, target_id: int, achievement_co
 
         await tg_app.bot.send_message(
             chat_id,
-            f"✅ Successfully **removed** achievement:\n"
-            f"**{ach_name}** from user `{target_id}`"
+            f"✅ Successfully <b>removed</b> achievement:\n"
+            f"<b>{ach_name}</b> from user `{target_id}`"
         )
 
         # Optional: Notify the user
