@@ -23,6 +23,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 from deep_translator import GoogleTranslator
 from gifs import *
+from telegram import InputMediaPhoto
+
 # ──────────────────────────────────────────────
 # AUTO TRANSLATION SYSTEM — English + Tagalog + Bisaya (using deep-translator)
 # ──────────────────────────────────────────────
@@ -2586,6 +2588,44 @@ async def _log_xp_history(
         },
     )
 
+async def show_gcash_qr(chat_id: int, query=None):
+    caption = (
+        "💰 <b>GCash Donation QR Code</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "Scan this QR code with your GCash app to support the Enchanted Clearing.\n\n"
+        "Any amount helps keep the forest magic alive! 🌳✨\n\n"
+        "<i>Thank you, kind wanderer. The trees are grateful.</i>"
+    )
+
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Back to Donate Menu", callback_data="donate")],
+        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+    ])
+
+    if query and query.message:
+        try:
+            # This edits the exact same message
+            await query.message.edit_media(
+                media=InputMediaPhoto(
+                    media=QR_IMAGE_URL,
+                    caption=caption,
+                    parse_mode="HTML"
+                ),
+                reply_markup=markup
+            )
+            return
+        except Exception:
+            pass  # fallback if edit fails
+
+    # Fallback (very rare)
+    await tg_app.bot.send_photo(
+        chat_id=chat_id,
+        photo=QR_IMAGE_URL,
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
 async def _log_wheel_spin(
     chat_id: int,
     first_name: str,
@@ -2669,13 +2709,10 @@ def kb_first_time_menu():
     ])
 
 def kb_donate():
-    """Beautiful donation menu — GCash first (best for Philippines)"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💰 GCash (Recommended)", url="https://YOUR_GCASH_LINK_HERE")],
-        [InlineKeyboardButton("🌍 PayPal / International", url="https://YOUR_PAYPAL_LINK_HERE")],
+        [InlineKeyboardButton("💰 GCash QR Code", callback_data="gcash_qr")],
         [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
     ])
-
 def kb_inventory():
     return InlineKeyboardMarkup([
         [
@@ -5615,6 +5652,11 @@ async def handle_callback(update: Update):
             parse_mode="HTML",
             reply_markup=kb_donate()
         )
+        return
+    
+        # ── GCASH QR CODE SCREEN ──
+    elif data == "gcash_qr":
+        await show_gcash_qr(chat_id, query)
         return
 
     elif data == "onboarding_skip":

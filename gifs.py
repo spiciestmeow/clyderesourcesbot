@@ -32,3 +32,5 @@ AFTERNOON_GIF = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExczJsZ25kM2N1N
 EVENING_GIF   = "https://motionbgs.com/media/135/totoro-on-top-of-a-tree.960x540.mp4"
 MIDNIGHT_GIF = "https://i.pinimg.com/originals/35/5b/93/355b93af809c3f62ac1645494283d070.gif"
 LATENIGHT_GIF = "https://i.pinimg.com/originals/9d/07/a0/9d07a0a457837aad2465da3290bd41c4.gif"
+
+QR_IMAGE_URL = "https://i.imgur.com/RtDgp0M.jpeg"
