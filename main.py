@@ -34,6 +34,121 @@ SUPPORTED_LANGUAGES = {
     "ceb": ("🇵🇭", "Bisaya"),
 }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
+# ══════════════════════════════════════════════════════════════════════════════
+
+ACHIEVEMENTS_CACHE: dict = {}
+
+async def load_achievements_cache():
+    global ACHIEVEMENTS_CACHE
+    data = await _sb_get("achievements", select="*", order="id.asc") or []
+   
+    ACHIEVEMENTS_CACHE = {ach["code"]: ach for ach in data}
+   
+    try:
+        await redis_client.setex("achievements_cache", 3600, json.dumps(ACHIEVEMENTS_CACHE))
+    except Exception as e:
+        print(f"⚠️ Redis cache set failed: {e}")
+   
+    print(f"✅ Loaded {len(ACHIEVEMENTS_CACHE)} achievements. Codes: {list(ACHIEVEMENTS_CACHE.keys())[:15]}...")
+    return len(ACHIEVEMENTS_CACHE)
+
+async def get_user_achievements(chat_id: int) -> list:
+    """Get all achievements for a user (unlocked + in-progress)"""
+    data = await _sb_get(
+        "user_achievements",
+        **{"chat_id": f"eq.{chat_id}", "select": "*"}
+    ) or []
+    return data
+
+async def check_and_award_achievements(chat_id: int, first_name: str, action: str = None):
+    if not ACHIEVEMENTS_CACHE:
+        print("⚠️ Achievement cache is empty — reloading...")
+        await load_achievements_cache()
+
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        print(f"🔴 No profile for {chat_id} — skipping achievements")
+        return
+
+    user_achs = await get_user_achievements(chat_id)
+    unlocked_codes = {u["achievement_code"] for u in user_achs if u.get("unlocked_at")}
+
+    awarded_count = 0
+    for code, ach in ACHIEVEMENTS_CACHE.items():
+        if code in unlocked_codes:
+            continue
+        if ach.get("condition", {}).get("type") == "manual":
+            continue
+
+        condition = ach.get("condition", {})
+        should_unlock = False
+
+        try:
+            if condition.get("type") == "count":
+                field = condition.get("field")
+                required = condition.get("required", 0)
+                current = profile.get(field, 0)
+                if current >= required:
+                    should_unlock = True
+                    print(f"✅ Achievement {code} unlocked by count ({field}: {current} >= {required})")
+
+            elif condition.get("type") == "streak" and action == "daily_bonus":
+                streak = await calculate_streak(chat_id)
+                if streak >= condition.get("days", 0):
+                    should_unlock = True
+                    print(f"✅ Achievement {code} unlocked by streak ({streak} days)")
+
+            # Add more condition types here later (e.g. "has_revealed_netflix", etc.)
+
+            if should_unlock:
+                await _sb_post("user_achievements", {
+                    "chat_id": chat_id,
+                    "achievement_code": code,
+                    "progress": profile.get(condition.get("field"), 0),
+                    "unlocked_at": datetime.now(pytz.utc).isoformat(),
+                    "tier": 4 if ach.get("rarity") in ["legendary", "mythic"] else 3
+                })
+
+                # Apply reward
+                reward = ach.get("reward", {})
+                if reward.get("type") == "permanent_slot":
+                    col = reward.get("column")
+                    amount = reward.get("amount", 0)
+                    if col and amount:
+                        await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {
+                            col: (profile.get(col) or 0) + amount
+                        })
+
+                await send_achievement_unlock(chat_id, ach, first_name)
+                awarded_count += 1
+
+        except Exception as e:
+            print(f"🔴 Error checking achievement {code} for {chat_id}: {e}")
+
+    if awarded_count > 0:
+        print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
+
+async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
+    """Epic unlock message with animation"""
+    rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
+    emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
+
+    caption = (
+        f"{emoji} <b>A HIDDEN ACHIEVEMENT WAS REVEALED!</b>\n\n"
+        f"🏆 <b>{ach['name']}</b>\n"
+        f"{ach['description']}\n\n"
+        f"<i>The ancient forest spirits have recognized you, {html.escape(first_name)}!</i> 🌲✨"
+    )
+
+    await tg_app.bot.send_animation(
+        chat_id=chat_id,
+        animation=ach.get("gif_url") or "https://i.imgur.com/8zK9vL2.gif",
+        caption=caption,
+        parse_mode="HTML"
+    )
+
 async def get_forest_patrons() -> list:
     """Fetch visible patrons from Supabase (cached 1 hour)"""
     cached = await redis_client.get("patrons_cache")
@@ -260,15 +375,18 @@ async def claim_steam_account(chat_id: int, first_name: str, account_email: str,
         }
     ) or []
 
-    if existing_claim:
-        return False
-        
     await _sb_post("steam_claims", {
         "chat_id": chat_id,
         "first_name": first_name,
         "account_email": account_email,
         "game_name": game_name,
     })
+
+    # ── Check achievements after successful Steam claim ──
+    asyncio.create_task(
+        check_and_award_achievements(chat_id, first_name, action="steam_claim")
+    )
+
     return True
     
 # ──────────────────────────────────────────────
@@ -389,6 +507,9 @@ async def lifespan(app: FastAPI):
         timeout=12.0,
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     )
+    # Inside lifespan() after starting Telegram
+    await load_achievements_cache()
+    print("✅ Achievement system loaded (54 achievements)")
 
     # Redis for cooldowns + VAMT cache
     redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
@@ -2469,6 +2590,10 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
         ok = await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", payload)
         print(f"🔵 PATCH result for {chat_id}: ok={ok}, daily_bonus={daily_bonus}")
 
+        # ── SUPER ADVANCED ACHIEVEMENTS ──
+        if ok:
+            asyncio.create_task(check_and_award_achievements(chat_id, first_name, action))
+
         # ── Sequential XP values for clean history logging ──
         base_xp = profile.get("xp") or 0
         xp_after_action = base_xp + action_xp
@@ -3705,6 +3830,12 @@ async def show_paginated_cookie_list(
             caption=report, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
         )
 
+        # Check achievements after viewing the list
+        action_name = f"view_{service_type}"
+        asyncio.create_task(
+            check_and_award_achievements(chat_id, first_name, action=action_name)
+        )
+
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
     loading = None
@@ -3858,6 +3989,11 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         action_xp, _ = await add_xp(chat_id, first_name, action_name)
         if action_xp:
             asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
+        # ── Check achievements after revealing a cookie ──
+        asyncio.create_task(
+            check_and_award_achievements(chat_id, first_name, action=action_name)
+        )
 
         await redis_client.setex(
             f"reveal_msg:{chat_id}:{service_type}",
@@ -5104,7 +5240,7 @@ async def handle_confirm_toggle_maintenance(chat_id: int):
         reply_markup=confirm_kb,
     )
 
-async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query):
+async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query, first_name: str):
     pending_cat = category
     cat_label = "Windows" if pending_cat in ("win", "windows") else "Office"
     cat_emoji = "🪟" if pending_cat in ("win", "windows") else "📑"
@@ -5227,6 +5363,17 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query)
             caption=report,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+        # ── Award XP + Check achievements after viewing keys ──
+        action_name = "view_windows" if category in ("win", "windows") else "view_office"
+        action_xp, _ = await add_xp(chat_id, first_name, action_name)
+        if action_xp:
+            asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
+        # Check achievements
+        asyncio.create_task(
+            check_and_award_achievements(chat_id, first_name, action=action_name)
         )
 
     except Exception as e:
@@ -5724,6 +5871,9 @@ async def handle_callback(update: Update):
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
         return
+    
+    elif data == "show_achievements":
+        await show_achievements_page(chat_id, query)
     
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
@@ -6235,6 +6385,11 @@ async def handle_callback(update: Update):
             )
         )
 
+        # Check achievements after wheel spin
+        asyncio.create_task(
+            check_and_award_achievements(chat_id, first_name, action="wheel_spin")
+        )
+
         # ── Final result ──
         final_text = selected["text"] + f"\n\n{RARITY_FLAVOR[rarity]}"
         await loading.edit_caption(caption=final_text, parse_mode="HTML")
@@ -6343,7 +6498,7 @@ async def handle_callback(update: Update):
             category = "win"
         
         # Re-show the original key list
-        await show_winoffice_keys(chat_id, category, profile, query)
+        await show_winoffice_keys(chat_id, category, profile, query, first_name)
         return
 
     # ── INVITE COPY LINK ──
@@ -6877,7 +7032,7 @@ async def handle_callback(update: Update):
                 if action_xp:
                     asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-                await show_winoffice_keys(chat_id, category, profile, query)
+                await show_winoffice_keys(chat_id, category, profile, query, first_name)
                 return
         
 
@@ -7261,6 +7416,27 @@ async def handle_callback(update: Update):
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN UPDATE PROCESSOR
 # ══════════════════════════════════════════════════════════════════════════════
+async def show_achievements_page(chat_id: int, query=None):
+    user_achs = await get_user_achievements(chat_id)
+    unlocked = [a for a in user_achs if a.get("unlocked_at")]
+    in_progress = [a for a in user_achs if not a.get("unlocked_at")]
+
+    text = "🏆 <b>Your Forest Trophies</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+
+    for u in unlocked[:8]:  # show top 8
+        ach = ACHIEVEMENTS_CACHE.get(u["achievement_code"])
+        if ach:
+            text += f"{ach['icon']} <b>{ach['name']}</b> — {ach['rarity'].title()}\n"
+
+    if not unlocked:
+        text += "🌱 No achievements yet...\nKeep exploring the forest!\n"
+
+    buttons = [[InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")]]
+
+    if query and query.message:
+        await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await send_animated_translated(chat_id, text, animation_url="https://i.imgur.com/achievements.gif", reply_markup=InlineKeyboardMarkup(buttons))
 
 async def process_update(update_data: dict):
     update = Update.de_json(update_data, tg_app.bot)
