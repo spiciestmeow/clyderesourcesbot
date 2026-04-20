@@ -204,6 +204,17 @@ async def handle_award_beta_guardian(chat_id: int, target_id: int):
         profile = await get_user_profile(target_id)
         first_name = profile.get("first_name", "Wanderer") if profile else "Wanderer"
 
+        # Apply the permanent_slot reward for beta_guardian
+        ach_data = ACHIEVEMENTS_CACHE.get("beta_guardian", {})
+        reward = ach_data.get("reward", {})
+        if reward.get("type") == "permanent_slot":
+            col = reward.get("column")
+            amount = reward.get("amount", 0)
+            if col and amount:
+                await _sb_patch(f"user_profiles?chat_id=eq.{target_id}", {
+                    col: (profile.get(col) or 0) + amount
+                })
+
         await tg_app.bot.send_message(
             chat_id,
             f"✅ <b>Beta Guardian</b> successfully awarded to user `{target_id}` ({first_name})"
@@ -2060,7 +2071,9 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "total_wheel_spins,wheel_xp_earned,legendary_spins,"
                 "onboarding_completed,"
                 "notif_netflix,notif_prime,notif_windows,notif_steam,"
-                "profile_gif_id,profile_gif_changes"
+                "profile_gif_id,profile_gif_changes,"
+                "all_slots_bonus,windows_views_bonus,netflix_reveals_bonus,"
+                "prime_reveals_bonus,daily_reveals_bonus"
             ),
         },
     )
@@ -2268,9 +2281,13 @@ async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool,
     try:
         profile = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
-        netflix_bonus = profile.get("netflix_reveals_bonus", 0)
         all_bonus = profile.get("all_slots_bonus", 0)
-        max_reveals = get_max_daily_reveals(user_level, service_type) + netflix_bonus + all_bonus
+        daily_reveals_bonus = profile.get("daily_reveals_bonus", 0)  # Wheel of Fate + Wheel Master
+        if service_type == "netflix":
+            service_bonus = profile.get("netflix_reveals_bonus", 0)
+        else:
+            service_bonus = profile.get("prime_reveals_bonus", 0)
+        max_reveals = get_max_daily_reveals(user_level, service_type) + service_bonus + all_bonus + daily_reveals_bonus
 
         key = f"daily_reveals:{chat_id}:{service_type}"
 
@@ -2313,11 +2330,14 @@ async def get_remaining_reveals_and_views(chat_id: int) -> dict:
         level = profile.get("level", 1)
         remaining = {}
 
+        all_bonus = profile.get("all_slots_bonus", 0)
+        daily_reveals_bonus = profile.get("daily_reveals_bonus", 0)
         for svc in ["netflix", "prime"]:
             try:
                 key = f"daily_reveals:{chat_id}:{svc}"
                 used = int(await redis_client.get(key) or 0)
-                max_allowed = get_max_daily_reveals(level, svc)
+                service_bonus = profile.get(f"{svc}_reveals_bonus", 0)
+                max_allowed = get_max_daily_reveals(level, svc) + service_bonus + all_bonus + daily_reveals_bonus
                 left = max(0, max_allowed - used)
                 remaining[svc] = left
                 print(f"[DEBUG REMAINING] {svc} → used={used}/{max_allowed} → left={left}")
@@ -2325,11 +2345,12 @@ async def get_remaining_reveals_and_views(chat_id: int) -> dict:
                 print(f"🔴 Redis error reading {svc} remaining: {e}")
                 remaining[svc] = 0
 
+        windows_bonus = profile.get("windows_views_bonus", 0)
         for cat in ["windows", "office"]:
             try:
                 key = f"daily_views:{chat_id}:{cat}"
                 used = int(await redis_client.get(key) or 0)
-                max_allowed = get_max_daily_views(level, cat)
+                max_allowed = get_max_daily_views(level, cat) + windows_bonus + all_bonus
                 left = max(0, max_allowed - used)
                 remaining[cat] = left
                 print(f"[DEBUG REMAINING] {cat} → used={used}/{max_allowed} → left={left}")
@@ -2352,6 +2373,7 @@ async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
         user_level = profile.get("level", 1) if profile else 1
         windows_bonus = profile.get("windows_views_bonus", 0)
         all_bonus = profile.get("all_slots_bonus", 0)
+        # daily_reveals_bonus intentionally excluded — only applies to cookie reveals
         max_views = get_max_daily_views(user_level, category) + windows_bonus + all_bonus
         
         # ←←← FIXED: Use normalized key
@@ -4165,17 +4187,26 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     # ── NEW: Daily limits progress
     rem = await get_remaining_reveals_and_views(chat_id)
     level_for_calc = profile.get("level", 1)
+
+    _all_b = profile.get("all_slots_bonus", 0)
+    _dr_b = profile.get("daily_reveals_bonus", 0)
+    _nf_max = get_max_daily_reveals(level_for_calc, "netflix") + profile.get("netflix_reveals_bonus", 0) + _all_b + _dr_b
+    _pr_max = get_max_daily_reveals(level_for_calc, "prime") + profile.get("prime_reveals_bonus", 0) + _all_b + _dr_b
+    _win_max = get_max_daily_views(level_for_calc, "windows") + profile.get("windows_views_bonus", 0) + _all_b
+    _off_max = get_max_daily_views(level_for_calc, "office") + profile.get("windows_views_bonus", 0) + _all_b
+
+
     daily_section = (
         "📊 <b>Today's Forest Limits</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"╭🍿 Netflix Reveals: <b>{rem['netflix']}</b> left\n"
-        f"╰{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'netflix') - rem['netflix'], get_max_daily_reveals(level_for_calc, 'netflix'))}\n\n"
+        f"╰{create_daily_progress_bar(_nf_max - rem['netflix'], _nf_max)}\n\n"
         f"╭🎥 Prime Reveals: <b>{rem['prime']}</b> left\n"
-        f"╰{create_daily_progress_bar(get_max_daily_reveals(level_for_calc, 'prime') - rem['prime'], get_max_daily_reveals(level_for_calc, 'prime'))}\n\n"
+        f"╰{create_daily_progress_bar(_pr_max - rem['prime'], _pr_max)}\n\n"
         f"╭🪟 Windows Keys: <b>{rem['windows']}</b> left\n"
-        f"╰{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'windows') - rem['windows'], get_max_daily_views(level_for_calc, 'windows'))}\n\n"
+        f"╰{create_daily_progress_bar(_win_max - rem['windows'], _win_max)}\n\n"
         f"╭📑 Office Keys: <b>{rem['office']}</b> left\n"
-        f"╰{create_daily_progress_bar(get_max_daily_views(level_for_calc, 'office') - rem['office'], get_max_daily_views(level_for_calc, 'office'))}\n"
+        f"╰{create_daily_progress_bar(_off_max - rem['office'], _off_max)}\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
     )
 
@@ -4321,6 +4352,7 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
         text = f"🏆 <b>Forest Achievements</b>  ({page+1}/{total_pages})\n"
         text += "━━━━━━━━━━━━━━━━━━\n\n"
 
+        hidden_count = 0
         for code, ach in page_achs:
             is_unlocked = code in unlocked_codes
             is_secret = ach.get("is_secret", False)
@@ -7713,7 +7745,7 @@ async def handle_callback(update: Update):
         await mark_winoffice_guide_seen(chat_id)
         pending_cat = await redis_client.get(f"winoffice_pending_cat:{chat_id}") or "win"
         await redis_client.delete(f"winoffice_pending_cat:{chat_id}")
-        await show_winoffice_keys(chat_id, pending_cat, profile, query)
+        await show_winoffice_keys(chat_id, pending_cat, profile, query, first_name)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN UPDATE PROCESSOR
