@@ -1349,15 +1349,12 @@ async def handle_document(update: Update):
     """Handle document uploads (.txt or .zip) - Fast single file + Batch for multiple"""
     message = update.message
     chat_id = message.chat_id
-    if chat_id != OWNER_ID:
-        return
-    
-    # ── USER CUSTOM PROFILE GIF UPLOAD ──
+
+    # ── USER CUSTOM PROFILE GIF UPLOAD (anyone can do this) ──
     waiting = await redis_client.get(f"waiting_for_logo:{chat_id}")
     if waiting:
         await redis_client.delete(f"waiting_for_logo:{chat_id}")
-        
-        # Check weekly cooldown
+
         can_change, hours_left = await can_change_profile_gif(chat_id)
         if not can_change:
             await message.reply_text(
@@ -1368,7 +1365,7 @@ async def handle_document(update: Update):
 
         document = message.document
         animation = message.animation
-        
+
         file_id = None
         if animation:
             file_id = animation.file_id
@@ -1384,9 +1381,7 @@ async def handle_document(update: Update):
         if file_id:
             success = await set_user_profile_gif(chat_id, file_id)
             if success:
-                # Set 7-day cooldown
                 await redis_client.setex(f"profile_gif_cooldown:{chat_id}", 7*24*3600, "1")
-                
                 await message.reply_animation(
                     animation=file_id,
                     caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
@@ -1396,6 +1391,10 @@ async def handle_document(update: Update):
                 )
             else:
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
+        return
+    
+    # ── KEY UPLOAD: Owner only ──
+    if chat_id != OWNER_ID:
         return
 
     document = message.document
@@ -7225,6 +7224,24 @@ async def process_update(update_data: dict):
                 parse_mode="HTML"
             )
             return
+        
+    elif text.startswith("/resetprofilegif"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+            return
+
+        parts = text.split()
+        target_id = int(parts[1]) if len(parts) > 1 else chat_id
+
+        deleted = await redis_client.delete(f"profile_gif_cooldown:{target_id}")
+
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Profile GIF cooldown reset for <code>{target_id}</code></b>\n\n"
+            f"They can now change their profile logo again. 🌿\n"
+            f"Deleted {deleted} cooldown key.",
+            parse_mode="HTML"
+        )
 
         await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")  # 10 min to upload
         await tg_app.bot.send_message(
