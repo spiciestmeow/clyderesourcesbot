@@ -4166,6 +4166,24 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     if not profile:
         await tg_app.bot.send_message(chat_id, "🌿 Please use /start first.")
         return
+    
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    loading = await send_loading(chat_id, "🌿 <i>Reading your forest soul...</i>")
+
+    # ✅ Award XP FIRST before fetching profile for display
+    action_xp, _ = await add_xp(chat_id, first_name, "profile")
+    if action_xp:
+        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
+    # ✅ NOW fetch fresh profile with updated XP
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return
 
     level = profile.get("level", 1)
     xp = profile.get("xp", 0)
@@ -4188,7 +4206,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"{create_progress_bar(unlocked_count, visible_total, length=10)}\n\n"
     )
 
-    # ── NEW: Daily limits progress
+    # ── Daily limits progress
     rem = await get_remaining_reveals_and_views(chat_id)
     level_for_calc = profile.get("level", 1)
 
@@ -4198,7 +4216,6 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     _pr_max = get_max_daily_reveals(level_for_calc, "prime") + profile.get("prime_reveals_bonus", 0) + _all_b + _dr_b
     _win_max = get_max_daily_views(level_for_calc, "windows") + profile.get("windows_views_bonus", 0) + _all_b
     _off_max = get_max_daily_views(level_for_calc, "office") + profile.get("windows_views_bonus", 0) + _all_b
-
 
     daily_section = (
         "📊 <b>Today's Forest Limits</b>\n"
@@ -4285,20 +4302,6 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
 
-    if query and query.message:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-    loading = await send_loading(chat_id, "🌿 <i>Reading your forest soul...</i>")
-    
-    # Award XP
-    action_xp, _ = await add_xp(chat_id, first_name, "profile")
-    if action_xp:
-        asyncio.create_task(send_xp_feedback(chat_id, action_xp))
-
-    profile = await get_user_profile(chat_id)
     gif_id = profile.get("profile_gif_id") if profile else None
 
     if gif_id:
@@ -4323,7 +4326,6 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         pass
 
     await _remember(chat_id, msg.message_id)
-
 
 async def show_achievements_page(chat_id: int, query=None, page: int = 0):
     """Paginated achievements page — hides secret ones until unlocked"""
