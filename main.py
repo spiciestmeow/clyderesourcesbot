@@ -6182,20 +6182,41 @@ async def handle_callback(update: Update):
     elif data == "change_profile_logo":
         can_change, hours_left = await can_change_profile_gif(chat_id)
         if not can_change:
-            await query.answer(f"🌿 Only 1 change per week.\n{hours_left} hours left!", show_alert=True)
+            days_left = hours_left // 24
+            hours_remaining = hours_left % 24
+
+            time_text = ""
+            if days_left > 0:
+                time_text = f"{days_left}d {hours_remaining}h"
+            else:
+                time_text = f"{hours_left}h"
+
+            await query.answer("🌿 You've already changed your logo this week!", show_alert=False)
+            await tg_app.bot.send_message(
+                chat_id,
+                f"🌿 <b>Profile Logo Cooldown</b>\n\n"
+                f"You can only change your profile logo <b>once per week</b>.\n\n"
+                f"⏳ Come back in <b>{time_text}</b> to update it again.\n\n"
+                f"<i>The forest remembers your emblem, wanderer. 🍃</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")]
+                ])
+            )
             return
 
-        await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")  # 10 min window
+        await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
         await query.answer("✅ Send your new GIF now!", show_alert=False)
 
         await tg_app.bot.send_message(
             chat_id,
-            "🌿 <b>Upload new profile logo</b>\n\n"
-            "Send me a GIF (animation or document) within 10 minutes.\n"
-            "Maximum 10 MB.",
+            "🌿 <b>Upload Your New Profile Logo</b>\n\n"
+            "Send me a <b>GIF</b> (animation or .gif file) within <b>10 minutes</b>.\n"
+            "Maximum size: <b>10 MB</b>\n\n"
+            "<i>This will become your personal emblem in the forest. ✨</i>",
             parse_mode="HTML"
         )
-
+        
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
         return
