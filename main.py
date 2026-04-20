@@ -182,7 +182,7 @@ async def handle_award_beta_guardian(chat_id: int, target_id: int):
     # Check if already unlocked
     user_achs = await get_user_achievements(target_id)
     if any(u["achievement_code"] == "beta_guardian" and u.get("unlocked_at") for u in user_achs):
-        await tg_app.bot.send_message(chat_id, f"⚠️ User {target_id} already has **Beta Guardian**.")
+        await tg_app.bot.send_message(chat_id, f"⚠️ User {target_id} already has <b>Beta Guardian</b>.")
         return
 
     # Award it
@@ -200,7 +200,7 @@ async def handle_award_beta_guardian(chat_id: int, target_id: int):
 
         await tg_app.bot.send_message(
             chat_id,
-            f"✅ **Beta Guardian** successfully awarded to user `{target_id}` ({first_name})"
+            f"✅ <b>Beta Guardian</b> successfully awarded to user `{target_id}` ({first_name})"
         )
 
         # Send epic unlock to the user
