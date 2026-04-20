@@ -975,25 +975,39 @@ async def send_supabase_error(chat_id: int, query=None):
         pass
 
 async def handle_flushcache(chat_id: int):
+    """Flush ALL major caches (VAMT + achievements + patrons + events)"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can refresh the forest cache.")
         return
 
-    deleted = await redis_client.delete("vamt_cache")
-    if deleted:
+    keys_to_flush = [
+        "vamt_cache",           # Inventory cookies & keys
+        "achievements_cache",   # All achievement data + GIF URLs
+        "patrons_cache",        # Forest Patrons list
+        "active_event",         # Current event banner
+    ]
+
+    try:
+        deleted = await redis_client.delete(*keys_to_flush)
+        # Force immediate reload of achievements (critical for GIF updates)
+        await load_achievements_cache()
+
         await tg_app.bot.send_message(
             chat_id,
-            "✅ <b>Forest Cache Cleared!</b>\n\n"
-            "🌿 The VAMT cache has been flushed.\n"
-            "Next inventory request will fetch fresh data from Supabase.\n\n"
-            "<i>New cookies will now appear immediately.</i> 🍃",
+            f"✅ <b>Forest Cache Fully Cleared!</b>\n\n"
+            f"🌿 Flushed <b>{deleted}</b> cache key(s)\n"
+            f"• VAMT inventory\n"
+            f"• Achievements (including GIFs)\n"
+            f"• Patrons & active events\n\n"
+            f"<i>All systems will now load fresh data from Supabase.</i> 🍃",
             parse_mode="HTML",
         )
-    else:
+    except Exception as e:
         await tg_app.bot.send_message(
             chat_id,
-            "ℹ️ <b>Cache was already empty.</b>\n\n"
-            "🌿 No cached data found — Supabase is already being hit directly.",
+            f"❌ <b>Cache flush failed</b>\n\n"
+            f"Error: {html.escape(str(e))}\n\n"
+            f"Please check server logs.",
             parse_mode="HTML",
         )
 
@@ -4827,6 +4841,44 @@ async def get_active_event() -> dict | None:
 
     return result
 
+async def handle_remove_achievement(chat_id: int, target_id: int, achievement_code: str):
+    """Remove an achievement from a user (Owner only)"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can remove achievements.")
+        return
+
+    # Delete the achievement record
+    deleted = await _sb_delete(
+        f"user_achievements?chat_id=eq.{target_id}&achievement_code=eq.{achievement_code}"
+    )
+
+    if deleted:
+        ach = ACHIEVEMENTS_CACHE.get(achievement_code)
+        ach_name = ach.get("name", achievement_code) if ach else achievement_code
+
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ Successfully **removed** achievement:\n"
+            f"**{ach_name}** from user `{target_id}`"
+        )
+
+        # Optional: Notify the user
+        try:
+            await tg_app.bot.send_message(
+                target_id,
+                f"🌿 <b>An achievement was removed by the Caretaker.</b>\n\n"
+                f"🏆 <b>{ach_name}</b> has been taken back.\n\n"
+                f"<i>The forest sometimes adjusts its gifts...</i> 🍃",
+                parse_mode="HTML"
+            )
+        except:
+            pass  # user might have blocked the bot
+    else:
+        await tg_app.bot.send_message(
+            chat_id,
+            f"⚠️ No achievement found with code `{achievement_code}` for user `{target_id}`."
+        )
+
 async def handle_add_event(chat_id: int, title: str, description: str, event_date: str, bonus_type: str = ""):
     if chat_id != OWNER_ID:
         return
@@ -7941,6 +7993,22 @@ async def process_update(update_data: dict):
             f"They'll see the tutorial again on next /start.",
             parse_mode="HTML"
         )
+
+    elif text.startswith("/remove_achievement"):
+        try:
+            parts = text.split()
+            target_id = int(parts[1])
+            achievement_code = parts[2].strip()
+            await handle_remove_achievement(chat_id, target_id, achievement_code)
+        except:
+            await tg_app.bot.send_message(
+                chat_id,
+                "📌 Usage:\n"
+                "`/remove_achievement <user_id> <achievement_code>`\n\n"
+                "Example:\n"
+                "`/remove_achievement 123456789 beta_guardian`",
+                parse_mode="HTML"
+            )
 
     elif text.startswith("/addevent"):
         if chat_id != OWNER_ID:
