@@ -3905,6 +3905,7 @@ async def show_paginated_cookie_list(
     reveals_left = rem.get(service_type, 0)
 
     event_bonus_txt = ""
+    freshness_legend = "🟢 Fresh  🟡 Recent  🟠 Aging  🔴 Old\n\n"
     if event:
         bonus_type = event.get("bonus_type", "").strip()
         if bonus_type == "netflix_double":
@@ -3912,7 +3913,7 @@ async def show_paginated_cookie_list(
         elif bonus_type == "netflix_max":
             event_bonus_txt = "🎉 <b>Event:</b> Netflix slots maximized!\n"
 
-        freshness_legend = "🟢 Fresh  🟡 Recent  🟠 Aging  🔴 Old\n\n"
+
 
     data = await get_vamt_data()
     if not data:
