@@ -243,18 +243,35 @@ async def handle_award_beta_guardian(chat_id: int, target_id: int):
         await tg_app.bot.send_message(chat_id, "❌ Failed to award. Check logs.")
 
 async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
-    """Epic unlock message with animation + special note for manual achievements"""
     rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
     emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
 
-    # Special note for manual achievements
     is_manual = ach.get("condition", {}).get("type") == "manual"
     manual_note = "\n\n🌟 <i>This is a special manual achievement awarded by the Forest Caretaker.</i>" if is_manual else ""
+
+    # ── BUILD REWARD LINE ──
+    reward = ach.get("reward", {})
+    reward_line = ""
+    perk_text = ""
+    if reward.get("type") == "permanent_slot":
+        amount = reward.get("amount", 0)
+        column = reward.get("column", "")
+        column_labels = {
+            "all_slots_bonus":       "ALL daily slots",
+            "netflix_reveals_bonus": "Netflix reveals/day",
+            "prime_reveals_bonus":   "Prime reveals/day",
+            "windows_views_bonus":   "Windows/Office views/day",
+            "daily_reveals_bonus":   "cookie reveals/day",
+        }
+        label = column_labels.get(column, column)
+        reward_line = f"\n\n🎁 <b>Perk Unlocked:</b> +{amount} {label} <b>permanently!</b>"
+        perk_text = f"🎁 Perk Unlocked: +{amount} {label} permanently!"
 
     caption = (
         f"{emoji} <b>A HIDDEN ACHIEVEMENT WAS REVEALED!</b>\n\n"
         f"🏆 <b>{ach['name']}</b>\n"
         f"{ach['description']}"
+        f"{reward_line}"
         f"{manual_note}\n\n"
         f"<i>The ancient forest spirits have recognized you, {html.escape(first_name)}!</i> 🌲✨"
     )
@@ -265,6 +282,13 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
         caption=caption,
         parse_mode="HTML"
     )
+
+    # ── TEMP PERK REMINDER (3 seconds delay so it appears after the animation) ──
+    if perk_text:
+        async def _delayed_perk():
+            await asyncio.sleep(3)
+            await send_temporary_message(chat_id, perk_text, duration=3)
+        asyncio.create_task(_delayed_perk())
 
 async def get_forest_patrons() -> list:
     """Fetch visible patrons from Supabase (cached 1 hour)"""
