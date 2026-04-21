@@ -3980,7 +3980,6 @@ async def show_paginated_cookie_list(
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🌿 <b>{reveals_left}</b> reveals left • Lv{user_level}\n"
         f"{event_bonus_txt}"
-        f"{freshness_legend}"
         f"📦 <b>{len(filtered)}</b> available • Page {page + 1}/{total_pages}\n\n"
     )
 
@@ -4012,6 +4011,7 @@ async def show_paginated_cookie_list(
     # Safety truncation — Telegram caption limit is 1024 chars
     if len(report) > 950:
         report = report[:950] + "\n<i>...see next page for more</i>"
+    report += f"\n{freshness_legend}"
 
     await query.message.edit_caption(
         caption=report,
