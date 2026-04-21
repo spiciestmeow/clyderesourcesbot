@@ -3984,10 +3984,9 @@ async def   show_paginated_cookie_list(
         if end < len(filtered):
             nav.append(InlineKeyboardButton("Next ⇀",     callback_data=f"{service_type}_page_{page + 1}"))
         if nav:
-            buttons.append(
-                [InlineKeyboardButton("❓ How to use these cookies?",callback_data=f"cookie_tutorial_{service_type}_1")])
             buttons.append(nav)
-        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
+            buttons.append([InlineKeyboardButton("❓ How to use these cookies?",callback_data=f"cookie_tutorial_{service_type}_1")])
+            buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
 
         report += (
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -6500,21 +6499,25 @@ async def handle_callback(update: Update):
     
     elif data.startswith("cookie_tutorial_"):
         parts = data.split("_")
-        # Format: cookie_tutorial_{service}_{page}
-        # parts: ['cookie', 'tutorial', service, page]
         try:
-            service = parts[2]   # netflix or prime
+            service = parts[2]
             page    = int(parts[3])
         except Exception:
             service, page = "netflix", 1
 
+        # Dynamic labels
+        emoji     = "🍿" if service == "netflix" else "🎥"
+        name      = "Netflix" if service == "netflix" else "PrimeVideo"
+        domain    = "netflix.com" if service == "netflix" else "primevideo.com"
+        btn_label = f"{emoji} Get a {name} Cookie Now"
+
         pages = {
             1: (
-                "🍿 <b>How to Use a Netflix Cookie — Page 1/3</b>\n"
+                f"{emoji} <b>How to Use a {name} Cookie — Page 1/3</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "📋 <b>What you need:</b>\n"
                 "• A PC or laptop (Chrome/Firefox)\n"
-                "• The cookie file from the bot\n"
+                f"• The {name} cookie file from the bot\n"
                 "• A cookie editor extension\n\n"
                 "🔧 <b>Step 1 — Install Extension</b>\n\n"
                 "Chrome:\n"
@@ -6529,14 +6532,14 @@ async def handle_callback(update: Update):
                 ])
             ),
             2: (
-                "🍿 <b>How to Use a Netflix Cookie — Page 2/3</b>\n"
+                f"{emoji} <b>How to Use a {name} Cookie — Page 2/3</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "🔧 <b>Step 2 — Prepare the Cookie</b>\n\n"
                 "1. Open the <b>.txt file</b> the bot sent you\n"
                 "2. Copy <b>everything</b> inside it\n\n"
                 "🔧 <b>Step 3 — Import the Cookie</b>\n\n"
                 "1. Open your browser\n"
-                "2. Go to <b>netflix.com</b>\n"
+                f"2. Go to <b>{domain}</b>\n"
                 "   (don't log in — just open the site)\n"
                 "3. Click your cookie extension icon\n"
                 "4. Click <b>Import</b> or paste into text box\n"
@@ -6552,24 +6555,24 @@ async def handle_callback(update: Update):
                 ])
             ),
             3: (
-                f"{'🍿' if service == 'netflix' else '🎥'} <b>How to Use a {service.title()} Cookie — Page 3/3</b>\n"
+                f"{emoji} <b>How to Use a {name} Cookie — Page 3/3</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "🔧 <b>Step 4 — Access the Account</b>\n\n"
-                "1. After importing, <b>refresh</b> the site\n"
+                f"1. After importing, <b>refresh</b> {domain}\n"
                 "2. You should now be logged in ✅\n\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "⚠️ <b>Important Rules</b>\n\n"
                 "• Do <b>NOT</b> change the password or email\n"
                 "• Do <b>NOT</b> sign out other sessions\n"
                 "• Use <b>incognito/private</b> mode when possible\n"
-                "• Cookies expire — get a new one if it stops working\n\n"
+                f"• {name} cookies expire — get a new one if it stops working\n\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "❌ <b>Cookie not working?</b>\n"
-                "→ Tap <b>❌ Not Working</b> on your cookie file\n"
+                f"→ Tap <b>❌ Not Working</b> on your {name} cookie file\n"
                 "   to report it to the Caretaker 🍃",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_2")],
-                    [InlineKeyboardButton(f"{'🍿' if service == 'netflix' else '🎥'} Get a Cookie Now", callback_data=f"vamt_filter_{service}")],
+                    [InlineKeyboardButton(btn_label,    callback_data=f"vamt_filter_{service}")],
                     [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
                 ])
             ),

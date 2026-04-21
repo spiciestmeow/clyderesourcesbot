@@ -37,4 +37,4 @@ QR_IMAGE_URL = "https://i.ibb.co/Fb3wKDfy/photo-2026-04-20-10-31-23.jpg"
 DONOR_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
 
 
-COOKIE_TUTORIAL_GIF = "https://www.flatpanelshd.com/pictures/netflixgames.gif"
+COOKIE_TUTORIAL_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
