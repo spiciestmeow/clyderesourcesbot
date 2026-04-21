@@ -314,7 +314,6 @@ async def handle_stats_card(chat_id: int, first_name: str, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🎖️ My Titles",    callback_data="show_my_titles"),
             InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
         ],
         [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")],
@@ -4795,9 +4794,8 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
             ],
             [
                 InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
-                InlineKeyboardButton("🎖️ My Titles",       callback_data="show_my_titles"),
+                InlineKeyboardButton("🎴 Stats Card",      callback_data="show_stats_card")
             ],
-            [InlineKeyboardButton("🎴 Stats Card",      callback_data="show_stats_card")],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
         ])
 
