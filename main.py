@@ -6791,8 +6791,9 @@ async def handle_callback(update: Update):
         
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
-        await query.message.edit_caption(
-            caption=(
+        await safe_edit(
+            query.message,
+            (
                 "🌳 <b>Support the Enchanted Clearing</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 "Every donation helps keep the ancient trees alive, "
@@ -6800,7 +6801,6 @@ async def handle_callback(update: Update):
                 "Even the smallest act of kindness grows into something beautiful in the forest.\n\n"
                 "<i>Thank you, kind wanderer. The trees remember you. 🍃✨</i>"
             ),
-            parse_mode="HTML",
             reply_markup=kb_donate()
         )
         return
@@ -6915,7 +6915,6 @@ async def handle_callback(update: Update):
         )
 
     elif data == "show_resources":
-        # Immersive description + clean menu
         immersive_text = (
             "📦 <b>The Resource Grove</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -6934,7 +6933,6 @@ async def handle_callback(update: Update):
                 reply_markup=kb_resources()
             )
         except Exception:
-            # Safe fallback if edit fails (e.g. animation message)
             try:
                 await query.message.delete()
             except:
