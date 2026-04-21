@@ -218,7 +218,7 @@ async def handle_stats_card(chat_id: int, first_name: str, query=None):
 
     # ── XP bar (10 blocks) ──
     xp_progress = min(int((xp / xp_next) * 10), 10) if xp_next > 0 else 10
-    xp_bar      = "█" * xp_progress + "░" * (10 - xp_progress)
+    xp_bar      = "🟩" * xp_progress + "⬜️" * (10 - xp_progress)
     xp_pct      = int((xp / xp_next) * 100) if xp_next > 0 else 100
 
     # ── Streak ──
@@ -264,71 +264,6 @@ async def handle_stats_card(chat_id: int, first_name: str, query=None):
         "\n".join(ach_lines)
         if ach_lines
         else "  🌱 None yet — keep exploring!"
-    )
-
-    # ── Earned titles (max 2 shown) ──
-    earned_titles = await get_earned_titles(chat_id, profile)
-    if earned_titles:
-        titles_line = "  " + "  •  ".join(earned_titles[-2:])
-    else:
-        titles_line = "  None yet"
-
-    # ── Resource stats ──
-    total_reveals = (
-        (profile.get("netflix_reveals") or 0) +
-        (profile.get("prime_reveals") or 0)
-    )
-    steam_claims = profile.get("steam_claims_count") or 0
-    spins        = profile.get("total_wheel_spins") or 0
-    referrals    = profile.get("referral_count") or 0
-    days_active  = profile.get("days_active") or 0
-
-    # ── Build card ──
-    card = (
-        f"╔══════════════════════╗\n"
-        f"       🌿 FOREST CARD\n"
-        f"╚══════════════════════╝\n\n"
-        f"👤 <b>{html.escape(first_name)}</b>\n"
-        f"🏷️ {display_title}\n"
-        f"🌐 Rank: <b>{rank_str}</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"⭐ <b>Level {level}</b>  •  ✨ <b>{total_xp:,} XP</b> total\n"
-        f"[{xp_bar}] {xp_pct}%\n"
-        f"📈 {xp:,} / {xp_next:,} to next level\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"{streak_icon} <b>{streak}-day streak</b>  —  {streak_label}\n"
-        f"📆 Active <b>{days_active}</b> days total\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🍿 Cookies Revealed:  <b>{total_reveals}</b>\n"
-        f"🎮 Steam Claimed:     <b>{steam_claims}</b>\n"
-        f"🎰 Wheel Spins:       <b>{spins}</b>\n"
-        f"🌲 Friends Referred:  <b>{referrals}</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🏆 <b>Recent Achievements</b>\n"
-        f"{ach_section}\n\n"
-        f"🎖️ <b>Earned Titles</b>\n"
-        f"{titles_line}\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"<i>The forest remembers every step. 🍃✨</i>"
-    )
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
-        ],
-        [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")],
-    ])
-
-    try:
-        await loading.delete()
-    except Exception:
-        pass
-
-    await send_animated_translated(
-        chat_id=chat_id,
-        caption=card,
-        animation_url=MYID_GIF,
-        reply_markup=keyboard,
     )
 
 async def handle_award_beta_guardian(chat_id: int, target_id: int):
@@ -4792,10 +4727,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
                 InlineKeyboardButton("📜 XP History",  callback_data="history_page_0"),
                 InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
             ],
-            [
-                InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
-                InlineKeyboardButton("🎴 Stats Card",      callback_data="show_stats_card")
-            ],
+            [InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar")],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
         ])
 
