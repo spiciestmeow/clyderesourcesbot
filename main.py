@@ -4380,6 +4380,9 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
             continue
         visible_achs.append((code, ach))
 
+    # ── Sort: locked first, unlocked last ──
+    visible_achs.sort(key=lambda x: x[0] in unlocked_codes)
+
     total_achs = len(visible_achs)
     total_pages = (total_achs + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
 
