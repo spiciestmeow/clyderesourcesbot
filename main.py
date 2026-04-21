@@ -1962,10 +1962,10 @@ async def handle_document(update: Update):
                     if name.endswith(".txt") and not name.startswith("__MACOSX")
                 ]
                 if not txt_files:
-                    await loading.edit_caption("❌ No .txt files found inside the ZIP.", parse_mode="HTML")
+                    await safe_edit(loading,"❌ No .txt files found inside the ZIP.")
                     return
 
-                await loading.edit_caption(f"🌿 <i>Found {len(txt_files)} scrolls inside the archive...</i>", parse_mode="HTML")
+                await safe_edit(loading,f"🌿 <i>Found {len(txt_files)} scrolls inside the archive...</i>")
 
                 for txt_name in txt_files:
                     try:
@@ -1985,10 +1985,10 @@ async def handle_document(update: Update):
                         processed_files.append(f"❌ <code>{txt_name.split('/')[-1]}</code> → Failed")
 
         except zipfile.BadZipFile:
-            await loading.edit_caption("❌ Invalid or corrupted ZIP file.")
+            await safe_edit(loading,"❌ Invalid or corrupted ZIP file.")
             return
         except Exception as e:
-            await loading.edit_caption(f"❌ Failed to extract ZIP: {e}")
+            await safe_edit(loading,f"❌ Failed to extract ZIP: {e}")
             return
 
         await redis_client.delete("vamt_cache")
@@ -2010,12 +2010,11 @@ async def handle_document(update: Update):
             result += f"\n<i>...and {len(processed_files) - 20} more files</i>"
 
         if len(result) <= 1000:
-            await loading.edit_caption(result, parse_mode="HTML")
+            await safe_edit(loading, result)
         else:
-            await loading.edit_caption(
+            await safe_edit(loading,
                 f"✅ <b>ZIP Import Complete!</b>\n\n"
                 f"📦 {len(txt_files)} files · 🌱 {total_imported} imported · ⚠️ {total_skipped} skipped",
-                parse_mode="HTML"
             )
             # Send detailed breakdown
             chunk = ""
@@ -2039,7 +2038,7 @@ async def handle_document(update: Update):
     try:
         content = file_bytes.decode("utf-8", errors="replace")
     except Exception as e:
-        await loading.edit_caption(f"❌ Failed to read file: {e}", parse_mode="HTML")
+        await safe_edit(loading, f"❌ Failed to read file: {e}")
         return
 
     detected_service, detected_display = detect_service_type(content, filename)
@@ -2076,7 +2075,7 @@ async def handle_document(update: Update):
         result += f"\n\n⚠️ <b>Skipped Details:</b>\n" + "\n".join([f"• {err}" for err in errors[:6]])
 
     try:
-        await loading.edit_caption(result, parse_mode="HTML")
+        await safe_edit(loading, result)
     except Exception:
         # Fallback if edit fails
         await tg_app.bot.send_message(chat_id, result, parse_mode="HTML")
@@ -4484,10 +4483,8 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         )
 
         await asyncio.sleep(1.3)
-        await loading.edit_caption(
-            f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...",
-            parse_mode="HTML"
-        )
+        await safe_edit(loading,
+            f"🌟 <i>The hidden {service_type} cookie spirit is slowly awakening...</i>\n\nPlease wait...")
         await asyncio.sleep(1.5)
 
         # ── Deliver the cookie ──
@@ -5753,9 +5750,9 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
         caption="🌫️ <b>The ancient mist begins to thicken...</b>",
     )
     await asyncio.sleep(1.8)
-    await loading.edit_caption("🍃 <b>The wind spirit awakens...</b>", parse_mode="HTML")
+    await safe_edit(loading,"🍃 <b>The wind spirit awakens...</b>")
     await asyncio.sleep(2.0)
-    await loading.edit_caption("✨ <b>The forest is resetting...</b>", parse_mode="HTML")
+    await safe_edit(loading,"✨ <b>The forest is resetting...</b>")
     await asyncio.sleep(1.2)
     try:
         await tg_app.bot.delete_message(chat_id, loading.message_id)
@@ -6171,9 +6168,8 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
 
         await asyncio.sleep(1.5)
         try:
-            await loading.edit_caption(
-                caption=f"🌿 <i>The ancient {cat_label} scrolls are being unsealed...</i>",
-                parse_mode="HTML",
+            await safe_edit(loading,
+                f"🌿 <i>The ancient {cat_label} scrolls are being unsealed...</i>",
             )
         except Exception:
             pass
@@ -6191,9 +6187,8 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
         if not vamt:
             await send_supabase_error(chat_id)
             try:
-                await loading.edit_caption(
-                    caption="🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
-                    parse_mode="HTML",
+                await safe_edit(loading,
+                    "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
                     reply_markup=kb_back_inventory(),
                 )
             except Exception:
@@ -6214,9 +6209,8 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
             ]
 
         if not filtered:
-            await loading.edit_caption(
-                caption=f"🍃 No {cat_label} keys available right now. Check back later!",
-                parse_mode="HTML",
+            await safe_edit(loading,
+                "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
                 reply_markup=kb_back_inventory(),
             )
             return
@@ -6262,9 +6256,8 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
             "⬅️ Back to Inventory", callback_data="check_vamt"
         )])
 
-        await loading.edit_caption(
-            caption=report,
-            parse_mode="HTML",
+        await safe_edit(loading,
+            report,
             reply_markup=InlineKeyboardMarkup(buttons),
         )
 
@@ -6697,6 +6690,16 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         asyncio.create_task(broadcast_new_resources({"steam": imported}))
 
     await send_animated_translated(chat_id, summary, animation_url=STEAM_RESULT_GIF)
+
+async def safe_edit(msg, text: str, reply_markup=None):
+    """Edit caption or text depending on message type."""
+    try:
+        await msg.edit_caption(caption=text, parse_mode="HTML", reply_markup=reply_markup)
+    except Exception:
+        try:
+            await msg.edit_text(text=text, parse_mode="HTML", reply_markup=reply_markup)
+        except Exception:
+            pass
     
 async def hide_bot_commands(chat_id: int):
     try:
@@ -6857,9 +6860,9 @@ async def handle_callback(update: Update):
             caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
         )
         await asyncio.sleep(1.3)
-        await loading.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode="HTML")
+        await safe_edit(loading,"🌿 <i>The whispering trees lean in to welcome you home...</i>")
         await asyncio.sleep(1.3)
-        await loading.edit_caption("✨ <i>You stand again in the heart of the Enchanted Clearing...</i>", parse_mode="HTML")
+        await safe_edit(loading,"✨ <i>You stand again in the heart of the Enchanted Clearing...</i>")
         await asyncio.sleep(1.0)
 
         profile = await get_user_profile(chat_id)
@@ -7302,24 +7305,21 @@ async def handle_callback(update: Update):
             caption="🌿 <b>You place your hand on the ancient wheel...</b>",
         )
         await asyncio.sleep(1.2)
-        await loading.edit_caption(
+        await safe_edit(loading,
             "🍃 <b>The runes begin to glow softly...</b>",
-            parse_mode="HTML"
         )
         await asyncio.sleep(1.0)
-        await loading.edit_caption(
+        await safe_edit(loading,
             "✨ <b>Leaves and fireflies swirl around you...</b>",
-            parse_mode="HTML"
         )
         await asyncio.sleep(1.0)
-        await loading.edit_caption(
+        await safe_edit(loading,
             "🌟 <b>The wheel spins faster and faster...</b>",
-            parse_mode="HTML"
         )
         await asyncio.sleep(0.8)
 
         # ── Rarity buildup ──
-        await loading.edit_caption(RARITY_BUILDUP[rarity], parse_mode="HTML")
+        await safe_edit(loading, RARITY_BUILDUP[rarity])
         await asyncio.sleep(1.5)
 
         # ── Award XP via add_xp with override ──
@@ -7409,7 +7409,7 @@ async def handle_callback(update: Update):
 
         # ── Final result ──
         final_text = selected["text"] + f"\n\n{RARITY_FLAVOR[rarity]}"
-        await loading.edit_caption(caption=final_text, parse_mode="HTML")
+        await safe_edit(loading, final_text)
         return
 
     # ── ABOUT WHEEL OF WHISPERS ──
@@ -8289,9 +8289,9 @@ async def handle_callback(update: Update):
             caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>",
         )
         await asyncio.sleep(1.2)
-        await loading.edit_caption("📜 <i>They gather beneath the ancient canopy...</i>", parse_mode="HTML")
+        await safe_edit(loading,"📜 <i>They gather beneath the ancient canopy...</i>")
         await asyncio.sleep(1.3)
-        await loading.edit_caption("✨ <i>The story of this sacred clearing gently unfolds...</i>", parse_mode="HTML")
+        await safe_edit(loading,"✨ <i>The story of this sacred clearing gently unfolds...</i>")
         await asyncio.sleep(1.0)
 
         lore = (
