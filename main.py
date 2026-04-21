@@ -3881,46 +3881,32 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 async def show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
-    title = "Netflix" if service_type == "netflix" else "PrimeVideo"
-    emoji = "🍿"    if service_type == "netflix" else "🎥"
+    is_netflix = service_type == "netflix"
+    title = "Netflix" if is_netflix else "Prime Video"
+    emoji = "🎬" if is_netflix else "📦"
+    accent = "🔴" if is_netflix else "🔵"
 
-    await asyncio.sleep(0.5)
+    # Loading states
     await query.message.edit_caption(
-        caption=f"{emoji} <i>Opening the ancient scroll of {title} cookies...</i>",
+        caption=f"<i>Loading {title} cookies...</i>",
         parse_mode="HTML",
     )
-    await asyncio.sleep(1.5)
-    await query.message.edit_caption(
-        caption=f"🌿 <i>The forest spirits are gathering your {title} cookies...</i>",
-        parse_mode="HTML",
-    )
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(1.0)
 
-    profile   = await get_user_profile(chat_id)
+    profile    = await get_user_profile(chat_id)
     user_level = profile.get("level", 1) if profile else 1
     event      = await get_active_event()
     max_items  = get_max_items(service_type, user_level, event)
 
-    rem = await get_remaining_reveals_and_views(chat_id)
+    rem          = await get_remaining_reveals_and_views(chat_id)
     reveals_left = rem.get(service_type, 0)
-
-    event_bonus_txt = ""
-    freshness_legend = "🟢 Fresh  🟡 Recent  🟠 Aging  🔴 Old\n\n"
-    if event:
-        bonus_type = event.get("bonus_type", "").strip()
-        if bonus_type == "netflix_double":
-            event_bonus_txt = "🎉 <b>Event:</b> Netflix slots doubled!\n"
-        elif bonus_type == "netflix_max":
-            event_bonus_txt = "🎉 <b>Event:</b> Netflix slots maximized!\n"
-
-
 
     data = await get_vamt_data()
     if not data:
         await send_supabase_error(chat_id)
         try:
             await query.message.edit_caption(
-                "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
+                "🌫️ <b>Service temporarily unavailable.</b>\n\nPlease try again shortly.",
                 parse_mode="HTML",
                 reply_markup=kb_back_inventory(),
             )
@@ -3938,9 +3924,9 @@ async def show_paginated_cookie_list(
     if not filtered:
         await query.message.edit_caption(
             caption=(
-                f"<b>{emoji} {title} Premium Cookies</b>\n\n"
-                "🌫️ No working cookies available right now...\n\n"
-                "The trees are resting. Check back later 🍃"
+                f"{emoji} <b>No {title} cookies available</b>\n\n"
+                "New cookies are added regularly.\n"
+                "Check back soon! 🍃"
             ),
             parse_mode="HTML",
             reply_markup=kb_back_inventory(),
@@ -3960,68 +3946,113 @@ async def show_paginated_cookie_list(
     filtered.sort(key=_freshness_sort_key)
 
     if user_level >= 6:
-        filtered  = filtered[-max_items:]
-        filtered = filtered[::-1] 
-        priority  = "✨ Freshest cookies first!"
+        filtered = filtered[-max_items:][::-1]
     else:
-        filtered  = filtered[:max_items]
-        priority  = "🌱 Older but working cookies."
+        filtered = filtered[:max_items]
 
-    ITEMS_PER_PAGE = 5  # reduced from 8 to avoid caption limit
-    start      = page * ITEMS_PER_PAGE
-    end        = start + ITEMS_PER_PAGE
-    page_items = filtered[start:end]
+    ITEMS_PER_PAGE = 5
+    start       = page * ITEMS_PER_PAGE
+    end         = start + ITEMS_PER_PAGE
+    page_items  = filtered[start:end]
     total_pages = max(1, (len(filtered) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
 
-    report = (
-        f"<b>{emoji} {title} Cookies</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🌿 <b>{reveals_left}</b> reveals left • Lv{user_level}\n"
-        f"{event_bonus_txt}"
-        f"{freshness_legend}"
-        f"📦 <b>{len(filtered)}</b> available • Page {page + 1}/{total_pages}\n\n"
+    # ── Event banner (compact) ──
+    event_line = ""
+    if event:
+        bonus_type = event.get("bonus_type", "").strip()
+        if bonus_type == "netflix_double":
+            event_line = "🎉 <b>Event active</b> — slots doubled!\n\n"
+        elif bonus_type == "netflix_max":
+            event_line = "🎉 <b>Event active</b> — slots maximized!\n\n"
+
+    # ── Reveal bar ──
+    all_bonus         = profile.get("all_slots_bonus", 0) if profile else 0
+    daily_reveals_b   = profile.get("daily_reveals_bonus", 0) if profile else 0
+    svc_bonus         = profile.get(f"{service_type}_reveals_bonus", 0) if profile else 0
+    max_reveals       = get_max_daily_reveals(user_level, service_type) + svc_bonus + all_bonus + daily_reveals_b
+    used_reveals      = max_reveals - reveals_left
+    reveal_bar        = create_daily_progress_bar(used_reveals, max_reveals, length=8)
+
+    # ── Header ──
+    header = (
+        f"{accent} <b>{title} Premium</b>  •  Lv{user_level}\n"
+        f"{reveal_bar}  <b>{reveals_left}</b> reveals left\n\n"
+        f"{event_line}"
+        f"<b>{len(filtered)}</b> cookies available  •  Page {page + 1}/{total_pages}\n"
+        f"──────────────────────\n\n"
     )
 
+    # ── Cookie list ──
+    body = ""
     buttons = []
+
+    FRESHNESS_COMPACT = {
+        "🟢": "Fresh",
+        "🟡": "Recent",
+        "🟠": "Aging",
+        "🔴": "Old",
+        "⚪": "Unknown",
+    }
+
     for idx, item in enumerate(page_items, start=start + 1):
-        name = str(item.get("display_name") or "").strip() or f"{title} Cookie"
-        freshness = get_freshness_badge(item.get("last_updated"))
-        report += f"✨ <b>{name}</b>\n└ {freshness} • {item.get('remaining', 0)} left\n\n"
+        name      = str(item.get("display_name") or "").strip() or f"{title} Cookie"
+        badge     = get_freshness_badge(item.get("last_updated"))
+        dot       = badge[0]  # just the emoji, e.g. 🟢
+        age_label = FRESHNESS_COMPACT.get(dot, "")
+        remaining = item.get("remaining", 0)
+
+        body += f"{dot} <b>{name}</b>\n"
+        body += f"   {age_label}  ·  {remaining} uses left\n\n"
+
         buttons.append([
-            InlineKeyboardButton(f"🔓 Reveal {name}", callback_data=f"reveal_{service_type}|{idx}|{page}")
+            InlineKeyboardButton(
+                f"Reveal  {dot}  {name}",
+                callback_data=f"reveal_{service_type}|{idx}|{page}"
+            )
         ])
 
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("↼ Prev", callback_data=f"{service_type}_page_{page - 1}"))
-    if end < len(filtered):
-        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"{service_type}_page_{page + 1}"))
-    if nav:
-        buttons.append(nav)
-    buttons.append([InlineKeyboardButton("❓ How to use cookies?", callback_data=f"cookie_tutorial_{service_type}_1")])
-    buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")])
-
-    report += (
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"Lv{user_level} → up to {max_items} items • {priority}\n"
-        f"⚠️ Test quickly. Shared cookies expire."
+    # ── Footer ──
+    priority_note = (
+        "✨ Showing freshest first" if user_level >= 6
+        else "📦 Older but verified cookies"
+    )
+    footer = (
+        f"──────────────────────\n"
+        f"{priority_note}  •  Lv{user_level} → {max_items} slots"
     )
 
-    # Safety truncation — Telegram caption limit is 1024 chars
-    if len(report) > 950:
-        report = report[:950] + "\n<i>...see next page for more</i>"
+    # ── Navigation ──
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("← Prev", callback_data=f"{service_type}_page_{page - 1}"))
+    if end < len(filtered):
+        nav.append(InlineKeyboardButton("Next →", callback_data=f"{service_type}_page_{page + 1}"))
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([
+        InlineKeyboardButton("❓ How to use cookies", callback_data=f"cookie_tutorial_{service_type}_1")
+    ])
+    buttons.append([
+        InlineKeyboardButton("← Back", callback_data="check_vamt")
+    ])
+
+    caption = header + body + footer
+
+    # Safety truncation
+    if len(caption) > 1000:
+        caption = caption[:950] + "\n<i>See next page for more</i>"
 
     await query.message.edit_caption(
-        caption=report,
+        caption=caption,
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-    profile = await get_user_profile(chat_id)
-    first_name = profile.get("first_name") if profile else "Wanderer"
-    action_name = f"view_{service_type}"
+    profile    = await get_user_profile(chat_id)
+    first_name = profile.get("first_name", "Wanderer") if profile else "Wanderer"
     asyncio.create_task(
-        check_and_award_achievements(chat_id, first_name, action=action_name)
+        check_and_award_achievements(chat_id, first_name, action=f"view_{service_type}")
     )
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
@@ -4126,16 +4157,19 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
         action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
 
-        freshness = get_freshness_badge(item.get("last_updated"))
+        freshness    = get_freshness_badge(item.get("last_updated"))
+        dot          = freshness[0]
+        age_text     = freshness[2:].strip() if len(freshness) > 1 else "Unknown"
+        service_name = "Netflix" if service_type == "netflix" else "Prime Video"
+        accent       = "🔴" if service_type == "netflix" else "🔵"
+
         caption = (
-            f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
-            f"{emoji} <b>{display_name} Revealed</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🌿 Status: <b>✅ Awakened</b>\n"
-            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n"
-            f"🕐 Age: <b>{freshness}</b>\n\n"
-            "📥 The forest has wrapped your cookie in an ancient scroll.\n"
-            "<i>Tap the file below to receive its magic.</i> 🍃"
+            f"{accent} <b>{display_name}</b>\n"
+            f"──────────────────────\n\n"
+            f"{dot}  Freshness: <b>{age_text}</b>\n"
+            f"📦  Uses remaining: <b>{item.get('remaining', 0)}</b>\n"
+            f"📄  Delivered as <code>.txt</code> file below\n\n"
+            f"<i>Import the file using a cookie editor extension.</i>"
         )
 
         file_content = (
@@ -4165,12 +4199,10 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
                 InlineKeyboardButton("❌ Not Working", callback_data=f"kfb_bad|{service_type}|{idx}"),
             ],
             [InlineKeyboardButton("❓ How to use this?", callback_data=f"cookie_tutorial_{service_type}_1")],
-            [
-                InlineKeyboardButton(
-                    f"⬅️ Back to {service_type.title()} Cookies",
-                    callback_data=f"back_to_{service_type}_list|{page}"
-                )
-            ]
+            [InlineKeyboardButton(
+                f"← Back to {service_name}",
+                callback_data=f"back_to_{service_type}_list|{page}"
+            )],
         ])
 
         doc_msg = await tg_app.bot.send_document(
