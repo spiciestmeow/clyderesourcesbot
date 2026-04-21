@@ -3321,7 +3321,163 @@ async def calculate_streak(chat_id: int) -> int:
     await redis_client.setex(f"streak:{chat_id}", 300, streak)
     return streak
 
+async def show_streak_calendar(chat_id: int, first_name: str, query=None):
+    """📅 30-day streak calendar with activity heatmap"""
+    
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    
+    # ── Fetch last 60 days of XP history ──
+    data = await _sb_get(
+        "xp_history",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "select": "created_at",
+            "order": "created_at.desc",
+            "limit": 500,
+        },
+    ) or []
 
+    # ── Build set of active dates (Manila time) ──
+    active_dates: set = set()
+    for row in data:
+        try:
+            dt = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+            active_dates.add(dt.astimezone(manila).date())
+        except Exception:
+            continue
+
+    # ── Calculate streaks ──
+    current_streak = await calculate_streak(chat_id)
+
+    longest_streak = 0
+    temp_streak = 0
+    check_date = now.date()
+    for _ in range(365):
+        if check_date in active_dates:
+            temp_streak += 1
+            longest_streak = max(longest_streak, temp_streak)
+        else:
+            temp_streak = 0
+        check_date -= timedelta(days=1)
+
+    # ── Count active days this month ──
+    month_start = now.date().replace(day=1)
+    days_this_month = sum(
+        1 for d in active_dates
+        if d >= month_start and d <= now.date()
+    )
+
+    # ── Build 30-day calendar grid (last 30 days) ──
+    DAY_LABELS = "M T W T F S S"
+    
+    # Find the start date (30 days ago, aligned to Monday)
+    start_date = now.date() - timedelta(days=29)
+    
+    # Build week rows
+    calendar_rows = []
+    current_row = []
+    
+    # Pad the first row to align with weekday
+    first_weekday = start_date.weekday()  # 0=Mon, 6=Sun
+    for _ in range(first_weekday):
+        current_row.append("⬛")  # empty padding
+    
+    cursor = start_date
+    while cursor <= now.date():
+        if cursor in active_dates:
+            if cursor == now.date():
+                current_row.append("🟡")  # today + active
+            else:
+                current_row.append("🟩")  # active day
+        else:
+            if cursor == now.date():
+                current_row.append("🔵")  # today, not yet active
+            else:
+                current_row.append("⬜")  # inactive day
+        
+        if len(current_row) == 7:
+            calendar_rows.append(" ".join(current_row))
+            current_row = []
+        
+        cursor += timedelta(days=1)
+    
+    # Fill last row
+    if current_row:
+        while len(current_row) < 7:
+            current_row.append("⬛")
+        calendar_rows.append(" ".join(current_row))
+
+    calendar_grid = "\n".join(calendar_rows)
+
+    # ── Streak emoji ──
+    if current_streak >= 30:
+        streak_emoji = "🌠"
+        streak_label = "Legendary Streak!"
+    elif current_streak >= 14:
+        streak_emoji = "🔥"
+        streak_label = "On Fire!"
+    elif current_streak >= 7:
+        streak_emoji = "⚡"
+        streak_label = "Hot Streak!"
+    elif current_streak >= 3:
+        streak_emoji = "🌱"
+        streak_label = "Growing!"
+    elif current_streak >= 1:
+        streak_emoji = "✨"
+        streak_label = "Getting Started!"
+    else:
+        streak_emoji = "💤"
+        streak_label = "Start your streak today!"
+
+    # ── Milestone hints ──
+    milestones = {7: "🎁 7-day → +20 XP/day bonus", 14: "⚡ 14-day → Special badge", 30: "🌠 30-day → Legendary achievement"}
+    next_milestone = None
+    for days, reward in milestones.items():
+        if current_streak < days:
+            next_milestone = f"🎯 Next milestone: {reward} ({days - current_streak} days away)"
+            break
+
+    # ── Build message ──
+    month_name = now.strftime("%B %Y")
+
+    text = (
+        f"📅 <b>{html.escape(first_name)}'s Streak Calendar</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"{streak_emoji} <b>{current_streak}-day streak</b> — {streak_label}\n\n"
+        f"<b>Mo Tu We Th Fr Sa Su</b>\n"
+        f"{calendar_grid}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🟩 Active   ⬜ Missed   🟡 Today\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📊 <b>Stats (Last 30 Days)</b>\n\n"
+        f"🔥 Current Streak: <b>{current_streak} days</b>\n"
+        f"🏆 Longest Streak: <b>{longest_streak} days</b>\n"
+        f"📆 Active This Month: <b>{days_this_month} days</b>\n"
+        f"✅ Total Active Days: <b>{len(active_dates)} days</b>\n\n"
+    )
+
+    if next_milestone:
+        text += f"{next_milestone}\n\n"
+
+    text += "<i>Come back every day to keep your streak alive! 🍃</i>"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")],
+    ])
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=MORNING_GIF,  # or any fitting GIF you have
+        reply_markup=keyboard,
+    )
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4391,16 +4547,17 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     )
 
     keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
-                InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
-            ],
-            [
-                InlineKeyboardButton("📜 XP History", callback_data="history_page_0"),
-                InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
-            ],
-            [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
-        ])
+        [
+            InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
+            InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
+        ],
+        [
+            InlineKeyboardButton("📜 XP History", callback_data="history_page_0"),
+            InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
+        ],
+        [InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar")],
+        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+    ])
 
     gif_id = profile.get("profile_gif_id") if profile else None
 
@@ -6430,7 +6587,11 @@ async def handle_callback(update: Update):
     
     elif data == "show_achievements":
         await show_achievements_page(chat_id, query, page=0)
-    
+
+    elif data == "show_streak_calendar":
+            await show_streak_calendar(chat_id, first_name, query)
+            return
+        
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
         await query.message.edit_caption(
@@ -8429,6 +8590,9 @@ async def process_update(update_data: dict):
     
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
+
+    elif text.startswith("/streak"):
+            await show_streak_calendar(chat_id, first_name)
 
     elif text.startswith("/leaderboard"):
         await handle_leaderboard(chat_id)
