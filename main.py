@@ -3878,168 +3878,152 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 # ══════════════════════════════════════════════════════════════════════════════
 # INVENTORY — PAGINATED COOKIES
 # ══════════════════════════════════════════════════════════════════════════════
-async def   show_paginated_cookie_list(
+async def show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
-        title = "Netflix" if service_type == "netflix" else "PrimeVideo"
-        emoji = "🍿"    if service_type == "netflix" else "🎥"
+    title = "Netflix" if service_type == "netflix" else "PrimeVideo"
+    emoji = "🍿"    if service_type == "netflix" else "🎥"
 
-        await asyncio.sleep(0.5)
+    await asyncio.sleep(0.5)
+    await query.message.edit_caption(
+        caption=f"{emoji} <i>Opening the ancient scroll of {title} cookies...</i>",
+        parse_mode="HTML",
+    )
+    await asyncio.sleep(1.5)
+    await query.message.edit_caption(
+        caption=f"🌿 <i>The forest spirits are gathering your {title} cookies...</i>",
+        parse_mode="HTML",
+    )
+    await asyncio.sleep(1.5)
 
-        await query.message.edit_caption(
-            caption=f"{emoji} <i>Opening the ancient scroll of {title} cookies...</i>",
-            parse_mode="HTML",
-        )
-        await asyncio.sleep(1.5)
-        await query.message.edit_caption(
-            caption=f"🌿 <i>The forest spirits are gathering your {title} cookies...</i>",
-            parse_mode="HTML",
-        )
-        await asyncio.sleep(1.5)
+    profile   = await get_user_profile(chat_id)
+    user_level = profile.get("level", 1) if profile else 1
+    event      = await get_active_event()
+    max_items  = get_max_items(service_type, user_level, event)
 
-        profile   = await get_user_profile(chat_id)
-        user_level = profile.get("level", 1) if profile else 1
-        event      = await get_active_event() 
-        max_items  = get_max_items(service_type, user_level, event)
+    rem = await get_remaining_reveals_and_views(chat_id)
+    reveals_left = rem.get(service_type, 0)
 
-        # Get remaining reveals
-        rem = await get_remaining_reveals_and_views(chat_id)
-        reveals_left = rem.get(service_type, 0)
+    event_bonus_txt = ""
+    if event:
+        bonus_type = event.get("bonus_type", "").strip()
+        if bonus_type == "netflix_double":
+            event_bonus_txt = "🎉 <b>Event:</b> Netflix slots doubled!\n"
+        elif bonus_type == "netflix_max":
+            event_bonus_txt = "🎉 <b>Event:</b> Netflix slots maximized!\n"
 
-        event_bonus_txt = ""
-        if user_level >= 6:
-            freshness_legend = (
-                "🟢 Fresh (under 6h)  🟡 Recent (6–24h)\n"
-                "🟠 Aging (1–3 days)  🔴 Old (3+ days)\n\n"
-            )
-        else:
-            freshness_legend = (
-                "🌱 <i>Level up to get fresher cookies!</i>\n"
-                "🟢 Fresh  🟡 Recent  🟠 Aging  🔴 Old\n\n"
-            )
-        if event:
-            bonus_type = event.get("bonus_type", "").strip()
-            if bonus_type == "netflix_double":
-                event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>doubled</b> today!\n\n"
-            elif bonus_type == "netflix_max":
-                event_bonus_txt = "🎉 <b>Event Bonus Active!</b> Netflix slots are <b>maximized</b> today!\n\n"
+    if user_level >= 6:
+        freshness_legend = "🟢 Fresh  🟡 Recent  🟠 Aging  🔴 Old\n\n"
+    else:
+        freshness_legend = "🌱 Level up for fresher cookies!\n\n"
 
-        data = await get_vamt_data()
-        if not data:
-            await send_supabase_error(chat_id)
-            try:
-                await query.message.edit_caption(
-                    "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
-                    parse_mode="HTML",
-                    reply_markup=kb_back_inventory(),
-                )
-            except Exception:
-                pass
-            return
-
-        filtered = [
-            item for item in data
-            if service_type in str(item.get("service_type", "")).lower()
-            and str(item.get("status", "")).lower() == "active"
-            and int(item.get("remaining", 0)) > 0
-        ]
-
-        if not filtered:
+    data = await get_vamt_data()
+    if not data:
+        await send_supabase_error(chat_id)
+        try:
             await query.message.edit_caption(
-                caption=(
-                    f"<b>{emoji} Secret {title} Premium Cookies</b>\n\n"
-                    "🌫️ No working cookies available in the forest right now...\n\n"
-                    "The trees are resting. Please check back later or explore other scrolls 🍃"
-                ),
+                "🌫️ <b>The forest is unreachable right now...</b>\n\nPlease try again shortly. 🍃",
                 parse_mode="HTML",
                 reply_markup=kb_back_inventory(),
             )
-            return
+        except Exception:
+            pass
+        return
 
-        def _freshness_sort_key(item):
-            raw = item.get("last_updated")
-            if not raw:
-                return 0
-            try:
-                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                return dt.timestamp()
-            except Exception:
-                return 0
-            
-        filtered.sort(key=_freshness_sort_key)  # oldest → newest
+    filtered = [
+        item for item in data
+        if service_type in str(item.get("service_type", "")).lower()
+        and str(item.get("status", "")).lower() == "active"
+        and int(item.get("remaining", 0)) > 0
+    ]
 
-        if user_level >= 6:
-            filtered  = filtered[-max_items:]   # tail = freshest
-            priority  = "✨ You get the freshest cookies first!"
-        else:
-            filtered  = filtered[:max_items]    # head = oldest
-            priority  = "🌱 You get older but still working cookies."
-
-        start      = page * NETFLIX_ITEMS_PER_PAGE
-        end        = start + NETFLIX_ITEMS_PER_PAGE
-        page_items = filtered[start:end]
-        total_pages = (len(filtered) + NETFLIX_ITEMS_PER_PAGE - 1) // NETFLIX_ITEMS_PER_PAGE
-
-        report = (
-            f"<b>{emoji} Secret {title} Premium Cookies</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🌿 You have <b>{reveals_left}</b> reveals left today (Level {user_level})\n\n"
-            f"{event_bonus_txt}"
-            f"{freshness_legend}"  
-            f"📦 <b>{len(filtered)} {title} available</b>\n"
-            f"📄 Page {page + 1} of {total_pages}\n\n"
-            "<i>Which one whispers to your spirit?</i>\n\n"
-        )
-
-        buttons = []
-        for idx, item in enumerate(page_items, start=start + 1):
-            name = str(item.get("display_name") or "").strip() or f"{title} Cookie"
-            freshness = get_freshness_badge(item.get("last_updated"))
-            report += (
-                f"✨ <b>{name}</b>\n"
-                f" Status: ✅ Working\n"
-                f" Remaining: {item.get('remaining', 0)}\n"
-                f" Age: {freshness}\n\n"
-            )
-            buttons.append([
-                InlineKeyboardButton(f"🔓 Reveal {name}", callback_data=f"reveal_{service_type}|{idx}|{page}")
-            ])
-
-        nav = []
-        if page > 0:
-            nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"{service_type}_page_{page - 1}"))
-        if end < len(filtered):
-            nav.append(InlineKeyboardButton("Next ⇀",     callback_data=f"{service_type}_page_{page + 1}"))
-        if nav:
-            buttons.append(nav)
-        buttons.append([InlineKeyboardButton("❓ How to use these cookies?", callback_data=f"cookie_tutorial_{service_type}_1")])
-        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
-
-        report += (
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🌿 Level {user_level} → Up to {max_items} items\n"
-            f"{priority}\n"
-        )
-        if len(filtered) < max_items:
-            report += f"\n✅ Only {len(filtered)} working {title} cookies currently in the forest.\n\n"
-        report += "⚠️ Cookies can stop working without notice. Test quickly after revealing."
-
+    if not filtered:
         await query.message.edit_caption(
-            caption=report,
+            caption=(
+                f"<b>{emoji} {title} Premium Cookies</b>\n\n"
+                "🌫️ No working cookies available right now...\n\n"
+                "The trees are resting. Check back later 🍃"
+            ),
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons)
+            reply_markup=kb_back_inventory(),
         )
+        return
 
-        # Check achievements after viewing the list
-        action_name = f"view_{service_type}"
-        
-        # FIXED: Get first_name safely from profile
-        profile = await get_user_profile(chat_id)
-        first_name = profile.get("first_name") if profile else "Wanderer"
+    def _freshness_sort_key(item):
+        raw = item.get("last_updated")
+        if not raw:
+            return 0
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return dt.timestamp()
+        except Exception:
+            return 0
 
-        asyncio.create_task(
-            check_and_award_achievements(chat_id, first_name, action=action_name)
-        )
+    filtered.sort(key=_freshness_sort_key)
+
+    if user_level >= 6:
+        filtered  = filtered[-max_items:]
+        priority  = "✨ Freshest cookies first!"
+    else:
+        filtered  = filtered[:max_items]
+        priority  = "🌱 Older but working cookies."
+
+    ITEMS_PER_PAGE = 5  # reduced from 8 to avoid caption limit
+    start      = page * ITEMS_PER_PAGE
+    end        = start + ITEMS_PER_PAGE
+    page_items = filtered[start:end]
+    total_pages = max(1, (len(filtered) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+
+    report = (
+        f"<b>{emoji} {title} Cookies</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🌿 <b>{reveals_left}</b> reveals left • Lv{user_level}\n"
+        f"{event_bonus_txt}"
+        f"{freshness_legend}"
+        f"📦 <b>{len(filtered)}</b> available • Page {page + 1}/{total_pages}\n\n"
+    )
+
+    buttons = []
+    for idx, item in enumerate(page_items, start=start + 1):
+        name = str(item.get("display_name") or "").strip() or f"{title} Cookie"
+        freshness = get_freshness_badge(item.get("last_updated"))
+        report += f"✨ <b>{name}</b>\n└ {freshness} • {item.get('remaining', 0)} left\n\n"
+        buttons.append([
+            InlineKeyboardButton(f"🔓 Reveal {name}", callback_data=f"reveal_{service_type}|{idx}|{page}")
+        ])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("↼ Prev", callback_data=f"{service_type}_page_{page - 1}"))
+    if end < len(filtered):
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"{service_type}_page_{page + 1}"))
+    if nav:
+        buttons.append(nav)
+    buttons.append([InlineKeyboardButton("❓ How to use cookies?", callback_data=f"cookie_tutorial_{service_type}_1")])
+    buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")])
+
+    report += (
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Lv{user_level} → up to {max_items} items • {priority}\n"
+        f"⚠️ Test quickly. Shared cookies expire."
+    )
+
+    # Safety truncation — Telegram caption limit is 1024 chars
+    if len(report) > 950:
+        report = report[:950] + "\n<i>...see next page for more</i>"
+
+    await query.message.edit_caption(
+        caption=report,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+    profile = await get_user_profile(chat_id)
+    first_name = profile.get("first_name") if profile else "Wanderer"
+    action_name = f"view_{service_type}"
+    asyncio.create_task(
+        check_and_award_achievements(chat_id, first_name, action=action_name)
+    )
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = "🍿" if service_type == "netflix" else "🎥"
