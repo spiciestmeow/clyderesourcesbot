@@ -3907,6 +3907,16 @@ async def   show_paginated_cookie_list(
         reveals_left = rem.get(service_type, 0)
 
         event_bonus_txt = ""
+        if user_level >= 6:
+            freshness_legend = (
+                "🟢 Fresh (under 6h)  🟡 Recent (6–24h)\n"
+                "🟠 Aging (1–3 days)  🔴 Old (3+ days)\n\n"
+            )
+        else:
+            freshness_legend = (
+                "🌱 <i>Level up to get fresher cookies!</i>\n"
+                "🟢 Fresh  🟡 Recent  🟠 Aging  🔴 Old\n\n"
+            )
         if event:
             bonus_type = event.get("bonus_type", "").strip()
             if bonus_type == "netflix_double":
@@ -3946,13 +3956,23 @@ async def   show_paginated_cookie_list(
             )
             return
 
-        filtered.sort(key=lambda x: x.get("last_updated", ""))
+        def _freshness_sort_key(item):
+            raw = item.get("last_updated")
+            if not raw:
+                return 0
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return dt.timestamp()
+            except Exception:
+                return 0
+            
+        filtered.sort(key=_freshness_sort_key)  # oldest → newest
 
         if user_level >= 6:
-            filtered  = filtered[-max_items:]
+            filtered  = filtered[-max_items:]   # tail = freshest
             priority  = "✨ You get the freshest cookies first!"
         else:
-            filtered  = filtered[:max_items]
+            filtered  = filtered[:max_items]    # head = oldest
             priority  = "🌱 You get older but still working cookies."
 
         start      = page * NETFLIX_ITEMS_PER_PAGE
@@ -3965,6 +3985,7 @@ async def   show_paginated_cookie_list(
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🌿 You have <b>{reveals_left}</b> reveals left today (Level {user_level})\n\n"
             f"{event_bonus_txt}"
+            f"{freshness_legend}"  
             f"📦 <b>{len(filtered)} {title} available</b>\n"
             f"📄 Page {page + 1} of {total_pages}\n\n"
             "<i>Which one whispers to your spirit?</i>\n\n"
@@ -3973,7 +3994,13 @@ async def   show_paginated_cookie_list(
         buttons = []
         for idx, item in enumerate(page_items, start=start + 1):
             name = str(item.get("display_name") or "").strip() or f"{title} Cookie"
-            report += f"✨ <b>{name}</b>\n Status: ✅ Working\n Remaining: {item.get('remaining', 0)}\n\n"
+            freshness = get_freshness_badge(item.get("last_updated"))
+            report += (
+                f"✨ <b>{name}</b>\n"
+                f" Status: ✅ Working\n"
+                f" Remaining: {item.get('remaining', 0)}\n"
+                f" Age: {freshness}\n\n"
+            )
             buttons.append([
                 InlineKeyboardButton(f"🔓 Reveal {name}", callback_data=f"reveal_{service_type}|{idx}|{page}")
             ])
@@ -3985,8 +4012,8 @@ async def   show_paginated_cookie_list(
             nav.append(InlineKeyboardButton("Next ⇀",     callback_data=f"{service_type}_page_{page + 1}"))
         if nav:
             buttons.append(nav)
-            buttons.append([InlineKeyboardButton("❓ How to use these cookies?",callback_data=f"cookie_tutorial_{service_type}_1")])
-            buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
+        buttons.append([InlineKeyboardButton("❓ How to use these cookies?", callback_data=f"cookie_tutorial_{service_type}_1")])
+        buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
 
         report += (
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -4048,7 +4075,17 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
             and str(item.get("status", "")).lower() == "active"
             and int(item.get("remaining", 0)) > 0
         ]
-        filtered.sort(key=lambda x: x.get("last_updated", ""))
+        def _reveal_freshness_sort(item):
+            raw = item.get("last_updated")
+            if not raw:
+                return 0
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return dt.timestamp()
+            except Exception:
+                return 0
+
+        filtered.sort(key=_reveal_freshness_sort)
         if user_level >= 6:
             filtered = filtered[-max_items:]
         else:
@@ -4105,12 +4142,14 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
         action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
 
+        freshness = get_freshness_badge(item.get("last_updated"))
         caption = (
             f"📄 <b>{display_name.replace(' ', '_')}.txt</b>\n\n"
             f"{emoji} <b>{display_name} Revealed</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🌿 Status: <b>✅ Awakened</b>\n"
-            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n\n"
+            f"📦 Remaining: <b>{item.get('remaining', 0)}</b>\n"
+            f"🕐 Age: <b>{freshness}</b>\n\n"
             "📥 The forest has wrapped your cookie in an ancient scroll.\n"
             "<i>Tap the file below to receive its magic.</i> 🍃"
         )
@@ -4996,6 +5035,41 @@ async def handle_updates(chat_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
+def get_freshness_badge(last_updated: str | None) -> str:
+    """
+    Returns a freshness badge based on how recently the cookie was added/updated.
+    🟢 Fresh (under 6 hours)
+    🟡 Recent (6–24 hours)
+    🟠 Aging (1–3 days)
+    🔴 Old (3+ days)
+    """
+    if not last_updated:
+        return "⚪ Unknown age"
+
+    try:
+        dt = datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
+        manila = pytz.timezone("Asia/Manila")
+        now = datetime.now(manila)
+        diff = now - dt.astimezone(manila)
+        total_hours = diff.total_seconds() / 3600
+
+        if total_hours < 6:
+            mins = int(diff.total_seconds() / 60)
+            if mins < 60:
+                return f"🟢 Fresh ({mins}m ago)"
+            return f"🟢 Fresh ({int(total_hours)}h ago)"
+        elif total_hours < 24:
+            return f"🟡 Recent ({int(total_hours)}h ago)"
+        elif total_hours < 72:
+            days = int(total_hours / 24)
+            return f"🟠 Aging ({days}d ago)"
+        else:
+            days = int(total_hours / 24)
+            return f"🔴 Old ({days}d ago)"
+
+    except Exception:
+        return "⚪ Unknown age"
+
 async def get_active_event() -> dict | None:
     cached = await redis_client.get("active_event")
     if cached:
