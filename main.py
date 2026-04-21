@@ -2304,6 +2304,27 @@ async def update_last_active(chat_id: int):
         f"user_profiles?chat_id=eq.{chat_id}",
         {"last_active": datetime.now(pytz.utc).isoformat()},
     )
+    # Notify owner — only once per 15 min per user (avoid spam)
+    notify_key = f"online_notif:{chat_id}"
+    just_came_online = await redis_client.set(notify_key, 1, ex=900, nx=True)
+    if just_came_online and chat_id != OWNER_ID:
+        profile = await get_user_profile(chat_id)
+        name = profile.get("first_name", "Someone") if profile else "Someone"
+        level = profile.get("level", 1) if profile else 1
+        title = get_level_title(level)
+        manila = pytz.timezone("Asia/Manila")
+        time_str = datetime.now(manila).strftime("%I:%M %p")
+        try:
+            await tg_app.bot.send_message(
+                OWNER_ID,
+                f"🟢 <b>{name}</b> is online right now!\n"
+                f"🏷️ {title} • Level {level}\n"
+                f"🕒 {time_str} Manila time\n"
+                f"🆔 <code>{chat_id}</code>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
 # Helper to turn "9 days ago" into a number for sorting
 def parse_updated_for_sort(updated_str: str) -> int:
@@ -3197,6 +3218,7 @@ def kb_main_menu():
             InlineKeyboardButton("📦 Resources", callback_data="show_resources"),
             InlineKeyboardButton("🕊️ Messenger", url="https://t.me/caydigitals")
         ],
+        [InlineKeyboardButton("🟢 Who's Online Now", callback_data="show_online_users")],
         [InlineKeyboardButton("🌳 Support the Enchanted Clearing", callback_data="donate")],
         [InlineKeyboardButton("🌟 Forest Patrons", callback_data="patrons")],
     ])
@@ -4591,6 +4613,90 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
+async def handle_online_users(chat_id: int, query=None):
+    """🟢 Public online users page — active in last 15 minutes"""
+    manila = pytz.timezone("Asia/Manila")
+    ago_15min = (
+        datetime.now(manila) - timedelta(minutes=15)
+    ).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    active_users = await _sb_get(
+        "user_profiles",
+        **{
+            "select": "first_name,level,last_active,chat_id",
+            "last_active": f"gte.{ago_15min}",
+            "order": "last_active.desc",
+            "limit": 50,
+        }
+    ) or []
+
+    # Remove owner from public list
+    active_users = [u for u in active_users if str(u.get("chat_id")) != str(OWNER_ID)]
+
+    now = datetime.now(manila)
+
+    if not active_users:
+        text = (
+            "🌿 <b>Who's in the Clearing Right Now?</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌫️ The forest is quiet...\n\n"
+            "<i>No wanderers have been active in the last 15 minutes.</i>\n\n"
+            "Be the first to explore! 🍃"
+        )
+    else:
+        lines = []
+        for i, u in enumerate(active_users, 1):
+            name = html.escape(u.get("first_name", "Wanderer"))
+            level = u.get("level", 1)
+            title = get_level_title(level)
+
+            # Time ago
+            try:
+                dt = datetime.fromisoformat(
+                    u["last_active"].replace("Z", "+00:00")
+                ).astimezone(manila)
+                diff_m = int((now - dt).total_seconds() / 60)
+                if diff_m < 1:
+                    ago = "just now"
+                elif diff_m == 1:
+                    ago = "1 min ago"
+                else:
+                    ago = f"{diff_m} mins ago"
+            except Exception:
+                ago = "recently"
+
+            lines.append(
+                f"{i}. 🟢 <b>{name}</b>\n"
+                f"   {title} • Lv{level} • <i>{ago}</i>"
+            )
+
+        text = (
+            f"🌿 <b>Who's in the Clearing Right Now?</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"✨ <b>{len(active_users)}</b> wanderer(s) active in the last 15 minutes\n\n"
+            + "\n\n".join(lines)
+            + "\n\n━━━━━━━━━━━━━━━━━━\n"
+            "<i>Updates every time you visit. 🍃</i>"
+        )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Refresh", callback_data="show_online_users")],
+        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+    ])
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=MORNING_GIF,
+        caption=text,
+        reply_markup=keyboard,
+    )
+
 async def handle_profile_page(chat_id: int, first_name: str, query=None):
     """Fixed version — shows achievement summary directly in profile"""
     profile = await get_user_profile(chat_id)
@@ -6777,6 +6883,10 @@ async def handle_callback(update: Update):
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
         return
+    
+    elif data == "show_online_users":
+            await handle_online_users(chat_id, query)
+            return
 
     elif data == "show_stats_card":
             await handle_stats_card(chat_id, first_name, query)
@@ -8633,6 +8743,9 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/online"):
+            await handle_online_users(chat_id)
 
     elif text.startswith("/award_beta"):
         try:
