@@ -4391,12 +4391,16 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo")],
-        [InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements")],
-        [InlineKeyboardButton("📜 XP History", callback_data="history_page_0")],
-        [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
-    ])
+            [
+                InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
+                InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
+            ],
+            [
+                InlineKeyboardButton("📜 XP History", callback_data="history_page_0"),
+                InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
+            ],
+            [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        ])
 
     gif_id = profile.get("profile_gif_id") if profile else None
 
