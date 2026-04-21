@@ -35,3 +35,6 @@ LATENIGHT_GIF = "https://i.pinimg.com/originals/9d/07/a0/9d07a0a457837aad2465da3
 
 QR_IMAGE_URL = "https://i.ibb.co/Fb3wKDfy/photo-2026-04-20-10-31-23.jpg"
 DONOR_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
+
+
+COOKIE_TUTORIAL_GIF = "https://www.flatpanelshd.com/pictures/netflixgames.gif"

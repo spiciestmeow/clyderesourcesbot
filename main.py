@@ -3878,7 +3878,7 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 # ══════════════════════════════════════════════════════════════════════════════
 # INVENTORY — PAGINATED COOKIES
 # ══════════════════════════════════════════════════════════════════════════════
-async def show_paginated_cookie_list(
+async def   show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
         title = "Netflix" if service_type == "netflix" else "PrimeVideo"
@@ -3984,6 +3984,8 @@ async def show_paginated_cookie_list(
         if end < len(filtered):
             nav.append(InlineKeyboardButton("Next ⇀",     callback_data=f"{service_type}_page_{page + 1}"))
         if nav:
+            buttons.append(
+                [InlineKeyboardButton("❓ How to use these cookies?",callback_data=f"cookie_tutorial_{service_type}_1")])
             buttons.append(nav)
         buttons.append([InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="check_vamt")])
 
@@ -4140,6 +4142,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
                 InlineKeyboardButton("✅ Working", callback_data=f"kfb_ok|{service_type}|{idx}"),
                 InlineKeyboardButton("❌ Not Working", callback_data=f"kfb_bad|{service_type}|{idx}"),
             ],
+            [InlineKeyboardButton("❓ How to use this?", callback_data=f"cookie_tutorial_{service_type}_1")],
             [
                 InlineKeyboardButton(
                     f"⬅️ Back to {service_type.title()} Cookies",
@@ -4459,6 +4462,95 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
         caption=text,
         animation_url=MIDNIGHT_GIF,
         reply_markup=markup
+    )
+
+async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", query=None):
+    pages = {
+        1: (
+            "🍿 <b>How to Use a Netflix Cookie — Page 1/3</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "📋 <b>What you need:</b>\n"
+            "• A PC or laptop (Chrome/Firefox)\n"
+            "• The cookie file from the bot\n"
+            "• A cookie editor extension\n\n"
+            "🔧 <b>Step 1 — Install Extension</b>\n\n"
+            "Chrome:\n"
+            "→ Install <b>EditThisCookie</b> or <b>Cookie-Editor</b>\n"
+            "→ Search it on Chrome Web Store\n\n"
+            "Firefox:\n"
+            "→ Install <b>Cookie-Editor</b> from Firefox Add-ons\n\n"
+            "<i>Tap Next → to continue</i>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_2")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")],
+            ])
+        ),
+        2: (
+            "🍿 <b>How to Use a Netflix Cookie — Page 2/3</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🔧 <b>Step 2 — Prepare the Cookie</b>\n\n"
+            "1. Open the <b>.txt file</b> the bot sent you\n"
+            "2. Copy <b>everything</b> inside it\n\n"
+            "🔧 <b>Step 3 — Import the Cookie</b>\n\n"
+            "1. Open your browser\n"
+            "2. Go to <b>netflix.com</b>\n"
+            "   (don't log in — just open the site)\n"
+            "3. Click your cookie extension icon\n"
+            "4. Click <b>Import</b> or paste into the text box\n"
+            "5. Paste the cookie content\n"
+            "6. Click <b>Save</b> or <b>Import</b>\n\n"
+            "<i>Tap Next → for the final step</i>",
+            InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_1"),
+                    InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_3"),
+                ],
+                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")],
+            ])
+        ),
+        3: (
+            "🍿 <b>How to Use a Netflix Cookie — Page 3/3</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🔧 <b>Step 4 — Access the Account</b>\n\n"
+            "1. After importing, <b>refresh</b> netflix.com\n"
+            "2. You should now be logged in ✅\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ <b>Important Rules</b>\n\n"
+            "• Do <b>NOT</b> change the password\n"
+            "• Do <b>NOT</b> change email or account info\n"
+            "• Do <b>NOT</b> sign out other sessions\n"
+            "• Use in <b>private/incognito</b> mode when possible\n"
+            "• Cookies expire — if it stops working, get a new one\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "❌ <b>Cookie not working?</b>\n"
+            "→ Tap the <b>❌ Not Working</b> button on your cookie\n"
+            "   to report it to the Caretaker 🍃",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_2")],
+                [InlineKeyboardButton("🍿 Get a Cookie Now", callback_data=f"vamt_filter_{service}")],
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            ])
+        ),
+    }
+
+    text, keyboard = pages.get(1)
+
+    if query and query.message:
+        try:
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            return
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=COOKIE_TUTORIAL_GIF,
+        reply_markup=keyboard
     )
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
@@ -6404,6 +6496,100 @@ async def handle_callback(update: Update):
 
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
+        return
+    
+    elif data.startswith("cookie_tutorial_"):
+        parts = data.split("_")
+        # Format: cookie_tutorial_{service}_{page}
+        # parts: ['cookie', 'tutorial', service, page]
+        try:
+            service = parts[2]   # netflix or prime
+            page    = int(parts[3])
+        except Exception:
+            service, page = "netflix", 1
+
+        pages = {
+            1: (
+                "🍿 <b>How to Use a Netflix Cookie — Page 1/3</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "📋 <b>What you need:</b>\n"
+                "• A PC or laptop (Chrome/Firefox)\n"
+                "• The cookie file from the bot\n"
+                "• A cookie editor extension\n\n"
+                "🔧 <b>Step 1 — Install Extension</b>\n\n"
+                "Chrome:\n"
+                "→ Install <b>EditThisCookie</b> or <b>Cookie-Editor</b>\n"
+                "→ Search it on Chrome Web Store\n\n"
+                "Firefox:\n"
+                "→ Install <b>Cookie-Editor</b> from Firefox Add-ons\n\n"
+                "<i>Tap Next → to continue</i>",
+                InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_2")],
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                ])
+            ),
+            2: (
+                "🍿 <b>How to Use a Netflix Cookie — Page 2/3</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "🔧 <b>Step 2 — Prepare the Cookie</b>\n\n"
+                "1. Open the <b>.txt file</b> the bot sent you\n"
+                "2. Copy <b>everything</b> inside it\n\n"
+                "🔧 <b>Step 3 — Import the Cookie</b>\n\n"
+                "1. Open your browser\n"
+                "2. Go to <b>netflix.com</b>\n"
+                "   (don't log in — just open the site)\n"
+                "3. Click your cookie extension icon\n"
+                "4. Click <b>Import</b> or paste into text box\n"
+                "5. Paste the cookie content\n"
+                "6. Click <b>Save</b> or <b>Import</b>\n\n"
+                "<i>Tap Next → for the final step</i>",
+                InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_1"),
+                        InlineKeyboardButton("Next ⇀",     callback_data=f"cookie_tutorial_{service}_3"),
+                    ],
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                ])
+            ),
+            3: (
+                f"{'🍿' if service == 'netflix' else '🎥'} <b>How to Use a {service.title()} Cookie — Page 3/3</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "🔧 <b>Step 4 — Access the Account</b>\n\n"
+                "1. After importing, <b>refresh</b> the site\n"
+                "2. You should now be logged in ✅\n\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "⚠️ <b>Important Rules</b>\n\n"
+                "• Do <b>NOT</b> change the password or email\n"
+                "• Do <b>NOT</b> sign out other sessions\n"
+                "• Use <b>incognito/private</b> mode when possible\n"
+                "• Cookies expire — get a new one if it stops working\n\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "❌ <b>Cookie not working?</b>\n"
+                "→ Tap <b>❌ Not Working</b> on your cookie file\n"
+                "   to report it to the Caretaker 🍃",
+                InlineKeyboardMarkup([
+                    [InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_2")],
+                    [InlineKeyboardButton(f"{'🍿' if service == 'netflix' else '🎥'} Get a Cookie Now", callback_data=f"vamt_filter_{service}")],
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                ])
+            ),
+        }
+
+        text, keyboard = pages.get(page, pages[1])
+
+        try:
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except Exception:
+            await send_animated_translated(
+                chat_id=chat_id,
+                caption=text,
+                animation_url=COOKIE_TUTORIAL_GIF,
+                reply_markup=keyboard
+            )
         return
     
     elif data.startswith("toggle_notif|"):
