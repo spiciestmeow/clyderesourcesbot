@@ -62,6 +62,16 @@ async def get_user_achievements(chat_id: int) -> list:
     ) or []
     return data
 
+async def get_gif_enabled(chat_id: int) -> bool:
+    val = await redis_client.get(f"setting:gifs:{chat_id}")
+    return val != "0"  # default ON
+
+async def toggle_gif_setting(chat_id: int) -> bool:
+    current = await get_gif_enabled(chat_id)
+    new_state = not current
+    await redis_client.set(f"setting:gifs:{chat_id}", "1" if new_state else "0")
+    return new_state
+
 async def check_and_award_achievements(chat_id: int, first_name: str, action: str = None):
     if not ACHIEVEMENTS_CACHE:
         await load_achievements_cache()
@@ -3667,7 +3677,10 @@ async def send_animated_translated(
    
     translated_caption = await translate_text(caption, lang)
 
-    if animation_url:
+    # ── GIF toggle check ──
+    gifs_on = await get_gif_enabled(chat_id)
+
+    if animation_url and gifs_on:
         msg = await tg_app.bot.send_animation(
             chat_id=chat_id,
             animation=animation_url,
@@ -5949,6 +5962,7 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
     # Fetch all prefs in parallel
     profile = await get_user_profile(chat_id)
     daily_on = await get_daily_bonus_notif(chat_id)
+    gifs_on  = await get_gif_enabled(chat_id)    
 
     # Read service prefs from profile (default True if missing)
     netflix_on = profile.get("notif_netflix", True) if profile else True
@@ -5971,6 +5985,7 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
         f"{_icon(prime_on,   '🎥', '🔇')} <b>Prime Alerts:</b> {'ON' if prime_on else 'OFF'}\n"
         f"{_icon(windows_on, '🪟', '🔇')} <b>Windows/Office Alerts:</b> {'ON' if windows_on else 'OFF'}\n"
         f"{_icon(steam_on,   '🎮', '🔇')} <b>Steam Alerts:</b> {'ON' if steam_on else 'OFF'}\n\n"
+        f"{_icon(gifs_on, '🎞️', '🔇')} <b>Animated GIFs:</b> {'ON' if gifs_on else 'OFF'}\n"    
         "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
         "<i>Tap any button to toggle it on or off.</i> 🍃"
     )
@@ -6004,6 +6019,10 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
                 callback_data="toggle_notif|steam"
             ),
         ],
+        [InlineKeyboardButton(
+            f"{'🎞️ GIFs: ON' if gifs_on else '🔇 GIFs: OFF'}",
+            callback_data="toggle_notif|gifs"
+        )],
         [InlineKeyboardButton(
             "🌲 Invite Friends & Earn 25 XP",
             callback_data="invite_friends"
@@ -7030,7 +7049,7 @@ async def handle_callback(update: Update):
         notif_type = data.split("|")[1]
 
         SUPABASE_SERVICES = ("netflix", "prime", "windows", "steam")
-        REDIS_SERVICES    = ("daily_bonus",)
+        REDIS_SERVICES    = ("daily_bonus","gifs")
 
         if notif_type not in (*SUPABASE_SERVICES, *REDIS_SERVICES):
             await query.answer("❌ Unknown setting.", show_alert=True)
@@ -7038,6 +7057,8 @@ async def handle_callback(update: Update):
 
         if notif_type == "daily_bonus":
             new_state = await toggle_daily_bonus_notif(chat_id)
+        elif notif_type == "gifs":          # ← add this
+            new_state = await toggle_gif_setting(chat_id)
         else:
             new_state = await toggle_service_notif(chat_id, notif_type)
 
@@ -7047,6 +7068,7 @@ async def handle_callback(update: Update):
             "prime":       "Prime Alerts",
             "windows":     "Windows/Office Alerts",
             "steam":       "Steam Alerts",
+            "gifs": "GIF Animations",
         }
 
         context_map = {
@@ -7069,6 +7091,10 @@ async def handle_callback(update: Update):
             "steam": (
                 "You'll be notified when Steam accounts are uploaded.",
                 "You won't receive Steam upload notifications."
+            ),
+            "gifs": (
+                "Animations will play throughout the bot.",
+                "Text-only mode active. No GIFs will play."
             ),
         }
 
