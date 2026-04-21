@@ -194,6 +194,144 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
     if awarded_count > 0:
         print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
 
+async def handle_stats_card(chat_id: int, first_name: str, query=None):
+    """🎴 Beautiful visual stats card — compact single-message summary"""
+
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        await tg_app.bot.send_message(chat_id, "🌿 Please use /start first.")
+        return
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    loading = await send_loading(chat_id, "🌿 <i>Weaving your forest card...</i>")
+
+    # ── Core stats ──
+    level     = profile.get("level") or 1
+    xp        = profile.get("xp") or 0
+    total_xp  = profile.get("total_xp_earned") or 0
+    xp_next   = get_cumulative_xp_for_level(level + 1)
+
+    # ── XP bar (10 blocks) ──
+    xp_progress = min(int((xp / xp_next) * 10), 10) if xp_next > 0 else 10
+    xp_bar      = "█" * xp_progress + "░" * (10 - xp_progress)
+    xp_pct      = int((xp / xp_next) * 100) if xp_next > 0 else 100
+
+    # ── Streak ──
+    streak = await calculate_streak(chat_id)
+    if streak >= 30:
+        streak_icon, streak_label = "🌠", "Legendary!"
+    elif streak >= 14:
+        streak_icon, streak_label = "🔥", "On Fire!"
+    elif streak >= 7:
+        streak_icon, streak_label = "⚡", "Hot Streak!"
+    elif streak >= 3:
+        streak_icon, streak_label = "🌱", "Growing!"
+    elif streak >= 1:
+        streak_icon, streak_label = "✨", "Started!"
+    else:
+        streak_icon, streak_label = "💤", "No streak yet"
+
+    # ── Display title ──
+    display_title = await get_active_display_title(chat_id, profile)
+
+    # ── Rank ──
+    if chat_id == OWNER_ID:
+        rank_str = "🌲 Forest Warden"
+    else:
+        rank_data = await _sb_get(
+            "user_leaderboard",
+            **{"chat_id": f"eq.{chat_id}", "select": "rank"}
+        ) or []
+        rank_str = f"#{rank_data[0].get('rank', '?')}" if rank_data else "Unranked"
+
+    # ── Top 3 achievements ──
+    user_achs  = await get_user_achievements(chat_id)
+    unlocked   = [u for u in user_achs if u.get("unlocked_at")]
+    ach_lines  = []
+    for u in unlocked[-3:]:
+        code = u.get("achievement_code", "")
+        ach  = ACHIEVEMENTS_CACHE.get(code, {})
+        if ach:
+            icon = ach.get("icon") or "🏆"
+            ach_lines.append(f"  {icon} {ach.get('name', code)}")
+
+    ach_section = (
+        "\n".join(ach_lines)
+        if ach_lines
+        else "  🌱 None yet — keep exploring!"
+    )
+
+    # ── Earned titles (max 2 shown) ──
+    earned_titles = await get_earned_titles(chat_id, profile)
+    if earned_titles:
+        titles_line = "  " + "  •  ".join(earned_titles[-2:])
+    else:
+        titles_line = "  None yet"
+
+    # ── Resource stats ──
+    total_reveals = (
+        (profile.get("netflix_reveals") or 0) +
+        (profile.get("prime_reveals") or 0)
+    )
+    steam_claims = profile.get("steam_claims_count") or 0
+    spins        = profile.get("total_wheel_spins") or 0
+    referrals    = profile.get("referral_count") or 0
+    days_active  = profile.get("days_active") or 0
+
+    # ── Build card ──
+    card = (
+        f"╔══════════════════════╗\n"
+        f"       🌿 FOREST CARD\n"
+        f"╚══════════════════════╝\n\n"
+        f"👤 <b>{html.escape(first_name)}</b>\n"
+        f"🏷️ {display_title}\n"
+        f"🌐 Rank: <b>{rank_str}</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"⭐ <b>Level {level}</b>  •  ✨ <b>{total_xp:,} XP</b> total\n"
+        f"[{xp_bar}] {xp_pct}%\n"
+        f"📈 {xp:,} / {xp_next:,} to next level\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{streak_icon} <b>{streak}-day streak</b>  —  {streak_label}\n"
+        f"📆 Active <b>{days_active}</b> days total\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🍿 Cookies Revealed:  <b>{total_reveals}</b>\n"
+        f"🎮 Steam Claimed:     <b>{steam_claims}</b>\n"
+        f"🎰 Wheel Spins:       <b>{spins}</b>\n"
+        f"🌲 Friends Referred:  <b>{referrals}</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🏆 <b>Recent Achievements</b>\n"
+        f"{ach_section}\n\n"
+        f"🎖️ <b>Earned Titles</b>\n"
+        f"{titles_line}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"<i>The forest remembers every step. 🍃✨</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🎖️ My Titles",    callback_data="show_my_titles"),
+            InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
+        ],
+        [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")],
+    ])
+
+    try:
+        await loading.delete()
+    except Exception:
+        pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        caption=card,
+        animation_url=MYID_GIF,
+        reply_markup=keyboard,
+    )
+
 async def handle_award_beta_guardian(chat_id: int, target_id: int):
     """Manually award the Beta Guardian achievement"""
     if chat_id != OWNER_ID:
@@ -4610,17 +4748,21 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     )
 
     keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
-            InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
-        ],
-        [
-            InlineKeyboardButton("📜 XP History", callback_data="history_page_0"),
-            InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
-        ],
-        [InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
-    ])
+            [
+                InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
+                InlineKeyboardButton("🏆 Achievements",   callback_data="show_achievements"),
+            ],
+            [
+                InlineKeyboardButton("📜 XP History",  callback_data="history_page_0"),
+                InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
+            ],
+            [
+                InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
+                InlineKeyboardButton("🎖️ My Titles",       callback_data="show_my_titles"),
+            ],
+            [InlineKeyboardButton("🎴 Stats Card",      callback_data="show_stats_card")],
+            [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        ])
 
     gif_id = profile.get("profile_gif_id") if profile else None
 
@@ -6647,6 +6789,10 @@ async def handle_callback(update: Update):
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
         return
+
+    elif data == "show_stats_card":
+            await handle_stats_card(chat_id, first_name, query)
+            return
     
     elif data == "show_achievements":
         await show_achievements_page(chat_id, query, page=0)
@@ -8712,6 +8858,9 @@ async def process_update(update_data: dict):
     
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
+
+    elif text.startswith("/card") or text.startswith("/statscard"):
+            await handle_stats_card(chat_id, first_name)
 
     elif text.startswith("/streak"):
             await show_streak_calendar(chat_id, first_name)
