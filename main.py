@@ -663,6 +663,9 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(steam_daily_release_scheduler())
     print("⏰ Steam daily release scheduler started")
 
+    asyncio.create_task(low_stock_monitor())
+    print("⏰ Low stock monitor started")
+
     # ── ADD THESE 4 LINES ──
     global BOT_USERNAME
     me = await tg_app.bot.get_me()
@@ -739,6 +742,63 @@ async def steam_daily_release_scheduler():
             pass
 
         await asyncio.sleep(60)
+
+async def low_stock_monitor():
+    """Runs every hour — notifies owner when any service drops below threshold"""
+    LOW_STOCK_THRESHOLD = 5
+    CHECK_INTERVAL = 3600  # 1 hour
+
+    SERVICE_EMOJIS = {
+        "netflix": "🍿",
+        "prime":   "🎥",
+        "windows": "🪟",
+        "office":  "📑",
+        "steam":   "🎮",
+    }
+
+    while True:
+        await asyncio.sleep(CHECK_INTERVAL)
+        try:
+            data = await get_vamt_data() or []
+
+            counts: dict[str, int] = {}
+            for item in data:
+                svc = str(item.get("service_type", "")).lower().strip()
+                if (str(item.get("status", "")).lower() == "active"
+                        and int(item.get("remaining", 0)) > 0):
+                    counts[svc] = counts.get(svc, 0) + 1
+
+            steam_data = await _sb_get(
+                "steamCredentials",
+                **{"select": "status", "status": "eq.Available"}
+            ) or []
+            counts["steam"] = len(steam_data)
+
+            alerts = []
+            for svc, count in counts.items():
+                if count <= LOW_STOCK_THRESHOLD:
+                    emoji = SERVICE_EMOJIS.get(svc, "📦")
+                    alerts.append(
+                        f"{emoji} <b>{svc.title()}</b>: only <b>{count}</b> left"
+                    )
+
+            if alerts:
+                alert_key = "low_stock_alerted"
+                already_alerted = await redis_client.get(alert_key)
+                if not already_alerted:
+                    await redis_client.setex(alert_key, 21600, "1")
+                    await tg_app.bot.send_message(
+                        OWNER_ID,
+                        "⚠️ <b>Low Stock Alert!</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n\n"
+                        + "\n".join(alerts)
+                        + "\n\n<i>Time to restock the forest! 🌿</i>",
+                        parse_mode="HTML"
+                    )
+                    print(f"⚠️ Low stock alert sent: {alerts}")
+
+        except Exception as e:
+            print(f"🔴 Low stock monitor error: {e}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FASTAPI ROUTES
@@ -3163,8 +3223,11 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔄 Flush Cache", callback_data="caretaker_flushcache"),
         ],
         [
-            InlineKeyboardButton("📤 Upload Keys", callback_data="caretaker_uploadkeys"),
-             InlineKeyboardButton("📊 System Health", callback_data="caretaker_health"),
+            InlineKeyboardButton("📊 System Health",  callback_data="caretaker_health"),
+            InlineKeyboardButton("📦 Check Stock",    callback_data="caretaker_checkstock"),
+        ],
+        [
+            InlineKeyboardButton("📤 Upload Keys",    callback_data="caretaker_uploadkeys"),
         ],
         [
             InlineKeyboardButton("📋 View Key Reports", callback_data="caretaker_viewreports"),
@@ -8181,6 +8244,32 @@ async def handle_callback(update: Update):
             await handle_uploadkeys_command(chat_id)
         elif data == "caretaker_health":
             await handle_status(chat_id)
+        elif data == "caretaker_checkstock":
+            await redis_client.delete("low_stock_alerted")
+            await tg_app.bot.send_message(chat_id, "🔍 <i>Checking stock levels now...</i>", parse_mode="HTML")
+            # reuse same logic — trigger via fake command
+            data_items = await get_vamt_data() or []
+            counts: dict[str, int] = {}
+            SERVICE_EMOJIS = {"netflix":"🍿","prime":"🎥","windows":"🪟","office":"📑","steam":"🎮"}
+            for item in data_items:
+                svc = str(item.get("service_type","")).lower().strip()
+                if str(item.get("status","")).lower() == "active" and int(item.get("remaining",0)) > 0:
+                    counts[svc] = counts.get(svc, 0) + 1
+            steam_data = await _sb_get("steamCredentials", **{"select":"status","status":"eq.Available"}) or []
+            counts["steam"] = len(steam_data)
+            lines = []
+            for svc, count in sorted(counts.items()):
+                emoji = SERVICE_EMOJIS.get(svc, "📦")
+                status = "⚠️" if count <= 5 else "✅"
+                lines.append(f"{status} {emoji} <b>{svc.title()}</b>: <b>{count}</b> available")
+            await tg_app.bot.send_message(
+                chat_id,
+                "📊 <b>Current Stock Levels</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                + "\n".join(lines)
+                + "\n\n<i>⚠️ = at or below threshold (5)</i>",
+                parse_mode="HTML"
+            )
         elif data == "caretaker_viewreports":
             await handle_view_reports(chat_id)
         elif data == "caretaker_setinfo":
@@ -8587,6 +8676,39 @@ async def process_update(update_data: dict):
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check the system status.")
             return
         await handle_status(chat_id)
+
+    elif text.startswith("/checkstock"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+            return
+        # Force immediate stock check bypassing cooldown
+        await redis_client.delete("low_stock_alerted")
+        await tg_app.bot.send_message(chat_id, "🔍 <i>Checking stock levels now...</i>", parse_mode="HTML")
+        data = await get_vamt_data() or []
+        counts: dict[str, int] = {}
+        SERVICE_EMOJIS = {"netflix":"🍿","prime":"🎥","windows":"🪟","office":"📑","steam":"🎮"}
+        for item in data:
+            svc = str(item.get("service_type","")).lower().strip()
+            if str(item.get("status","")).lower() == "active" and int(item.get("remaining",0)) > 0:
+                counts[svc] = counts.get(svc, 0) + 1
+        steam_data = await _sb_get("steamCredentials", **{"select":"status","status":"eq.Available"}) or []
+        counts["steam"] = len(steam_data)
+        if not counts:
+            await tg_app.bot.send_message(chat_id, "🌫️ No inventory data found.")
+            return
+        lines = []
+        for svc, count in sorted(counts.items()):
+            emoji = SERVICE_EMOJIS.get(svc, "📦")
+            status = "⚠️" if count <= 5 else "✅"
+            lines.append(f"{status} {emoji} <b>{svc.title()}</b>: <b>{count}</b> available")
+        await tg_app.bot.send_message(
+            chat_id,
+            "📊 <b>Current Stock Levels</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            + "\n".join(lines)
+            + "\n\n<i>⚠️ = at or below threshold (5)</i>",
+            parse_mode="HTML"
+        )
     
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
