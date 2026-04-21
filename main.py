@@ -63,10 +63,6 @@ async def get_user_achievements(chat_id: int) -> list:
     return data
 
 async def check_and_award_achievements(chat_id: int, first_name: str, action: str = None):
-    # ── TEMPORARILY DISABLED while fixing ──
-    if chat_id != OWNER_ID:
-        return
-    
     if not ACHIEVEMENTS_CACHE:
         await load_achievements_cache()
 
@@ -78,12 +74,15 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
     unlocked_codes = {u["achievement_code"] for u in user_achs if u.get("unlocked_at")}
 
     awarded_count = 0
+    newly_awarded = [] 
+
+    pending_column_updates: dict = {}
 
     for code, ach in ACHIEVEMENTS_CACHE.items():
         if code in unlocked_codes:
             continue
         if ach.get("condition", {}).get("type") == "manual":
-            continue 
+            continue
 
         condition = ach.get("condition", {})
         cond_type = condition.get("type")
@@ -93,7 +92,13 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
             if cond_type == "count":
                 field = condition.get("field")
                 required = condition.get("required", 0)
-                current = profile.get(field, 0)
+
+                if field == "windows_views":
+                    current = (profile.get("windows_views", 0) or 0) + \
+                              (profile.get("office_views", 0) or 0)
+                else:
+                    current = profile.get(field, 0) or 0
+
                 if current >= required:
                     should_unlock = True
 
@@ -101,8 +106,7 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 streak = await calculate_streak(chat_id)
                 if streak >= condition.get("days", 0):
                     should_unlock = True
-                    
-        # ── FIXED: Combined level + streak condition (Eternal Sprout) ──
+
             elif cond_type == "level":
                 if profile.get("level", 1) >= condition.get("required_level", 1):
                     should_unlock = True
@@ -111,7 +115,7 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                 level_ok = profile.get("level", 1) >= condition.get("required_level", 1)
                 streak = await calculate_streak(chat_id)
                 streak_ok = streak >= condition.get("required_streak", 1)
-                if level_ok and streak_ok:          # ← BOTH must be true
+                if level_ok and streak_ok:
                     should_unlock = True
 
             elif cond_type == "reveal_netflix":
@@ -123,7 +127,8 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                     should_unlock = True
 
             elif cond_type in ("view_windows", "view_office"):
-                views = profile.get("windows_views", 0) + profile.get("office_views", 0)
+                views = (profile.get("windows_views", 0) or 0) + \
+                        (profile.get("office_views", 0) or 0)
                 if views >= condition.get("required", 0):
                     should_unlock = True
 
@@ -144,7 +149,6 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                     should_unlock = True
 
             elif cond_type == "daily_xp":
-                # This one is tricky — for now we use total_xp_earned as approximation
                 if profile.get("total_xp_earned", 0) >= condition.get("required", 0):
                     should_unlock = True
 
@@ -159,22 +163,33 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
                     "unlocked_at": datetime.now(pytz.utc).isoformat(),
                     "tier": 4 if ach.get("rarity") in ["legendary", "mythic"] else 3
                 })
-                
-                # Apply reward + send message
+
+                # ── BUG 2 FIX: accumulate instead of patching immediately ──
                 reward = ach.get("reward", {})
                 if reward.get("type") == "permanent_slot":
                     col = reward.get("column")
                     amount = reward.get("amount", 0)
                     if col and amount:
-                        await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {
-                            col: (profile.get(col) or 0) + amount
-                        })
+                        pending_column_updates[col] = \
+                            pending_column_updates.get(col, 0) + amount
 
-                await send_achievement_unlock(chat_id, ach, first_name)
+                newly_awarded.append(ach)
                 awarded_count += 1
 
         except Exception as e:
             print(f"🔴 Error checking achievement {code} for {chat_id}: {e}")
+
+    # ── BUG 2 FIX: apply all column bonuses in one pass after the loop ──
+    for col, total_amount in pending_column_updates.items():
+        current_val = profile.get(col) or 0
+        await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {
+            col: current_val + total_amount
+        })
+        print(f"✅ Applied +{total_amount} to {col} for {chat_id} (was {current_val})")
+
+    # ── Send unlock notifications after all DB writes are done ──
+    for ach in newly_awarded:
+        await send_achievement_unlock(chat_id, ach, first_name)
 
     if awarded_count > 0:
         print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
