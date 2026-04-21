@@ -3963,6 +3963,7 @@ async def show_paginated_cookie_list(
 
     if user_level >= 6:
         filtered  = filtered[-max_items:]
+        filtered = filtered[::-1] 
         priority  = "✨ Freshest cookies first!"
     else:
         filtered  = filtered[:max_items]
@@ -4072,6 +4073,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         filtered.sort(key=_reveal_freshness_sort)
         if user_level >= 6:
             filtered = filtered[-max_items:]
+            filtered = filtered[::-1]
         else:
             filtered = filtered[:max_items]
 
