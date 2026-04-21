@@ -434,6 +434,43 @@ async def get_forest_patrons() -> list:
     if cached:
         return json.loads(cached)
 
+async def get_earned_titles(chat_id: int, profile: dict) -> list[str]:
+    """Get list of earned title strings for a user based on their profile"""
+    titles = []
+    level = profile.get("level", 1)
+    
+    # Add level-based titles
+    title = get_level_title(level)
+    if title:
+        titles.append(title)
+    
+    # Add achievement-based titles if any
+    user_achs = await get_user_achievements(chat_id)
+    for u in user_achs:
+        if u.get("unlocked_at"):
+            code = u.get("achievement_code", "")
+            ach = ACHIEVEMENTS_CACHE.get(code, {})
+            reward = ach.get("reward", {})
+            if reward.get("type") == "title":
+                title_text = reward.get("title_text")
+                if title_text:
+                    titles.append(title_text)
+    
+    return titles
+
+
+async def get_active_display_title(chat_id: int, profile: dict) -> str:
+    """Get the currently active display title for a user"""
+    level = profile.get("level", 1)
+    
+    # Check for custom/achievement title stored in profile
+    custom_title = profile.get("active_title")
+    if custom_title:
+        return custom_title
+    
+    # Fall back to level title
+    return get_level_title(level)
+
     data = await _sb_get(
         "forest_patrons",
         **{
