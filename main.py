@@ -6915,35 +6915,27 @@ async def handle_callback(update: Update):
         )
 
     elif data == "show_resources":
-        immersive_text = (
-            "📦 <b>The Resource Grove</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "Deep within the Enchanted Clearing, where golden sunlight filters through ancient leaves, "
-            "lies a hidden grove tended by the forest spirits themselves.\n\n"
-            "Here they have gathered the rarest treasures and wisest knowledge from distant realms — "
-            "all for kind wanderers like you.\n\n"
-            "<i>Choose your path below, and may the trees guide you to what you seek...</i> 🍃✨"
-        )
-        
-        try:
-            await send_animated_translated(
-                chat_id=chat_id,
-                caption=immersive_text,
-                animation_url=RESOURCES_GIF,
-                reply_markup=kb_resources()
+            immersive_text = (
+                "📦 <b>The Resource Grove</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "Deep within the Enchanted Clearing, where golden sunlight filters through ancient leaves, "
+                "lies a hidden grove tended by the forest spirits themselves.\n\n"
+                "Here they have gathered the rarest treasures and wisest knowledge from distant realms — "
+                "all for kind wanderers like you.\n\n"
+                "<i>Choose your path below, and may the trees guide you to what you seek...</i> 🍃✨"
             )
-        except Exception:
             try:
                 await query.message.delete()
-            except:
+            except Exception:
                 pass
+
             await send_animated_translated(
                 chat_id=chat_id,
                 caption=immersive_text,
                 animation_url=RESOURCES_GIF,
                 reply_markup=kb_resources()
             )
-        return
+            return
 
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
@@ -7039,6 +7031,10 @@ async def handle_callback(update: Update):
                 reply_markup=keyboard
             )
         except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
             await send_animated_translated(
                 chat_id=chat_id,
                 caption=text,
@@ -7989,7 +7985,20 @@ async def handle_callback(update: Update):
 
         # Cookie types
         if category in ("netflix", "prime"):
-            await show_paginated_cookie_list(category, chat_id, query, page=0)
+            # Always delete current message first — it might be a document (.txt file)
+            # which cannot have its caption edited, causing the GIF list to disappear
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            loading = await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=INVENTORY_GIF,
+                caption=f"{'🍿' if category == 'netflix' else '🎥'} <i>Loading {category.title()} Cookies...</i>",
+            )
+            class _FreshQuery:
+                message = loading
+            await show_paginated_cookie_list(category, chat_id, _FreshQuery(), page=0)
             return
         
         # ── NEW: First-time guide for Windows / Office ──────────────────
