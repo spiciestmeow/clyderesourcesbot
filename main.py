@@ -5982,7 +5982,7 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
         f"{_icon(prime_on,   '🎥', '🔇')} <b>Prime Alerts:</b> {'ON' if prime_on else 'OFF'}\n"
         f"{_icon(windows_on, '🪟', '🔇')} <b>Windows/Office Alerts:</b> {'ON' if windows_on else 'OFF'}\n"
         f"{_icon(steam_on,   '🎮', '🔇')} <b>Steam Alerts:</b> {'ON' if steam_on else 'OFF'}\n\n"
-        f"{_icon(gifs_on, '🎞️', '🔇')} <b>Animated GIFs:</b> {'ON' if gifs_on else 'OFF'}\n"    
+        # f"{_icon(gifs_on, '🎞️', '🔇')} <b>Animated GIFs:</b> {'ON' if gifs_on else 'OFF'}\n"    
         "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
         "<i>Tap any button to toggle it on or off.</i> 🍃"
     )
