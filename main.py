@@ -358,11 +358,10 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
         f"<i>The ancient forest spirits have recognized you, {html.escape(first_name)}!</i> 🌲✨"
     )
 
-    await tg_app.bot.send_animation(
+    await send_animated_translated(
         chat_id=chat_id,
-        animation=ach.get("gif_url") or "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
+        animation_url=ach.get("gif_url") or "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
         caption=caption,
-        parse_mode="HTML"
     )
 
     # ── TEMP PERK REMINDER (3 seconds delay so it appears after the animation) ──
@@ -1871,15 +1870,14 @@ async def handle_document(update: Update):
             # Reset waiting key so they can retry immediately
             await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
             
-            msg = await tg_app.bot.send_animation(
+            msg = await send_animated_translated(
                 chat_id=chat_id,
-                animation=LOADING_GIF,
+                animation_url=LOADING_GIF,
                 caption=(
                     "❌ <b>That's not a GIF, wanderer!</b>\n\n"
                     "🌿 Please send an actual <b>GIF</b> file or animation.\n"
                     "<i>The forest only accepts GIF magic... 🍃</i>"
                 ),
-                parse_mode="HTML"
             )
             await asyncio.sleep(3)
             try:
@@ -1901,12 +1899,11 @@ async def handle_document(update: Update):
                     {"profile_gif_changes": current_count}
                 )
 
-                await message.reply_animation(
-                    animation=file_id,
+                await send_animated_translated(
+                    animation_url=file_id,
                     caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
                             "It will now appear every time you view your profile 🌿\n\n"
                             "<i>Try /profile to see it live.</i>",
-                    parse_mode="HTML"
                 )
             else:
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
@@ -1943,10 +1940,9 @@ async def handle_document(update: Update):
         await message.reply_text(f"❌ Failed to download file: {e}")
         return
 
-    loading = await message.reply_animation(
-        animation=LOADING_GIF,
+    loading = await send_animated_translated(
+        animation_url=LOADING_GIF,
         caption="🌿 <i>Unpacking the ancient scrolls...</i>",
-        parse_mode="HTML"
     )
 
     # ══════════════════════════════════════
@@ -3432,11 +3428,10 @@ async def send_loading(
     caption: str = "🌫️ <i>The ancient mist begins to stir...</i>",
     remember: bool = False,
 ):
-    msg = await tg_app.bot.send_animation(
+    msg = await send_animated_translated(
         chat_id=chat_id,
-        animation=LOADING_GIF,
+        animation_url=LOADING_GIF,
         caption=caption,
-        parse_mode="HTML"
     )
     if remember:
         await _remember(chat_id, msg.message_id)
@@ -3835,8 +3830,10 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
         "<i>The forest grows with you.</i> 🍃✨"
     )
     try:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id, animation=LOADING_GIF, caption=caption, parse_mode="HTML"
+        await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=LOADING_GIF,
+            caption=caption,
         )
     except Exception:
         pass
@@ -4747,11 +4744,10 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     gif_id = profile.get("profile_gif_id") if profile else None
 
     if gif_id:
-        msg = await tg_app.bot.send_animation(
+        msg = await send_animated_translated(
             chat_id=chat_id,
-            animation=gif_id,
+            animation_url=gif_id,
             caption=caption,
-            parse_mode="HTML",
             reply_markup=keyboard
         )
     else:
@@ -5246,8 +5242,10 @@ async def handle_feedback(chat_id: int, first_name: str, feedback_text: str):
         f"🕒 <b>Sent:</b> {timestamp}\n"
         f"📬 <b>Remaining feedback today:</b> {remaining}"
     )
-    await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=HELP_GIF, caption=caption, parse_mode="HTML"
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=HELP_GIF,
+        caption=caption,
     )
 
     status = "✅ Saved to database" if saved else "⚠️ Failed to save"
@@ -5605,8 +5603,10 @@ async def send_myid(chat_id: int):
         "Keep this ID safe — the caretaker may ask for it if you ever need help.\n\n"
         "<i>May your roots stay strong in the Enchanted Clearing.</i> 🍃"
     )
-    msg = await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=MYID_GIF, caption=caption, parse_mode="HTML"
+    msg = await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=MYID_GIF,
+        caption=caption,
     )
     await _remember(chat_id, msg.message_id)
 
@@ -5659,11 +5659,10 @@ async def handle_caretaker(chat_id: int, first_name: str):
         "All owner commands are now available as buttons below.\n"
         "Choose your action:"
     )
-    await tg_app.bot.send_animation(
+    await send_animated_translated(
         chat_id=chat_id,
-        animation=CARETAKER_GIF,
+        animation_url=CARETAKER_GIF,
         caption=text,
-        parse_mode="HTML",
         reply_markup=await kb_caretaker_dynamic(),
     )
 # ──────────────────────────────────────────────
@@ -5748,9 +5747,10 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
         except Exception:
             pass
 
-    loading = await tg_app.bot.send_animation(
-        chat_id=chat_id, animation=CLEAN_GIF,
-        caption="🌫️ <b>The ancient mist begins to thicken...</b>", parse_mode="HTML",
+    loading = await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=CLEAN_GIF,
+        caption="🌫️ <b>The ancient mist begins to thicken...</b>",
     )
     await asyncio.sleep(1.8)
     await loading.edit_caption("🍃 <b>The wind spirit awakens...</b>", parse_mode="HTML")
@@ -6158,11 +6158,10 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
                 pass
 
         # Send a FRESH animation (never edit — previous msg is deleted)
-        loading = await tg_app.bot.send_animation(
+        loading = await send_animated_translated(
             chat_id=chat_id,
-            animation=cat_gif,
+            animation_url=cat_gif,
             caption=f"{cat_emoji} <i>Opening the {cat_label} key scroll...</i>",
-            parse_mode="HTML",
         )
 
         # New safety check
@@ -6852,9 +6851,10 @@ async def handle_callback(update: Update):
             pass
         await asyncio.sleep(0.8)
 
-        loading = await tg_app.bot.send_animation(
-            chat_id=chat_id, animation=LOADING_GIF,
-            caption="🌫️ <i>The ancient mist begins to lift once more...</i>", parse_mode="HTML",
+        loading = await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=LOADING_GIF,
+            caption="🌫️ <i>The ancient mist begins to lift once more...</i>",
         )
         await asyncio.sleep(1.3)
         await loading.edit_caption("🌿 <i>The whispering trees lean in to welcome you home...</i>", parse_mode="HTML")
@@ -6883,11 +6883,12 @@ async def handle_callback(update: Update):
     # ── REGISTRATION GUARD (all other callbacks) ──
     profile = await get_user_profile(chat_id)
     if not profile:
-        await tg_app.bot.send_animation(
-            chat_id=chat_id, animation=HELLO_GIF,
+        await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=HELLO_GIF,
             caption="🌿 <b>A gentle breeze rustles the leaves...</b>\n\n"
                     "To step into the Enchanted Clearing, please press the button below.",
-            parse_mode="HTML", reply_markup=kb_start(),
+            reply_markup=kb_start(),
         )
         return
 
@@ -7295,11 +7296,10 @@ async def handle_callback(update: Update):
         }
 
         # ── Immersive spin animation ──
-        loading = await tg_app.bot.send_animation(
+        loading = await send_animated_translated(
             chat_id=chat_id,
-            animation=WHEEL_WHISPERS_GIF,
+            animation_url=WHEEL_WHISPERS_GIF,
             caption="🌿 <b>You place your hand on the ancient wheel...</b>",
-            parse_mode="HTML"
         )
         await asyncio.sleep(1.2)
         await loading.edit_caption(
@@ -8214,10 +8214,10 @@ async def handle_callback(update: Update):
             new_page     = int(data.split("_page_")[1])
         except Exception:
             return
-        loading = await tg_app.bot.send_animation(
-            chat_id=chat_id, animation=INVENTORY_GIF,
+        loading = await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=INVENTORY_GIF,
             caption=f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Loading {service_type.title()}...</i>",
-            parse_mode="HTML",
         )
         class _FQ:
             message = loading
@@ -8264,11 +8264,10 @@ async def handle_callback(update: Update):
             await redis_client.delete(f"reveal_msg:{chat_id}:{service_type}")
 
         # Show fresh list
-        loading = await tg_app.bot.send_animation(
+        loading = await send_animated_translated(
             chat_id=chat_id,
-            animation=INVENTORY_GIF,
+            animation_url=INVENTORY_GIF,
             caption=f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Loading {service_type.title()} Cookies...</i>",
-            parse_mode="HTML",
         )
         class FakeQuery:
             message = loading
@@ -8284,9 +8283,10 @@ async def handle_callback(update: Update):
         if action_xp > 0:
             asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
-        loading = await tg_app.bot.send_animation(
-            chat_id=chat_id, animation=LOADING_GIF,
-            caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>", parse_mode="HTML",
+        loading = await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=LOADING_GIF,
+            caption="🌌 <i>The oldest spirits of the forest begin to stir...</i>",
         )
         await asyncio.sleep(1.2)
         await loading.edit_caption("📜 <i>They gather beneath the ancient canopy...</i>", parse_mode="HTML")
@@ -8352,14 +8352,14 @@ async def handle_callback(update: Update):
             return
 
         if data == "caretaker_addupdate":
-            await tg_app.bot.send_animation(
-                chat_id=chat_id, animation=ABOUT_GIF,
+            await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=ABOUT_GIF,
                 caption=(
                     "📜 <b>Add New Patch Note</b>\n━━━━━━━━━━━━━━━━━━\n"
                     "Reply with:\n\n"
                     "<code>/addupdate\nYour Title Here\nYour full description here...</code>"
                 ),
-                parse_mode="HTML",
             )
         elif data == "caretaker_addevent":
             await tg_app.bot.send_message(
