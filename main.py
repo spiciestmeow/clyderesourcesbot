@@ -8495,33 +8495,28 @@ async def handle_callback(update: Update):
         if not can_change:
             days_left = hours_left // 24
             hours_remaining = hours_left % 24
-
-            time_text = ""
-            if days_left > 0:
-                time_text = f"{days_left}d {hours_remaining}h"
-            else:
-                time_text = f"{hours_left}h"
+            time_text = f"{days_left}d {hours_remaining}h" if days_left > 0 else f"{hours_left}h"
 
             await query.answer("🌿 You've already changed your logo this week!", show_alert=False)
             await tg_app.bot.send_message(
                 chat_id,
-                "🌿 <b>Upload Your New Profile Logo</b>\n\n"
-                "Send me any of the following within <b>10 minutes</b>:\n\n"
-                "• 🎞️ <b>GIF</b> — animated logo\n"
-                "• 🖼️ <b>PNG / JPG / WEBP</b> — static image\n\n"
-                "Maximum size: <b>10 MB</b>\n\n"
-                "<i>This will become your personal emblem in the forest. ✨</i>",
+                f"🌿 <b>Profile Logo Cooldown</b>\n\n"
+                f"You can only change your profile logo <b>once per week</b>.\n\n"
+                f"⏳ Come back in <b>{time_text}</b> to update it again.\n\n"
+                f"<i>The forest remembers your emblem, wanderer. 🍃</i>",
                 parse_mode="HTML"
             )
             return
 
         await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
-        await query.answer("✅ Send your new GIF now!", show_alert=False)
+        await query.answer("✅ Send your image or GIF now!", show_alert=False)
 
         await tg_app.bot.send_message(
             chat_id,
             "🌿 <b>Upload Your New Profile Logo</b>\n\n"
-            "Send me a <b>GIF</b> (animation or .gif file) within <b>10 minutes</b>.\n"
+            "Send me any of the following within <b>10 minutes</b>:\n\n"
+            "• 🎞️ <b>GIF</b> — animated logo\n"
+            "• 🖼️ <b>PNG / JPG / WEBP</b> — static image\n\n"
             "Maximum size: <b>10 MB</b>\n\n"
             "<i>This will become your personal emblem in the forest. ✨</i>",
             parse_mode="HTML"
