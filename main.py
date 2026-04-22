@@ -1870,6 +1870,7 @@ async def handle_document(update: Update):
         return
 
     loading = await send_animated_translated(
+        chat_id=chat_id,
         animation_url=LOADING_GIF,
         caption="🌿 <i>Unpacking the ancient scrolls...</i>",
     )
@@ -7250,6 +7251,11 @@ async def handle_callback(update: Update):
         await redis_client.delete("online_users_cache")
         await handle_online_users(chat_id, query)
         return
+
+    elif data == "view_notion_steam_refresh":
+        await redis_client.delete("online_users_cache")
+        await view_notion_steam_library(chat_id, page=0, query=query)
+        return
     
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
@@ -8952,7 +8958,7 @@ async def handle_callback(update: Update):
                 "Only Game Name</code>\n\n"
                 "⚠️ <i>Minimum required: email + password</i>\n"
                 "<i>Tip: Use /searchsteam first to check for duplicates.</i>",
-                animation_url=STEAM_RESULT_GIF,
+                animation_url=STEAM_GIF,
             )
         elif data == "caretaker_searchsteam":
             await handle_searchsteam_command(chat_id, "/searchsteam")
