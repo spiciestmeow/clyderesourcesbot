@@ -63,6 +63,17 @@ async def get_user_achievements(chat_id: int) -> list:
     ) or []
     return data
 
+async def get_user_telegram_photo(chat_id: int) -> str | None:
+    """Fetch user's Telegram profile photo file_id"""
+    try:
+        photos = await tg_app.bot.get_user_profile_photos(user_id=chat_id, limit=1)
+        if not photos or photos.total_count == 0:
+            return None
+        return photos.photos[0][-1].file_id  # highest res, file_id doesn't expire
+    except Exception as e:
+        print(f"⚠️ Could not fetch profile photo for {chat_id}: {e}")
+        return None
+
 async def get_gif_enabled(chat_id: int) -> bool:
     val = await redis_client.get(f"setting:gifs:{chat_id}")
     return val != "0"  # default ON
@@ -5317,9 +5328,11 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
         ])
 
+    # AFTER:
     gif_id = profile.get("profile_gif_id") if profile else None
 
     if gif_id:
+        # User has a custom GIF — use it
         msg = await send_animated_translated(
             chat_id=chat_id,
             animation_url=gif_id,
@@ -5327,12 +5340,25 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
             reply_markup=keyboard
         )
     else:
-        msg = await send_animated_translated(
-            chat_id=chat_id,
-            animation_url=MYID_GIF,
-            caption=caption,
-            reply_markup=keyboard,
-        )
+        # Try their Telegram profile photo first
+        tg_photo = await get_user_telegram_photo(chat_id)
+        
+        if tg_photo:
+            msg = await tg_app.bot.send_photo(
+                chat_id=chat_id,
+                photo=tg_photo,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            # Final fallback — your default GIF
+            msg = await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=MYID_GIF,
+                caption=caption,
+                reply_markup=keyboard,
+            )
 
     try:
         await loading.delete()
