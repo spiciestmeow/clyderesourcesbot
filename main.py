@@ -6326,8 +6326,13 @@ async def handle_status(chat_id: int):
             counts = {}
             for item in vamt:
                 svc = str(item.get("service_type", "")).lower().strip()
+
+                if svc in ("win", "windows"):
+                    svc = "windows"
+
                 if str(item.get("status", "")).lower() == "active" and int(item.get("remaining", 0)) > 0:
                     counts[svc] = counts.get(svc, 0) + 1
+
             steam_avail  = await _sb_get("steamCredentials", **{"select": "status", "status": "eq.Available"}) or []
             steam_all    = await _sb_get("steamCredentials", **{"select": "status"}) or []
             return counts, len(steam_avail), len(steam_all), SERVICE_EMOJIS
