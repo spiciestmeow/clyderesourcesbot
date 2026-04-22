@@ -1887,26 +1887,74 @@ async def handle_document(update: Update):
 
         document = message.document
         animation = message.animation
+        photo = message.photo  # ← ADD THIS
+
+        ACCEPTED_MIME_TYPES = (
+            "image/gif",
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+            "image/webp",
+        )
+        ACCEPTED_EXTENSIONS = (".gif", ".png", ".jpg", ".jpeg", ".webp")
 
         file_id = None
+        is_animated = False
+
         if animation:
+            # Telegram GIF/animation
             file_id = animation.file_id
-        elif document and (document.mime_type == "image/gif" or document.file_name.lower().endswith(".gif")):
-            if document.file_size and document.file_size > 10 * 1024 * 1024:
-                await message.reply_text("❌ GIF is too big. Maximum 10 MB.")
+            is_animated = True
+
+        elif photo:
+            # Compressed photo sent directly
+            file_id = photo[-1].file_id  # highest resolution
+
+        elif document:
+            fname = (document.file_name or "").lower()
+            mime = document.mime_type or ""
+
+            is_accepted = (
+                mime in ACCEPTED_MIME_TYPES or
+                any(fname.endswith(ext) for ext in ACCEPTED_EXTENSIONS)
+            )
+
+            if not is_accepted:
+                await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
+                msg = await send_animated_translated(
+                    chat_id=chat_id,
+                    animation_url=LOADING_GIF,
+                    caption=(
+                        "❌ <b>Unsupported file type, wanderer!</b>\n\n"
+                        "🌿 Please send one of the following:\n"
+                        "• <b>GIF</b> — animated logo\n"
+                        "• <b>PNG / JPG / WEBP</b> — static logo\n\n"
+                        "<i>The forest only accepts these formats... 🍃</i>"
+                    ),
+                )
+                await asyncio.sleep(3)
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
                 return
+
+            if document.file_size and document.file_size > 10 * 1024 * 1024:
+                await message.reply_text("❌ File is too big. Maximum 10 MB.")
+                return
+
             file_id = document.file_id
+            is_animated = mime == "image/gif" or fname.endswith(".gif")
+
         else:
-            # Reset waiting key so they can retry immediately
             await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
-            
             msg = await send_animated_translated(
                 chat_id=chat_id,
                 animation_url=LOADING_GIF,
                 caption=(
-                    "❌ <b>That's not a GIF, wanderer!</b>\n\n"
-                    "🌿 Please send an actual <b>GIF</b> file or animation.\n"
-                    "<i>The forest only accepts GIF magic... 🍃</i>"
+                    "❌ <b>Please send an image or GIF, wanderer!</b>\n\n"
+                    "🌿 Supported: <b>GIF, PNG, JPG, WEBP</b>\n"
+                    "<i>The forest is waiting... 🍃</i>"
                 ),
             )
             await asyncio.sleep(3)
@@ -1915,13 +1963,12 @@ async def handle_document(update: Update):
             except Exception:
                 pass
             return
-
+        
         if file_id:
             success = await set_user_profile_gif(chat_id, file_id)
             if success:
                 await redis_client.setex(f"profile_gif_cooldown:{chat_id}", 7*24*3600, "1")
 
-                # ── Increment per-user counter in DB ──
                 profile = await get_user_profile(chat_id)
                 current_count = (profile.get("profile_gif_changes") or 0) + 1
                 await _sb_patch(
@@ -1929,13 +1976,26 @@ async def handle_document(update: Update):
                     {"profile_gif_changes": current_count}
                 )
 
-                await send_animated_translated(
-                    chat_id=chat_id,
-                    animation_url=file_id,
-                    caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
-                            "It will now appear every time you view your profile 🌿\n\n"
-                            "<i>Try /profile to see it live.</i>",
-                )
+                logo_type = "animated GIF" if is_animated else "image"  # ← dynamic label
+
+                # Use send_photo for static, send_animation for GIF
+                if is_animated:
+                    await send_animated_translated(
+                        chat_id=chat_id,
+                        animation_url=file_id,
+                        caption=f"✨ <b>Your profile {logo_type} has been saved!</b>\n\n"
+                                "It will now appear every time you view your profile 🌿\n\n"
+                                "<i>Try /profile to see it live.</i>",
+                    )
+                else:
+                    await tg_app.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=file_id,
+                        caption=f"✨ <b>Your profile {logo_type} has been saved!</b>\n\n"
+                                "It will now appear every time you view your profile 🌿\n\n"
+                                "<i>Try /profile to see it live.</i>",
+                        parse_mode="HTML",
+                    )
             else:
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
         return
@@ -4099,7 +4159,7 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
         f"{HEADER}\n"
         f"{calendar_grid}\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🟩 Active  ⬜ Missed  🟡 Today  🔵 Today (not yet)\n"
+        f"🟩 Active  ⬜ Missed  🟡 Today  ⬛ Out of range\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📊 <b>Your Stats</b>\n\n"
         f"🔥 Current Streak: <b>{current_streak} days</b>\n"
@@ -8422,11 +8482,13 @@ async def handle_callback(update: Update):
             await query.answer("🌿 You've already changed your logo this week!", show_alert=False)
             await tg_app.bot.send_message(
                 chat_id,
-                f"🌿 <b>Profile Logo Cooldown</b>\n\n"
-                f"You can only change your profile logo <b>once per week</b>.\n\n"
-                f"⏳ Come back in <b>{time_text}</b> to update it again.\n\n"
-                f"<i>The forest remembers your emblem, wanderer. 🍃</i>",
-                parse_mode="HTML",
+                "🌿 <b>Upload Your New Profile Logo</b>\n\n"
+                "Send me any of the following within <b>10 minutes</b>:\n\n"
+                "• 🎞️ <b>GIF</b> — animated logo\n"
+                "• 🖼️ <b>PNG / JPG / WEBP</b> — static image\n\n"
+                "Maximum size: <b>10 MB</b>\n\n"
+                "<i>This will become your personal emblem in the forest. ✨</i>",
+                parse_mode="HTML"
             )
             return
 
@@ -9406,7 +9468,11 @@ async def process_update(update_data: dict):
         return
 
     # ── DOCUMENT HANDLER (Admin TXT key upload) ──
-    if update.message and update.message.document:
+    if update.message and (
+        update.message.document or
+        update.message.photo or
+        update.message.animation
+    ):
         await handle_document(update)
         return
 
