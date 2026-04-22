@@ -204,78 +204,6 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
     if awarded_count > 0:
         print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
 
-async def handle_stats_card(chat_id: int, first_name: str, query=None):
-    """🎴 Beautiful visual stats card — compact single-message summary"""
-
-    profile = await get_user_profile(chat_id)
-    if not profile:
-        await tg_app.bot.send_message(chat_id, "🌿 Please use /start first.")
-        return
-
-    if query and query.message:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-    loading = await send_loading(chat_id, "🌿 <i>Weaving your forest card...</i>")
-
-    # ── Core stats ──
-    level     = profile.get("level") or 1
-    xp        = profile.get("xp") or 0
-    total_xp  = profile.get("total_xp_earned") or 0
-    xp_next   = get_cumulative_xp_for_level(level + 1)
-
-    # ── XP bar (10 blocks) ──
-    xp_progress = min(int((xp / xp_next) * 10), 10) if xp_next > 0 else 10
-    xp_bar      = "🟩" * xp_progress + "⬜️" * (10 - xp_progress)
-    xp_pct      = int((xp / xp_next) * 100) if xp_next > 0 else 100
-
-    # ── Streak ──
-    streak = await calculate_streak(chat_id)
-    if streak >= 30:
-        streak_icon, streak_label = "🌠", "Legendary!"
-    elif streak >= 14:
-        streak_icon, streak_label = "🔥", "On Fire!"
-    elif streak >= 7:
-        streak_icon, streak_label = "⚡", "Hot Streak!"
-    elif streak >= 3:
-        streak_icon, streak_label = "🌱", "Growing!"
-    elif streak >= 1:
-        streak_icon, streak_label = "✨", "Started!"
-    else:
-        streak_icon, streak_label = "💤", "No streak yet"
-
-    # ── Display title ──
-    display_title = await get_active_display_title(chat_id, profile)
-
-    # ── Rank ──
-    if chat_id == OWNER_ID:
-        rank_str = "🌲 Forest Warden"
-    else:
-        rank_data = await _sb_get(
-            "user_leaderboard",
-            **{"chat_id": f"eq.{chat_id}", "select": "rank"}
-        ) or []
-        rank_str = f"#{rank_data[0].get('rank', '?')}" if rank_data else "Unranked"
-
-    # ── Top 3 achievements ──
-    user_achs  = await get_user_achievements(chat_id)
-    unlocked   = [u for u in user_achs if u.get("unlocked_at")]
-    ach_lines  = []
-    for u in unlocked[-3:]:
-        code = u.get("achievement_code", "")
-        ach  = ACHIEVEMENTS_CACHE.get(code, {})
-        if ach:
-            icon = ach.get("icon") or "🏆"
-            ach_lines.append(f"  {icon} {ach.get('name', code)}")
-
-    ach_section = (
-        "\n".join(ach_lines)
-        if ach_lines
-        else "  🌱 None yet — keep exploring!"
-    )
-
 async def handle_award_beta_guardian(chat_id: int, target_id: int):
     """Manually award the Beta Guardian achievement"""
     if chat_id != OWNER_ID:
@@ -377,6 +305,18 @@ async def get_forest_patrons() -> list:
     if cached:
         return json.loads(cached)
 
+    data = await _sb_get(
+        "forest_patrons",
+        **{
+            "select": "display_name,title",
+            "is_visible": "eq.true",
+            "order": "donated_at.desc"
+        }
+    ) or []
+
+    await redis_client.setex("patrons_cache", 3600, json.dumps(data))
+    return data
+
 async def get_earned_titles(chat_id: int, profile: dict) -> list[str]:
     """Get list of earned title strings for a user based on their profile"""
     titles = []
@@ -405,28 +345,10 @@ async def get_earned_titles(chat_id: int, profile: dict) -> list[str]:
 async def get_active_display_title(chat_id: int, profile: dict) -> str:
     """Get the currently active display title for a user"""
     level = profile.get("level", 1)
-    
-    # Check for custom/achievement title stored in profile
     custom_title = profile.get("active_title")
     if custom_title:
         return custom_title
-    
-    # Fall back to level title
     return get_level_title(level)
-
-    data = await _sb_get(
-        "forest_patrons",
-        **{
-            "select": "display_name,title",
-            "is_visible": "eq.true",
-            "order": "donated_at.desc"
-        }
-    ) or []
-
-    # Cache for 1 hour
-    await redis_client.setex("patrons_cache", 3600, json.dumps(data))
-    return data
-
 
 async def add_patron(username: str, title: str = "Kind Wanderer") -> bool:
     """Add a new donor"""
@@ -624,7 +546,10 @@ async def get_steam_claims_today(chat_id: int) -> int:
     ) or []
     return len(data)
 
-async def claim_steam_account(chat_id: int, first_name: str, account_email: str, game_name: str) -> bool:
+async def claim_steam_account(
+    chat_id: int, first_name: str, account_email: str, game_name: str
+) -> bool:
+    # Check if already claimed
     existing_claim = await _sb_get(
         "steam_claims",
         **{
@@ -634,19 +559,22 @@ async def claim_steam_account(chat_id: int, first_name: str, account_email: str,
         }
     ) or []
 
-    await _sb_post("steam_claims", {
+    if existing_claim:
+        return False  # already claimed — don't insert duplicate
+
+    success = await _sb_post("steam_claims", {
         "chat_id": chat_id,
         "first_name": first_name,
         "account_email": account_email,
         "game_name": game_name,
     })
 
-    # ── Check achievements after successful Steam claim ──
-    asyncio.create_task(
-        check_and_award_achievements(chat_id, first_name, action="steam_claim")
-    )
+    if success:
+        asyncio.create_task(
+            check_and_award_achievements(chat_id, first_name, action="steam_claim")
+        )
 
-    return True
+    return success
     
 # ──────────────────────────────────────────────
 # CONFIG
@@ -1900,6 +1828,7 @@ async def handle_document(update: Update):
                 )
 
                 await send_animated_translated(
+                    chat_id=chat_id,
                     animation_url=file_id,
                     caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
                             "It will now appear every time you view your profile 🌿\n\n"
@@ -4643,8 +4572,9 @@ async def handle_online_users(chat_id: int, query=None):
             }
         ) or []
 
-        # Remove owner from public list
-        active_users = [u for u in active_users if str(u.get("chat_id")) != str(OWNER_ID)]
+        for u in active_users:
+            if str(u.get("chat_id")) == str(OWNER_ID):
+                u["first_name"] = "🌲 Forest Warden"
 
         await redis_client.setex(cache_key, 60, json.dumps(active_users))
         print(f"📡 [SUPABASE] Online users fetched — {len(active_users)} active")
@@ -4993,7 +4923,7 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
         reply_markup=markup
     )
 
-async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", query=None):
+async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: int = 1, query=None):
     pages = {
         1: (
             "🍿 <b>How to Use a Netflix Cookie — Page 1/3</b>\n"
@@ -5062,7 +4992,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", query=N
         ),
     }
 
-    text, keyboard = pages.get(1)
+    text, keyboard = pages.get(page, pages[1])
 
     if query and query.message:
         try:
