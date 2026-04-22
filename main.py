@@ -5388,21 +5388,45 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
         ])
 
-    # AFTER:
     gif_id = profile.get("profile_gif_id") if profile else None
 
     if gif_id:
-        # User has a custom GIF — use it
-        msg = await send_animated_translated(
-            chat_id=chat_id,
-            animation_url=gif_id,
-            caption=caption,
-            reply_markup=keyboard
-        )
+        try:
+            msg = await tg_app.bot.send_animation(
+                chat_id=chat_id,
+                animation=gif_id,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except Exception:
+            try:
+                msg = await tg_app.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=gif_id,
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception:
+                tg_photo = await get_user_telegram_photo(chat_id)
+                if tg_photo:
+                    msg = await tg_app.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=tg_photo,
+                        caption=caption,
+                        parse_mode="HTML",
+                        reply_markup=keyboard
+                    )
+                else:
+                    msg = await send_animated_translated(
+                        chat_id=chat_id,
+                        animation_url=MYID_GIF,
+                        caption=caption,
+                        reply_markup=keyboard,
+                    )
     else:
-        # Try their Telegram profile photo first
         tg_photo = await get_user_telegram_photo(chat_id)
-        
         if tg_photo:
             msg = await tg_app.bot.send_photo(
                 chat_id=chat_id,
@@ -5412,7 +5436,6 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
                 reply_markup=keyboard
             )
         else:
-            # Final fallback — your default GIF
             msg = await send_animated_translated(
                 chat_id=chat_id,
                 animation_url=MYID_GIF,
@@ -9822,9 +9845,6 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/caretaker"):
         await handle_caretaker(chat_id, first_name)
-
-    elif text.startswith("/mystats"):
-        await handle_profile_page(chat_id, first_name) 
 
     elif text.startswith("/flushcache"):
         await handle_flushcache(chat_id)
