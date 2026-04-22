@@ -7253,7 +7253,6 @@ async def handle_callback(update: Update):
         return
 
     elif data == "view_notion_steam_refresh":
-        await redis_client.delete("online_users_cache")
         await view_notion_steam_library(chat_id, page=0, query=query)
         return
     
