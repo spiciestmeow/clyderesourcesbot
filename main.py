@@ -3540,14 +3540,20 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
         "health": (
             "📊 <b>System Health Monitor</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "Runs a live diagnostic check on all core systems.\n\n"
+            "Runs a full live diagnostic on all core systems.\n\n"
             "🔍 <b>What gets checked:</b>\n"
-            "• <b>Redis</b> — Memory usage and key count\n"
+            "• <b>Redis</b> — Memory usage, peak, and key count\n"
             "• <b>Supabase</b> — Connection and DB slot usage\n"
             "• <b>Telegram</b> — Bot API responsiveness\n"
-            "• <b>Env Vars</b> — All required variables present\n"
+            "• <b>Env Vars</b> — Required and optional variables\n"
             "• <b>Maintenance Mode</b> — Current on/off state\n"
             "• <b>Uptime</b> — How long the bot has been running\n\n"
+            "👥 <b>User Stats</b> — Total, active now, new today/week, level spread\n"
+            "📦 <b>Inventory</b> — Stock levels per service with low-stock warnings\n"
+            "⚡ <b>Today's Activity</b> — XP, reveals, spins, claims, feedbacks\n"
+            "🗂 <b>Redis Snapshot</b> — Active cooldowns, caps, and rate limits\n"
+            "🎉 <b>Active Event</b> — Current event banner and countdown\n"
+            "🏆 <b>Achievements</b> — Total loaded in cache\n\n"
             "💡 Use this when something feels slow or broken.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📊 Run Health Check Now", callback_data="caretaker_health")],
