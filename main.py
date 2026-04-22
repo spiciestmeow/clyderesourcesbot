@@ -37,6 +37,7 @@ SUPPORTED_LANGUAGES = {
 # ══════════════════════════════════════════════════════════════════════════════
 # SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
 # ══════════════════════════════════════════════════════════════════════════════
+BOT_READY = False  # global flag
 
 ACHIEVEMENTS_CACHE: dict = {}
 
@@ -687,41 +688,38 @@ BOT_USERNAME: str | None = None
 # ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global tg_app, http, redis_client
+    global tg_app, http, redis_client, BOT_READY
 
-    # Shared HTTP connection pool (20 connections max)
     http = httpx.AsyncClient(
         timeout=12.0,
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     )
-    # Inside lifespan() after starting Telegram
-    await load_achievements_cache()
-    print("✅ Achievement system loaded (54 achievements)")
 
-    # Redis for cooldowns + VAMT cache
     redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
-    # Telegram application
     tg_app = Application.builder().token(TOKEN).build()
     await tg_app.initialize()
     await tg_app.start()
 
-    # ── ADD THIS ──
+    await load_achievements_cache()
+    print("✅ Achievement system loaded")
+
     asyncio.create_task(steam_daily_release_scheduler())
-    print("⏰ Steam daily release scheduler started")
-
     asyncio.create_task(low_stock_monitor())
-    print("⏰ Low stock monitor started")
 
-    # ── ADD THESE 4 LINES ──
     global BOT_USERNAME
     me = await tg_app.bot.get_me()
     BOT_USERNAME = me.username
     print(f"✅ Bot username cached: @{BOT_USERNAME}")
 
-    print("✅ Bot started — FastAPI lifespan ready")
-    yield
+    # ✅ Set AFTER everything is ready — only ONE yield
+    BOT_READY = True
+    await redis_client.setex("bot_just_restarted", 180, "1")
+    print("✅ Bot fully ready")
 
-    # ── teardown ──
+    yield  # ← only one yield here
+
+    # teardown
+    BOT_READY = False
     await tg_app.stop()
     await tg_app.shutdown()
     await http.aclose()
@@ -970,6 +968,37 @@ async def _sb_post(path: str, payload: dict | list) -> bool:
             print(f"🔴 SB POST {path}: {e}")
             return False
         
+async def _send_cold_start_notice(chat_id: int):
+    """Tells user bot just woke up, waits until ready, then auto-deletes"""
+    try:
+        msg = await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "⏳ <b>The forest is waking up...</b>\n\n"
+                "The bot just restarted. Your request will be ready in a moment.\n"
+                "<i>Please wait a few seconds before tapping buttons.</i> 🍃"
+            ),
+            parse_mode="HTML"
+        )
+
+        # Wait until bot is actually ready (max 15 seconds)
+        for _ in range(15):
+            if BOT_READY:
+                break
+            await asyncio.sleep(1)
+
+        await asyncio.sleep(2)  # small buffer after ready
+
+        try:
+            await tg_app.bot.delete_message(
+                chat_id=chat_id,
+                message_id=msg.message_id
+            )
+        except Exception:
+            pass
+
+    except Exception:
+        pass
 
 # ──────────────────────────────────────────────
 # NOTION INTEGRATION (Ready for Render)
@@ -8701,16 +8730,17 @@ async def handle_callback(update: Update):
             f"🏷️ {type_badge}\n\n"
             f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
             f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
-            + (f"🆔 Steam ID: <code>{steam_id}</code>\n" if steam_id else "")
-            + claims_left_text
-            + "\n\n⚠️ <b>Important Notice:</b>\n"
-            "• If you see a <b>Something went wrong</b> message pop up, don't worry! "
-            "The account is fine, but too many people are trying to access it at the same time. "
-            "Just be patient and try again later.\n\n"
-            "🔓 <b>Security Warning:</b>\n"
-            "• Please do not attempt to change passwords, enable Steam Guard, or alter any account settings. "
-            "Any modifications may result in them being disabled or locked. Use these accounts responsibly. Enjoy!\n\n"
-            "<i>Enjoy your game, wanderer! 🍃</i>"
+            f"{'🆔 Steam ID: <code>' + str(steam_id) + '</code>\n' if steam_id else ''}"
+            f"{claims_left_text}\n\n"
+            f"⚠️ <b>Important Notice:</b>\n"
+            f"• If you see a <b>Something went wrong</b> message pop up, don't worry! "
+            f"The account is fine, but too many people are trying to access it at the same time. "
+            f"Just be patient and try again later.\n\n"
+            f"🔓 <b>Security Warning:</b>\n"
+            f"• Please do not attempt to change passwords, enable Steam Guard, or alter any account settings. "
+            f"Any modifications may result in them being disabled or locked. "
+            f"Use these accounts responsibly. Enjoy!\n\n"
+            f"<i>Enjoy your game, wanderer! 🍃</i>"
         )
 
         image_url = acc.get("image_url", "").strip() if acc.get("image_url") else ""
@@ -9297,20 +9327,17 @@ async def process_update(update_data: dict):
     # ── Improved Cold Start + Auto-delete after 5 seconds
     if update.message:
         chat_id = update.effective_chat.id
-        cold_key = "cold_start_sent"
-        if not await redis_client.get(cold_key):
-            await redis_client.setex(cold_key, 3600, "1")   # 1 hour cooldown
 
-            try:
-                msg = await tg_app.bot.send_message(
-                    chat_id=chat_id,
-                    text="Yawnnn~ 😴💤\nThe forest just woke me up!\nReady for you now, wanderer ✨🍃"
-                )
-                # Auto-delete after 5 seconds
-                await asyncio.sleep(5)
-                await tg_app.bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
-            except:
-                pass
+        # Per-user cold start — each user gets notified once per restart
+        cold_key = f"cold_start:{chat_id}"
+        global_cold_key = "bot_just_restarted"
+
+        # Only show if bot recently restarted (global flag in Redis)
+        just_restarted = await redis_client.get(global_cold_key)
+
+        if just_restarted and not await redis_client.get(cold_key):
+            await redis_client.setex(cold_key, 300, "1")  # per-user, 5 min
+            asyncio.create_task(_send_cold_start_notice(chat_id))
 
     # ── ONBOARDING GUARD ──
     if update.message and update.message.text:
