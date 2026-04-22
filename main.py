@@ -8704,9 +8704,12 @@ async def handle_callback(update: Update):
             + (f"🆔 Steam ID: <code>{steam_id}</code>\n" if steam_id else "")
             + claims_left_text
             + "\n\n⚠️ <b>Important Notice:</b>\n"
-            "• If you see a <b>Something went wrong</b> message pop up, don't worry! That doesn't mean the account isn't working. The account is fine, but too many people are trying to access it at the same time, which is why the error is showing. Just be patient and try again later.\n\n"
-            "🔓 <b> Security Warning:</b>\n",
-            "• Please do not attempt to change passwords, enable Steam Guard, or alter any account settings. Any modifications to these accounts may result in them being disabled or locked. Use these accounts responsibly and as intended. Enjoy!\n\n"
+            "• If you see a <b>Something went wrong</b> message pop up, don't worry! "
+            "The account is fine, but too many people are trying to access it at the same time. "
+            "Just be patient and try again later.\n\n"
+            "🔓 <b>Security Warning:</b>\n"
+            "• Please do not attempt to change passwords, enable Steam Guard, or alter any account settings. "
+            "Any modifications may result in them being disabled or locked. Use these accounts responsibly. Enjoy!\n\n"
             "<i>Enjoy your game, wanderer! 🍃</i>"
         )
 
