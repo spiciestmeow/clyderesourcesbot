@@ -2259,8 +2259,15 @@ async def send_onboarding_step(chat_id: int, first_name: str, step: int):
             "Every action in the clearing earns you <b>XP</b>:\n\n"
             "• View any list → <b>+8 XP</b>\n"
             "• Reveal a Netflix cookie → <b>+14 XP</b>\n"
-            "• Daily login bonus → <b>+10 to +30 XP</b>\n"
-            "• Spin the Wheel of Whispers → <b>+13 to +100 XP</b>\n\n"
+            "• Spin the Wheel of Whispers → <b>+13 to +75 XP</b>\n\n"
+            "🌅 <b>Daily Login Streak Bonus:</b>\n\n"
+            "• Day 1 → <b>+10 XP</b> 🌅\n"
+            "• Day 2 → <b>+12 XP</b> 🌱\n"
+            "• Day 3-6 → <b>+20 XP</b> 🔥\n"
+            "• Day 7-13 → <b>+30 XP</b> ⚡\n"
+            "• Day 14-29 → <b>+40 XP</b> 🌟\n"
+            "• Day 30-59 → <b>+50 XP</b> 🏆\n"
+            "• Day 60+ → <b>+60 XP</b> 🌠\n\n"
             "⭐ <b>Why level up?</b>\n"
             "Higher levels unlock more items per day!\n\n"
             "• Level 1 → 5 Netflix cookies/day\n"
@@ -2270,7 +2277,7 @@ async def send_onboarding_step(chat_id: int, first_name: str, step: int):
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("← Back", callback_data="onboarding_step_1"),
-             InlineKeyboardButton("Next → Your First Action 🎯", callback_data="onboarding_step_3")],
+            InlineKeyboardButton("Next → Your First Action 🎯", callback_data="onboarding_step_3")],
             [InlineKeyboardButton("⏩ Skip Tour", callback_data="onboarding_skip")],
         ])
 
@@ -2758,24 +2765,28 @@ async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tu
     ttl = int((midnight - now).total_seconds())
     key = f"daily_bonus:{chat_id}"
 
-    # ATOMIC: only one concurrent request wins this SET
-    # nx=True means "only set if key does NOT exist"
-    # If the key already exists, set() returns None → bonus already claimed
     claimed = await redis_client.set(key, 1, ex=ttl, nx=True)
     if not claimed:
-        return 0, ""  # already claimed today — bonus not available
+        return 0, ""
 
-    # Won the race — compute bonus amount
     streak = await calculate_streak(chat_id)
-    if streak >= 7:
-        bonus, label = 30, "🔥🔥 7-Day Streak Bonus!"
+
+    if streak >= 60:
+        bonus, label = 60, "🌠 Ancient Soul Bonus!"
+    elif streak >= 30:
+        bonus, label = 50, "🏆 Devoted Wanderer Bonus!"
+    elif streak >= 14:
+        bonus, label = 40, "🌟 Forest Regular Bonus!"
+    elif streak >= 7:
+        bonus, label = 30, "⚡ Week Warrior Bonus!"
     elif streak >= 3:
         bonus, label = 20, "🔥 3-Day Streak Bonus!"
+    elif streak >= 2:
+        bonus, label = 12, "🌱 Getting Started!"
     else:
         bonus, label = 10, "🌅 Daily Login Bonus!"
 
     return bonus, label
-
 # ──────────────────────────────────────────────
 # NOTIFICATION PREFERENCE HELPERS
 # ──────────────────────────────────────────────
@@ -4114,26 +4125,33 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     calendar_grid = "\n".join(calendar_rows)
 
     # ── Streak status ──
-    if current_streak >= 30:
-        streak_emoji, streak_label = "🌠", "Legendary Streak!"
+    if current_streak >= 60:
+        streak_emoji, streak_label = "🌠", "Ancient Soul!"
+    elif current_streak >= 30:
+        streak_emoji, streak_label = "🏆", "Devoted Wanderer!"
     elif current_streak >= 14:
-        streak_emoji, streak_label = "🔥", "On Fire!"
+        streak_emoji, streak_label = "🌟", "Forest Regular!"
     elif current_streak >= 7:
-        streak_emoji, streak_label = "⚡", "Hot Streak!"
+        streak_emoji, streak_label = "⚡", "Week Warrior!"
     elif current_streak >= 3:
-        streak_emoji, streak_label = "🌱", "Growing!"
+        streak_emoji, streak_label = "🔥", "On Fire!"
+    elif current_streak >= 2:
+        streak_emoji, streak_label = "🌱", "Getting Started!"
     elif current_streak >= 1:
-        streak_emoji, streak_label = "✨", "Getting Started!"
+        streak_emoji, streak_label = "✨", "First Step!"
     else:
         streak_emoji, streak_label = "💤", "Start your streak today!"
 
     # ── Next milestone ──
     milestones = {
-        3:  ("🌱", "+20 XP/day bonus"),
-        7:  ("🎁", "+30 XP/day bonus"),
-        14: ("⚡", "Special badge"),
-        30: ("🌠", "Legendary achievement"),
+        2:  ("🌱", "+12 XP/day"),
+        3:  ("🔥", "+20 XP/day"),
+        7:  ("⚡", "+30 XP/day"),
+        14: ("🌟", "+40 XP/day"),
+        30: ("🏆", "+50 XP/day"),
+        60: ("🌠", "+60 XP/day — Ancient Soul!"),
     }
+
     next_milestone_text = ""
     for days, (icon, reward) in milestones.items():
         if current_streak < days:
@@ -9133,8 +9151,15 @@ async def handle_callback(update: Update):
                 "• Revealing a cookie → <b>+14 XP</b>\n"
                 "• /profile or /clear → <b>+6 XP</b>\n"
                 "• First Guidance / Lore → <b>+10 XP</b>\n"
-                "• Returning Guidance / Lore → <b>+2 XP</b>\n"
-                "• Daily Login Bonus → <b>+10–30 XP</b> (streak scales)\n\n"
+                "• Returning Guidance / Lore → <b>+2 XP</b>\n\n"
+                "🌅 <b>Daily Login Streak Bonus:</b>\n"
+                "• Day 1 → <b>+10 XP</b>\n"
+                "• Day 2 → <b>+12 XP</b>\n"
+                "• Day 3-6 → <b>+20 XP</b>\n"
+                "• Day 7-13 → <b>+30 XP</b>\n"
+                "• Day 14-29 → <b>+40 XP</b>\n"
+                "• Day 30-59 → <b>+50 XP</b>\n"
+                "• Day 60+ → <b>+60 XP</b>\n\n"
                 f"<b>Cumulative XP Requirements:</b>\n\n{level_req_text}\n\n"
                 "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨",
                 InlineKeyboardMarkup([
