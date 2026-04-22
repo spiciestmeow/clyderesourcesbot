@@ -6238,61 +6238,290 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
 async def handle_status(chat_id: int):
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check system status.")
+        return
+
+    await tg_app.bot.send_message(chat_id, "🔍 <i>Running full diagnostics...</i>", parse_mode="HTML")
+
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    ago_15min   = (now - timedelta(minutes=15)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    ago_1hr     = (now - timedelta(hours=1)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    ago_24hr    = (now - timedelta(hours=24)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    week_start  = (now - timedelta(days=7)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    # ── Run all checks in parallel ──
     async def check_redis():
         try:
-            info = await asyncio.wait_for(redis_client.info("memory"), timeout=3.0)
-            used = round(info["used_memory"] / 1024 / 1024, 2)
+            info     = await asyncio.wait_for(redis_client.info("memory"), timeout=3.0)
+            used_mb  = round(info["used_memory"] / 1024 / 1024, 2)
+            peak_mb  = round(info.get("used_memory_peak", 0) / 1024 / 1024, 2)
             key_count = await asyncio.wait_for(redis_client.dbsize(), timeout=3.0)
-            return f"✅ OK ({used} MB, {key_count} keys)"
+            flag = "⚠️" if used_mb > 50 else "✅"
+            return flag, used_mb, peak_mb, key_count
         except Exception as e:
-            return f"❌ {e}"
+            return "❌", 0, 0, 0
 
     async def check_supabase():
         try:
             result = await _sb_get("user_profiles", select="chat_id", limit=1)
             slots_used = 10 - db_sem._value
             flag = "⚠️" if slots_used >= 8 else "✅"
-            return f"{flag} OK ({slots_used}/10 slots used)" if result is not None else "❌ Query returned None"
+            ok = result is not None
+            return flag, slots_used, ok
         except Exception as e:
-            return f"❌ {e}"
+            return "❌", 0, False
 
     async def check_telegram():
         try:
             me = await asyncio.wait_for(tg_app.bot.get_me(), timeout=5.0)
-            return f"✅ OK"
+            return "✅", me.username
         except Exception as e:
-            return f"❌ {e}"
+            return "❌", str(e)[:30]
 
     async def check_env():
         required = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "REDIS_URL", "OWNER_ID", "WEBHOOK_SECRET"]
-        missing = [v for v in required if not os.getenv(v)]
-        return "✅ All set" if not missing else f"❌ Missing: {', '.join(missing)}"
+        optional = ["NOTION_TOKEN", "NOTION_DATABASE_ID", "STEAM_API_KEY"]
+        missing_req = [v for v in required if not os.getenv(v)]
+        missing_opt = [v for v in optional if not os.getenv(v)]
+        return missing_req, missing_opt
 
-    redis_status, supabase_status, telegram_status, env_status, maintenance = await asyncio.gather(
+    # ── User stats ──
+    async def get_user_stats():
+        try:
+            total     = await _sb_get("user_profiles", select="chat_id", limit=5000)
+            active_15 = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago_15min}"})
+            active_1h = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago_1hr}"})
+            active_24 = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago_24hr}"})
+            new_today = await _sb_get("user_profiles", **{"select": "chat_id", "created_at": f"gte.{today_start}"})
+            new_week  = await _sb_get("user_profiles", **{"select": "chat_id", "created_at": f"gte.{week_start}"})
+            # Level distribution
+            levels    = await _sb_get("user_profiles", select="level", limit=5000)
+            lv_dist = {}
+            if levels:
+                for u in levels:
+                    lv = u.get("level", 1)
+                    bucket = f"Lv{lv}" if lv <= 9 else "Lv10+"
+                    lv_dist[bucket] = lv_dist.get(bucket, 0) + 1
+            return {
+                "total":     len(total or []),
+                "active_15": len(active_15 or []),
+                "active_1h": len(active_1h or []),
+                "active_24": len(active_24 or []),
+                "new_today": len(new_today or []),
+                "new_week":  len(new_week or []),
+                "lv_dist":   lv_dist,
+            }
+        except Exception as e:
+            print(f"User stats error: {e}")
+            return {}
+
+    # ── Inventory stats ──
+    async def get_inventory_stats():
+        try:
+            SERVICE_EMOJIS = {"netflix": "🍿", "prime": "🎥", "windows": "🪟", "office": "📑"}
+            vamt = await get_vamt_data() or []
+            counts = {}
+            for item in vamt:
+                svc = str(item.get("service_type", "")).lower().strip()
+                if str(item.get("status", "")).lower() == "active" and int(item.get("remaining", 0)) > 0:
+                    counts[svc] = counts.get(svc, 0) + 1
+            steam_avail  = await _sb_get("steamCredentials", **{"select": "status", "status": "eq.Available"}) or []
+            steam_all    = await _sb_get("steamCredentials", **{"select": "status"}) or []
+            return counts, len(steam_avail), len(steam_all), SERVICE_EMOJIS
+        except Exception as e:
+            print(f"Inventory stats error: {e}")
+            return {}, 0, 0, {}
+
+    # ── Activity stats ──
+    async def get_activity_stats():
+        try:
+            xp_today   = await _sb_get("xp_history", **{"select": "xp_earned", "created_at": f"gte.{today_start}"}) or []
+            xp_1hr     = await _sb_get("xp_history", **{"select": "xp_earned", "created_at": f"gte.{ago_1hr}"}) or []
+            reveals_nf = await _sb_get("xp_history", **{"select": "chat_id", "action": "eq.reveal_netflix", "created_at": f"gte.{today_start}"}) or []
+            reveals_pr = await _sb_get("xp_history", **{"select": "chat_id", "action": "eq.reveal_prime",   "created_at": f"gte.{today_start}"}) or []
+            spins      = await _sb_get("wheel_spins", **{"select": "chat_id", "created_at": f"gte.{today_start}"}) or []
+            claims     = await _sb_get("steam_claims", **{"select": "chat_id", "claimed_at": f"gte.{today_start}"}) or []
+            feedbacks  = await _sb_get("feedback", **{"select": "chat_id", "created_at": f"gte.{today_start}"}) or []
+            total_xp   = sum(r.get("xp_earned", 0) for r in xp_today)
+            hr_xp      = sum(r.get("xp_earned", 0) for r in xp_1hr)
+            return {
+                "xp_today":     total_xp,
+                "xp_1hr":       hr_xp,
+                "nf_reveals":   len(reveals_nf),
+                "pr_reveals":   len(reveals_pr),
+                "wheel_spins":  len(spins),
+                "steam_claims": len(claims),
+                "feedbacks":    len(feedbacks),
+            }
+        except Exception as e:
+            print(f"Activity stats error: {e}")
+            return {}
+
+    # ── Redis key breakdown ──
+    async def get_redis_snapshot():
+        try:
+            # Count key patterns
+            cd_keys   = len(await redis_client.keys("xpcd:*"))
+            daily_bon = len(await redis_client.keys("daily_bonus:*"))
+            wheel_cd  = len(await redis_client.keys("wheel_spin:*"))
+            reveals   = len(await redis_client.keys("daily_reveals:*"))
+            views     = len(await redis_client.keys("daily_views:*"))
+            spam_keys = len(await redis_client.keys("rl:*"))
+            online_n  = len(await redis_client.keys("online_notif:*"))
+            return {
+                "cooldowns":   cd_keys,
+                "daily_bonus": daily_bon,
+                "wheel_cd":    wheel_cd,
+                "reveals":     reveals,
+                "views":       views,
+                "spam":        spam_keys,
+                "online":      online_n,
+            }
+        except Exception as e:
+            print(f"Redis snapshot error: {e}")
+            return {}
+
+    # ── Active event ──
+    async def get_event_info():
+        try:
+            event = await get_active_event()
+            if not event:
+                return None
+            return event
+        except:
+            return None
+
+    # ── Run everything in parallel ──
+    (
+        redis_result,
+        supabase_result,
+        telegram_result,
+        env_result,
+        user_stats,
+        (inv_counts, steam_avail, steam_total, svc_emojis),
+        activity,
+        redis_snap,
+        active_event,
+        maintenance,
+    ) = await asyncio.gather(
         check_redis(),
         check_supabase(),
         check_telegram(),
         check_env(),
+        get_user_stats(),
+        get_inventory_stats(),
+        get_activity_stats(),
+        get_redis_snapshot(),
+        get_event_info(),
         get_maintenance_mode(),
     )
 
-    uptime = datetime.now(pytz.utc) - BOT_START_TIME
-    hours, rem = divmod(int(uptime.total_seconds()), 3600)
-    minutes, seconds = divmod(rem, 60)
-    uptime_str = f"{hours}h {minutes}m {seconds}s"
-    maintenance_status = "🔴 ON (users blocked)" if maintenance else "🟢 OFF"
+    redis_flag, redis_mb, redis_peak, redis_keys = redis_result
+    sb_flag, sb_slots, sb_ok = supabase_result
+    tg_flag, tg_name = telegram_result
+    missing_req, missing_opt = env_result
 
-    await tg_app.bot.send_message(
-        chat_id,
-        f"🌿 <b>System Health Check</b>\n\n"
-        f"<b>Redis:</b>       {redis_status}\n"
-        f"<b>Supabase:</b>    {supabase_status}\n"
-        f"<b>Telegram:</b>    {telegram_status}\n"
-        f"<b>Env Vars:</b>    {env_status}\n"
-        f"<b>Maintenance:</b> {maintenance_status}\n\n"
-        f"<b>Uptime:</b> {uptime_str}",
-        parse_mode="HTML",
+    env_flag = "✅" if not missing_req else "❌"
+    maintenance_status = "🔴 ON — users are blocked!" if maintenance else "🟢 OFF"
+
+    uptime = datetime.now(pytz.utc) - BOT_START_TIME
+    h, r   = divmod(int(uptime.total_seconds()), 3600)
+    m, s   = divmod(r, 60)
+    uptime_str = f"{h}h {m}m {s}s"
+
+    ach_count = len(ACHIEVEMENTS_CACHE)
+
+    # ── Build level distribution string ──
+    lv_dist = user_stats.get("lv_dist", {})
+    lv_line = "  " + "  ".join(
+        f"{k}:{v}" for k, v in sorted(lv_dist.items(), key=lambda x: x[0])
+    ) if lv_dist else "  N/A"
+
+    # ── Inventory lines ──
+    inv_lines = ""
+    for svc in ("netflix", "prime", "windows", "office"):
+        count = inv_counts.get(svc, 0)
+        emoji = svc_emojis.get(svc, "📦")
+        warn  = " ⚠️" if count <= 5 else ""
+        inv_lines += f"  {emoji} {svc.title()}: <b>{count}</b>{warn}\n"
+    inv_lines += f"  🎮 Steam: <b>{steam_avail}</b> available / {steam_total} total"
+
+    # ── Optional env ──
+    opt_line = ""
+    if missing_opt:
+        opt_line = f"\n⚠️ Optional missing: {', '.join(missing_opt)}"
+    req_line = f"\n❌ Required missing: {', '.join(missing_req)}" if missing_req else ""
+
+    # ── Event line ──
+    event_line = "🌿 No active event" 
+    if active_event:
+        countdown = await get_event_countdown(active_event)
+        bonus = f" [{active_event.get('bonus_type', '')}]" if active_event.get('bonus_type') else ""
+        event_line = f"🎉 <b>{active_event.get('title', 'Unnamed')}</b>{bonus}{countdown}"
+
+    text = (
+        f"📊 <b>System Health — Full Report</b>\n"
+        f"🕒 {now.strftime('%B %d, %Y • %I:%M %p')} Manila\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"⚙️ <b>CORE SYSTEMS</b>\n"
+        f"{redis_flag} Redis: <b>{redis_mb} MB</b> used (peak {redis_peak} MB) • {redis_keys} keys\n"
+        f"{sb_flag} Supabase: {'Connected' if sb_ok else 'ERROR'} • {sb_slots}/10 slots\n"
+        f"{tg_flag} Telegram: @{tg_name}\n"
+        f"{env_flag} Env Vars: {'All set' if not missing_req else 'MISSING required'}"
+        f"{req_line}{opt_line}\n"
+        f"🛠️ Maintenance: {maintenance_status}\n"
+        f"⏱️ Uptime: <b>{uptime_str}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"👥 <b>USER STATS</b>\n"
+        f"  Total Wanderers: <b>{user_stats.get('total', 0):,}</b>\n"
+        f"  🟢 Online now (15m): <b>{user_stats.get('active_15', 0)}</b>\n"
+        f"  🟡 Last hour: <b>{user_stats.get('active_1h', 0)}</b>\n"
+        f"  🔵 Last 24h: <b>{user_stats.get('active_24', 0)}</b>\n"
+        f"  🌱 New today: <b>{user_stats.get('new_today', 0)}</b>\n"
+        f"  📅 New this week: <b>{user_stats.get('new_week', 0)}</b>\n"
+        f"  Level spread:\n{lv_line}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"📦 <b>INVENTORY</b>\n"
+        f"{inv_lines}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"⚡ <b>TODAY'S ACTIVITY</b>\n"
+        f"  ✨ XP awarded today: <b>{activity.get('xp_today', 0):,}</b>\n"
+        f"  ⚡ XP last hour: <b>{activity.get('xp_1hr', 0):,}</b>\n"
+        f"  🍿 Netflix reveals: <b>{activity.get('nf_reveals', 0)}</b>\n"
+        f"  🎥 Prime reveals: <b>{activity.get('pr_reveals', 0)}</b>\n"
+        f"  🌟 Wheel spins: <b>{activity.get('wheel_spins', 0)}</b>\n"
+        f"  🎮 Steam claims: <b>{activity.get('steam_claims', 0)}</b>\n"
+        f"  📬 Feedbacks: <b>{activity.get('feedbacks', 0)}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"🗂 <b>REDIS KEY SNAPSHOT</b>\n"
+        f"  XP cooldowns active: <b>{redis_snap.get('cooldowns', 0)}</b>\n"
+        f"  Daily bonuses claimed: <b>{redis_snap.get('daily_bonus', 0)}</b>\n"
+        f"  Wheel cooldowns: <b>{redis_snap.get('wheel_cd', 0)}</b>\n"
+        f"  Reveal caps active: <b>{redis_snap.get('reveals', 0)}</b>\n"
+        f"  View caps active: <b>{redis_snap.get('views', 0)}</b>\n"
+        f"  Rate limit keys: <b>{redis_snap.get('spam', 0)}</b>\n"
+        f"  Online notifs sent: <b>{redis_snap.get('online', 0)}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"🎉 <b>ACTIVE EVENT</b>\n"
+        f"  {event_line}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"🏆 <b>ACHIEVEMENT SYSTEM</b>\n"
+        f"  Loaded in cache: <b>{ach_count}</b> achievements\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"<i>All data live • Redis snapshot is current</i> 🍃"
     )
+
+    await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
 
 async def handle_key_feedback(chat_id: int, first_name: str, key_id: str, service_type: str, is_working: bool, query):
     status = "working" if is_working else "not_working"
