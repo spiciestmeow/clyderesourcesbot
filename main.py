@@ -3265,53 +3265,38 @@ async def show_patrons_page(chat_id: int, query=None):
     )
 
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
-    """Always await this — it fetches the active event from Redis/Supabase."""
     event = await get_active_event()
     
-    row1 = [
-        InlineKeyboardButton("📜 Add Patch", callback_data="caretaker_addupdate"),
-        InlineKeyboardButton("📬 View Feedbacks", callback_data="caretaker_viewfeedback"),
-    ]
-    
-    if event:
-        row2 = [
-            InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent"),
-            InlineKeyboardButton("🔴 End Event", callback_data="confirm_end_event"),
-        ]
-    else:
-        row2 = [
-            InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent"),
-            InlineKeyboardButton("🌿 No Active Event", callback_data="noop"),   # cleaner text
-        ]
-    
     return InlineKeyboardMarkup([
-        row1,
-        row2,
         [
-            InlineKeyboardButton("👁️ View Event", callback_data="caretaker_viewevent"),
-            InlineKeyboardButton("🔄 Flush Cache", callback_data="caretaker_flushcache"),
+            InlineKeyboardButton("📜 Patch Notes", callback_data="cpage_addupdate"),
+            InlineKeyboardButton("📬 Feedbacks", callback_data="cpage_viewfeedback"),
         ],
         [
-            InlineKeyboardButton("📊 System Health",  callback_data="caretaker_health"),
-            InlineKeyboardButton("📦 Check Stock",    callback_data="caretaker_checkstock"),
+            InlineKeyboardButton("🎉 Events", callback_data="cpage_events"),
+            InlineKeyboardButton("🔄 Cache", callback_data="cpage_flushcache"),
         ],
         [
-            InlineKeyboardButton("📤 Upload Keys",    callback_data="caretaker_uploadkeys"),
+            InlineKeyboardButton("📊 System Health", callback_data="cpage_health"),
+            InlineKeyboardButton("📦 Stock", callback_data="cpage_checkstock"),
         ],
         [
-            InlineKeyboardButton("📋 View Key Reports", callback_data="caretaker_viewreports"),
-            InlineKeyboardButton("🛠️ Maintenance", callback_data="confirm_toggle_maintenance"),
+            InlineKeyboardButton("📤 Upload Keys", callback_data="cpage_uploadkeys"),
+            InlineKeyboardButton("📋 Reports", callback_data="cpage_viewreports"),
         ],
         [
-            InlineKeyboardButton("📝 Set Forest Info", callback_data="caretaker_setinfo"),
-            InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst"),
+            InlineKeyboardButton("🛠️ Maintenance", callback_data="cpage_maintenance"),
+            InlineKeyboardButton("📝 Forest Info", callback_data="cpage_setinfo"),
         ],
         [
-            InlineKeyboardButton("🎮 Search Steam", callback_data="caretaker_searchsteam"),
-            InlineKeyboardButton("🎮 Upload Steam", callback_data="caretaker_uploadsteam"),
+            InlineKeyboardButton("⚠️ Full Reset", callback_data="cpage_resetfirst"),
+            InlineKeyboardButton("🎮 Steam", callback_data="cpage_steam"),
         ],
         [
-            InlineKeyboardButton("📋 View & Edit Notion Steam Library", callback_data="view_notion_steam"),
+            InlineKeyboardButton("📋 Notion Library", callback_data="cpage_notion"),
+        ],
+        [
+            InlineKeyboardButton("👤 User Tools", callback_data="cpage_usertools"),
         ],
         [
             InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu"),
@@ -3451,6 +3436,417 @@ async def calculate_streak(chat_id: int) -> int:
     # ── Cache result for 5 minutes ──
     await redis_client.setex(f"streak:{chat_id}", 300, streak)
     return streak
+
+async def show_caretaker_page(chat_id: int, page: str, query=None):
+    """Routes to the correct caretaker sub-page"""
+
+    pages = {
+
+        # ── PATCH NOTES ──
+        "addupdate": (
+            "📜 <b>Patch Notes Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "This lets you add a new patch note entry that all users can see "
+            "when they tap <b>Updates</b> in the bot.\n\n"
+            "📌 <b>Format:</b>\n"
+            "<code>/addupdate\n"
+            "Your Title Here\n"
+            "Full description of changes...</code>\n\n"
+            "• Line 1 after command = Title\n"
+            "• Line 2+ = Description (can be multi-line)\n"
+            "• Date is auto-set to today (Manila time)\n\n"
+            "📋 <b>Shows last 5 patch notes to users</b>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📜 Add Patch Note Now", callback_data="caretaker_addupdate")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── FEEDBACKS ──
+        "viewfeedback": (
+            "📬 <b>User Feedback Viewer</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows the latest <b>15 feedback messages</b> submitted by users "
+            "via the <code>/feedback</code> command.\n\n"
+            "📌 <b>Each entry shows:</b>\n"
+            "• User's name and chat ID\n"
+            "• Date and time submitted\n"
+            "• Full feedback message\n\n"
+            "⚠️ Users are limited to <b>3 feedbacks per day</b> to prevent spam.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📬 View Feedbacks Now", callback_data="caretaker_viewfeedback")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── EVENTS ──
+        "events": (
+            "🎉 <b>Event Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Create and manage forest events that appear as banners "
+            "on the main menu for all users.\n\n"
+            "📌 <b>Create Event Format:</b>\n"
+            "<code>/addevent\n"
+            "Event Title\n"
+            "April 25, 2026\n"
+            "Description here...\n"
+            "bonus:netflix_double</code>\n\n"
+            "🎁 <b>Bonus Types:</b>\n"
+            "• <code>bonus:netflix_double</code> — Doubles Netflix slots\n"
+            "• <code>bonus:netflix_max</code> — Maximizes Netflix slots\n"
+            "• <i>Omit bonus line for normal event</i>\n\n"
+            "⚠️ Creating a new event replaces the current one.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent")],
+                [InlineKeyboardButton("👁️ View Current Event", callback_data="caretaker_viewevent")],
+                [InlineKeyboardButton("🔴 End Current Event", callback_data="confirm_end_event")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── FLUSH CACHE ──
+        "flushcache": (
+            "🔄 <b>Cache Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Clears all Redis cached data so the bot fetches "
+            "fresh data from Supabase on the next request.\n\n"
+            "🗂 <b>Caches that will be cleared:</b>\n"
+            "• VAMT inventory (keys & cookies)\n"
+            "• Achievements list (including GIF URLs)\n"
+            "• Forest Patrons list\n"
+            "• Active event banner\n\n"
+            "✅ Achievements are also <b>immediately reloaded</b> after flush.\n\n"
+            "💡 <b>When to use:</b> After updating data in Supabase directly, "
+            "or when users report seeing outdated info.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Flush All Caches Now", callback_data="caretaker_flushcache")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── SYSTEM HEALTH ──
+        "health": (
+            "📊 <b>System Health Monitor</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Runs a live diagnostic check on all core systems.\n\n"
+            "🔍 <b>What gets checked:</b>\n"
+            "• <b>Redis</b> — Memory usage and key count\n"
+            "• <b>Supabase</b> — Connection and DB slot usage\n"
+            "• <b>Telegram</b> — Bot API responsiveness\n"
+            "• <b>Env Vars</b> — All required variables present\n"
+            "• <b>Maintenance Mode</b> — Current on/off state\n"
+            "• <b>Uptime</b> — How long the bot has been running\n\n"
+            "💡 Use this when something feels slow or broken.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📊 Run Health Check Now", callback_data="caretaker_health")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── STOCK CHECK ──
+        "checkstock": (
+            "📦 <b>Stock Level Monitor</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows how many active items are currently available "
+            "for each service in the inventory.\n\n"
+            "📋 <b>Services monitored:</b>\n"
+            "• 🍿 Netflix cookies\n"
+            "• 🎥 Prime Video cookies\n"
+            "• 🪟 Windows keys\n"
+            "• 📑 Office keys\n"
+            "• 🎮 Steam accounts\n\n"
+            "⚠️ Items at or below <b>5</b> will show a warning.\n\n"
+            "🔔 The bot auto-alerts you every 6 hours if stock is low.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📦 Check Stock Now", callback_data="caretaker_checkstock")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── UPLOAD KEYS ──
+        "uploadkeys": (
+            "📤 <b>Key Uploader</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Upload activation keys or cookies by sending a "
+            "<b>.txt</b> or <b>.zip</b> file to the bot.\n\n"
+            "📋 <b>Supported formats:</b>\n"
+            "• Plain keys (one per line)\n"
+            "• Pipe separated: <code>KEY|remaining|service|name</code>\n"
+            "• Cookie files (Netflix, Prime)\n"
+            "• JSON format\n"
+            "• Key:Value block format\n"
+            "• CSV format\n\n"
+            "✅ Service type is <b>auto-detected</b> from filename/content.\n"
+            "✅ After upload, cache is cleared and users are notified automatically.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── VIEW REPORTS ──
+        "viewreports": (
+            "📋 <b>Key Feedback Reports</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows the latest <b>20 reports</b> submitted by users "
+            "when they mark a key or cookie as working or not working.\n\n"
+            "📌 <b>Each report shows:</b>\n"
+            "• User name and ID\n"
+            "• Service type (Netflix, Prime, Windows, etc.)\n"
+            "• The key/cookie that was reported\n"
+            "• Status (✅ Working / ❌ Not Working)\n"
+            "• Timestamp\n\n"
+            "💡 Use this to identify and remove broken keys from the inventory.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📋 View Reports Now", callback_data="caretaker_viewreports")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── MAINTENANCE ──
+        "maintenance": (
+            "🛠️ <b>Maintenance Mode</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Toggles maintenance mode on or off for all users.\n\n"
+            "🔴 <b>When ON:</b>\n"
+            "• All users (except you) see a maintenance message\n"
+            "• All button taps show an alert popup\n"
+            "• No features are accessible\n\n"
+            "🟢 <b>When OFF:</b>\n"
+            "• Everything works normally\n\n"
+            "⚠️ <b>Always turn this OFF after you're done with maintenance!</b>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛠️ Toggle Maintenance Mode", callback_data="confirm_toggle_maintenance")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── SET FOREST INFO ──
+        "setinfo": (
+            "📝 <b>Forest Info Editor</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Updates the bot version number and last-updated timestamp "
+            "shown in the <b>/forest</b> info command.\n\n"
+            "📌 <b>Format (single line):</b>\n"
+            "<code>/setforestinfo 1.4.5 April 14, 2026 · 02:58 PM</code>\n\n"
+            "📌 <b>Format (multi-line):</b>\n"
+            "<code>/setforestinfo\n"
+            "1.4.5\n"
+            "April 14, 2026\n"
+            "02:58 PM</code>\n\n"
+            "• Field 1 = Version number\n"
+            "• Field 2 = Date\n"
+            "• Field 3 = Time (merged as Date · Time)",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📝 Set Forest Info (use command)", callback_data="caretaker_setinfo")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "online_tools": (
+            "🟢 <b>Online Users Viewer</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows all users who have been active in the last "
+            "<b>15 minutes</b>, sorted by most recent activity.\n\n"
+            "📋 <b>Each user shows:</b>\n"
+            "• Name and level title\n"
+            "• Presence dot (🟢 Just now / 🟡 Recent / 🔵 Last 15min)\n"
+            "• Minutes since last action\n"
+            "• Total XP\n\n"
+            "🔄 Results are cached for <b>60 seconds</b> to reduce "
+            "database load. Tap Refresh inside to get the latest.\n\n"
+            "💡 You also receive an automatic DM notification "
+            "whenever a user comes online (once per 15 min per user).",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🟢 View Online Users Now", callback_data="show_online_users")],
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "patron_tools": (
+            "👥 <b>Patron & Diagnostics</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌟 <b>Add Patron:</b>\n"
+            "Adds a donor to the public <b>Forest Patrons</b> wall "
+            "visible to all users via the main menu.\n\n"
+            "📌 <b>Format:</b>\n"
+            "<code>/addpatron @username</code>\n"
+            "<code>/addpatron @username Legendary Guardian</code>\n\n"
+            "• If no title given, defaults to <b>Kind Wanderer</b>\n"
+            "• Display name auto-formats with @ prefix\n"
+            "• Patron wall cache clears immediately after adding\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🔬 <b>Achievement Diagnostics:</b>\n"
+            "Shows a full report of all achievements loaded in the "
+            "system — total count, types, and condition breakdown.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "🔬 Run Achievement Diagnostics",
+                    callback_data="run_test_achievements"
+                )],
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "reset_tools": (
+            "🔄 <b>Reset Tools</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "All reset tools require a <b>user chat ID</b>.\n"
+            "You can find any user's ID in the online notification "
+            "messages the bot sends you.\n\n"
+            "📋 <b>Available Resets:</b>\n\n"
+            "🌱 <b>Onboarding</b> — Makes user see the welcome "
+            "tutorial again on their next /start\n"
+            "Command: <code>/resetonboarding &lt;id&gt;</code>\n\n"
+            "🖼️ <b>Profile GIF</b> — Removes the 7-day cooldown so "
+            "user can change their profile logo again immediately\n"
+            "Command: <code>/resetprofilegif &lt;id&gt;</code>\n\n"
+            "📖 <b>Win/Office Guide</b> — Makes user see the "
+            "Windows/Office first-time guide again\n"
+            "Command: <code>/resetguide &lt;id&gt;</code>\n\n"
+            "🎰 <b>Wheel Spin</b> — Removes daily cooldown so user "
+            "can spin the Wheel of Whispers again today\n"
+            "Command: <code>/resetwheel &lt;id&gt;</code>\n\n"
+            "🎮 <b>Steam Claim</b> — Resets today's Steam claim "
+            "count so user can claim again\n"
+            "Command: <code>/resetsteamclaim &lt;id&gt;</code>\n\n"
+            "☀️ <b>Daily Bonus</b> — Resets daily bonus, referral "
+            "lock and pending referral for clean testing\n"
+            "Command: <code>/testdaily &lt;id&gt;</code>\n\n"
+            "📌 <b>To use:</b> Close this and type the command.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── FULL RESET ──
+        "resetfirst": (
+            "⚠️ <b>Full User Reset</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Permanently resets <b>your own</b> profile data.\n\n"
+            "🗑 <b>What gets wiped:</b>\n"
+            "• Level → 1\n"
+            "• XP → 0\n"
+            "• Total XP Earned → 0\n"
+            "• All activity stats (views, reveals, etc.)\n"
+            "• Full XP history\n"
+            "• has_seen_menu flag\n\n"
+            "✅ <b>What is kept:</b>\n"
+            "• Your chat ID and account\n"
+            "• Referral count\n"
+            "• Achievements\n\n"
+            "❌ <b>This cannot be undone!</b>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚠️ Proceed to Reset", callback_data="caretaker_resetfirst")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── STEAM ──
+        "steam": (
+            "🎮 <b>Steam Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Manage Steam accounts in the bot.\n\n"
+            "🔍 <b>Search Steam:</b>\n"
+            "Search by email to view account details, "
+            "live Steam status, and full games list.\n\n"
+            "📤 <b>Upload Steam:</b>\n"
+            "Add one or multiple Steam accounts. "
+            "Minimum required: email + password.\n"
+            "Optional: game name, SteamID64, banner image URL.\n\n"
+            "📋 <b>Notion Library:</b>\n"
+            "View, filter, and update Steam account availability "
+            "directly inside the bot via Notion integration.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 Search Steam", callback_data="caretaker_searchsteam")],
+                [InlineKeyboardButton("📤 Upload Steam", callback_data="caretaker_uploadsteam")],
+                [InlineKeyboardButton("📋 Notion Library", callback_data="view_notion_steam")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── NOTION ──
+        "notion": (
+            "📋 <b>Notion Steam Library</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "View and manage your Steam account library "
+            "stored in Notion directly from the bot.\n\n"
+            "✅ <b>Features:</b>\n"
+            "• See all games with availability status\n"
+            "• Filter by Available / Expired / Recently Updated\n"
+            "• One-tap mark as Available or Expired\n"
+            "• Sorted by most recently updated first\n"
+            "• Paginated (8 per page)\n\n"
+            "💡 Changes made here update your Notion database in real time.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📋 Open Notion Library", callback_data="view_notion_steam")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "ach_tools": (
+            "🏆 <b>Achievement Tools</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Manage user achievements manually.\n\n"
+            "🌟 <b>Award Beta Guardian:</b>\n"
+            "Gives the special <b>Beta Guardian</b> mythic achievement "
+            "to a user. This is a one-time manual award that also grants "
+            "a permanent slot bonus.\n"
+            "Command: <code>/award_beta &lt;user_id&gt;</code>\n\n"
+            "🗑 <b>Remove Achievement:</b>\n"
+            "Removes a specific achievement from a user by their "
+            "chat ID and achievement code.\n"
+            "Command: <code>/remove_achievement &lt;user_id&gt; &lt;code&gt;</code>\n\n"
+            "🔬 <b>Test Achievements:</b>\n"
+            "Runs a full diagnostic report on the achievement system — "
+            "shows all 54 achievements, their types, and current status.\n"
+            "Command: <code>/test_achievements</code>\n\n"
+            "📌 <b>To use:</b> Close this and type the command directly.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "🔬 Run Achievement Diagnostics",
+                    callback_data="run_test_achievements"
+                )],
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── USER TOOLS ──
+        "usertools": (
+            "👤 <b>User Management Tools</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Select a tool category below:",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏆 Achievement Tools", callback_data="cpage_ach_tools")],
+                [InlineKeyboardButton("🔄 Reset Tools", callback_data="cpage_reset_tools")],
+                [InlineKeyboardButton("👥 Patron & Diagnostics", callback_data="cpage_patron_tools")],
+                [InlineKeyboardButton("🟢 Online Users", callback_data="cpage_online_tools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+    }
+
+    if page not in pages:
+        return
+
+    text, keyboard = pages[page]
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=CARETAKER_GIF,
+        caption=text,
+        reply_markup=keyboard,
+    )
 
 async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     """📅 30-day streak calendar with activity heatmap"""
@@ -7016,6 +7412,26 @@ async def handle_callback(update: Update):
 
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
+        return
+    
+    elif data.startswith("cpage_"):
+        if chat_id != OWNER_ID:
+            await query.answer("🌿 Only the Forest Caretaker may enter.", show_alert=True)
+            return
+        page_name = data.replace("cpage_", "")
+        await show_caretaker_page(chat_id, page_name, query)
+        return
+    
+    elif data == "run_test_achievements":
+        if chat_id != OWNER_ID:
+            return
+        await handle_test_achievements(chat_id)
+        return
+
+    elif data == "caretaker_home":
+        if chat_id != OWNER_ID:
+            return
+        await handle_caretaker(chat_id, first_name)
         return
     
     elif data.startswith("cookie_tutorial_"):
