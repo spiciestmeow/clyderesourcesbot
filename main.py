@@ -2299,10 +2299,14 @@ async def update_has_seen_menu(chat_id: int):
     await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {"has_seen_menu": True})
 
 
-async def update_last_active(chat_id: int):
+async def update_last_active(chat_id: int, action: str = "browsing"):
+    # In update_last_active, also store what they were doing:
     await _sb_patch(
         f"user_profiles?chat_id=eq.{chat_id}",
-        {"last_active": datetime.now(pytz.utc).isoformat()},
+        {
+            "last_active": datetime.now(pytz.utc).isoformat(),
+            "last_action": action
+        }
     )
     # Notify owner — only once per 15 min per user (avoid spam)
     notify_key = f"online_notif:{chat_id}"
@@ -4616,24 +4620,37 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 async def handle_online_users(chat_id: int, query=None):
     """🟢 Public online users page — active in last 15 minutes"""
     manila = pytz.timezone("Asia/Manila")
-    ago_15min = (
-        datetime.now(manila) - timedelta(minutes=15)
-    ).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-
-    active_users = await _sb_get(
-        "user_profiles",
-        **{
-            "select": "first_name,level,last_active,chat_id",
-            "last_active": f"gte.{ago_15min}",
-            "order": "last_active.desc",
-            "limit": 50,
-        }
-    ) or []
-
-    # Remove owner from public list
-    active_users = [u for u in active_users if str(u.get("chat_id")) != str(OWNER_ID)]
-
     now = datetime.now(manila)
+
+    # ── 7. Redis cache (60 seconds) ──
+    cache_key = "online_users_cache"
+    cached = await redis_client.get(cache_key)
+    if cached:
+        active_users = json.loads(cached)
+        print("⚡ [CACHE] Online users from Redis")
+    else:
+        ago_15min = (
+            now - timedelta(minutes=15)
+        ).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+        active_users = await _sb_get(
+            "user_profiles",
+            **{
+                "select": "first_name,level,last_active,chat_id,xp",
+                "last_active": f"gte.{ago_15min}",
+                "order": "last_active.desc",
+                "limit": 50,
+            }
+        ) or []
+
+        # Remove owner from public list
+        active_users = [u for u in active_users if str(u.get("chat_id")) != str(OWNER_ID)]
+
+        await redis_client.setex(cache_key, 60, json.dumps(active_users))
+        print(f"📡 [SUPABASE] Online users fetched — {len(active_users)} active")
+
+    # ── 5. Timestamp for last refresh ──
+    refresh_time = now.strftime("%I:%M %p")
 
     if not active_users:
         text = (
@@ -4641,7 +4658,8 @@ async def handle_online_users(chat_id: int, query=None):
             "━━━━━━━━━━━━━━━━━━\n\n"
             "🌫️ The forest is quiet...\n\n"
             "<i>No wanderers have been active in the last 15 minutes.</i>\n\n"
-            "Be the first to explore! 🍃"
+            "Be the first to explore! 🍃\n\n"
+            f"🕒 <i>Last checked: {refresh_time}</i>"
         )
     else:
         lines = []
@@ -4649,34 +4667,46 @@ async def handle_online_users(chat_id: int, query=None):
             name = html.escape(u.get("first_name", "Wanderer"))
             level = u.get("level", 1)
             title = get_level_title(level)
+            xp = u.get("xp", 0)
 
-            # Time ago
+            # ── Time ago + presence dot ──
             try:
                 dt = datetime.fromisoformat(
                     u["last_active"].replace("Z", "+00:00")
                 ).astimezone(manila)
                 diff_m = int((now - dt).total_seconds() / 60)
-                if diff_m < 1:
+
+                # ── 3. Presence tiers ──
+                if diff_m < 2:
+                    dot = "🟢"
                     ago = "just now"
-                elif diff_m == 1:
-                    ago = "1 min ago"
-                else:
+                elif diff_m < 8:
+                    dot = "🟡"
                     ago = f"{diff_m} mins ago"
+                else:
+                    dot = "🔵"
+                    ago = f"{diff_m} mins ago"
+
             except Exception:
+                dot = "🔵"
                 ago = "recently"
 
             lines.append(
-                f"{i}. 🟢 <b>{name}</b>\n"
-                f"   {title} • Lv{level} • <i>{ago}</i>"
+                f"{i}. {dot} <b>{name}</b>\n"
+                f"   {title} • Lv{level}\n"
+                f"   🕒 {ago} • ✨ {xp:,} XP"
             )
 
         text = (
             f"🌿 <b>Who's in the Clearing Right Now?</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
             f"✨ <b>{len(active_users)}</b> wanderer(s) active in the last 15 minutes\n\n"
+            # ── 3. Legend ──
+            f"🟢 Just now  🟡 Recent  🔵 Last 15 min\n\n"
             + "\n\n".join(lines)
             + "\n\n━━━━━━━━━━━━━━━━━━\n"
-            "<i>Updates every time you visit. 🍃</i>"
+            # ── 5. Refresh timestamp ──
+            f"🕒 <i>Last updated: {refresh_time} • Tap refresh for latest</i> 🍃"
         )
 
     keyboard = InlineKeyboardMarkup([
@@ -4696,7 +4726,7 @@ async def handle_online_users(chat_id: int, query=None):
         caption=text,
         reply_markup=keyboard,
     )
-
+    
 async def handle_profile_page(chat_id: int, first_name: str, query=None):
     """Fixed version — shows achievement summary directly in profile"""
     profile = await get_user_profile(chat_id)
@@ -6879,15 +6909,16 @@ async def handle_callback(update: Update):
             pass
         await send_onboarding_step(chat_id, first_name, step=step)
         return
+
+    elif data == "show_online_users":
+        await redis_client.delete("online_users_cache")
+        await handle_online_users(chat_id, query)
+        return
     
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
         return
     
-    elif data == "show_online_users":
-            await handle_online_users(chat_id, query)
-            return
-
     elif data == "show_stats_card":
             await handle_stats_card(chat_id, first_name, query)
             return
