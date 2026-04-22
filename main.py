@@ -810,6 +810,17 @@ async def low_stock_monitor():
             counts: dict[str, int] = {}
             for item in data:
                 svc = str(item.get("service_type", "")).lower().strip()
+                
+                # ── FIX: same normalization ──
+                if any(x in svc for x in ("win", "windows")):
+                    svc = "windows"
+                elif "office" in svc:
+                    svc = "office"
+                elif "netflix" in svc:
+                    svc = "netflix"
+                elif "prime" in svc:
+                    svc = "prime"
+                
                 if (str(item.get("status", "")).lower() == "active"
                         and int(item.get("remaining", 0)) > 0):
                     counts[svc] = counts.get(svc, 0) + 1
@@ -6327,8 +6338,14 @@ async def handle_status(chat_id: int):
             for item in vamt:
                 svc = str(item.get("service_type", "")).lower().strip()
 
-                if svc in ("win", "windows"):
+                if any(x in svc for x in ("win", "windows")):
                     svc = "windows"
+                elif "office" in svc:
+                    svc = "office"
+                elif "netflix" in svc:
+                    svc = "netflix"
+                elif "prime" in svc:
+                    svc = "prime"
 
                 if str(item.get("status", "")).lower() == "active" and int(item.get("remaining", 0)) > 0:
                     counts[svc] = counts.get(svc, 0) + 1
