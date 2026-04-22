@@ -1111,16 +1111,33 @@ async def get_vamt_data() -> list | None:
     if cached:
         print("⚡ [CACHE] VAMT from Redis")
         return json.loads(cached)
-
-    print("📡 [SUPABASE] Fetching fresh VAMT data…")
-    data = await _sb_get("vamt_keys", select="*", order="service_type.asc")
-    if data is not None:
-        await redis_client.setex("vamt_cache", CACHE_TTL, json.dumps(data))
-        print(f"✅ VAMT cached — {len(data)} items")
-    else:
-        print("🔴 Supabase returned nothing for vamt_keys")
-    return data
-
+ 
+    # ── Stampede lock: only ONE coroutine fetches at a time ──
+    lock_key = "vamt_cache_lock"
+    acquired = await redis_client.set(lock_key, 1, ex=10, nx=True)
+ 
+    if not acquired:
+        # Another coroutine is already fetching — wait and retry
+        for _ in range(10):
+            await asyncio.sleep(0.5)
+            cached = await redis_client.get("vamt_cache")
+            if cached:
+                print("⚡ [CACHE] VAMT from Redis (waited for lock)")
+                return json.loads(cached)
+        # Fallback: fetch anyway if lock holder failed
+        print("⚠️ Lock wait timed out — fetching directly")
+ 
+    try:
+        print("📡 [SUPABASE] Fetching fresh VAMT data…")
+        data = await _sb_get("vamt_keys", select="*", order="service_type.asc")
+        if data is not None:
+            await redis_client.setex("vamt_cache", CACHE_TTL, json.dumps(data))
+            print(f"✅ VAMT cached — {len(data)} items")
+        else:
+            print("🔴 Supabase returned nothing for vamt_keys")
+        return data
+    finally:
+        await redis_client.delete(lock_key)
 
 async def send_supabase_error(chat_id: int, query=None):
     """
@@ -1187,15 +1204,15 @@ async def handle_flushcache(chat_id: int):
 async def broadcast_new_resources(added_counts: dict):
     if not added_counts or not any(added_counts.values()):
         return
-
+ 
     service_emojis = {
         "netflix": "🍿", "prime": "🎥", "windows": "🪟",
         "win": "🪟", "office": "📑", "steam": "🎮",
     }
     service_names = DISPLAY_NAME_MAP.copy()
     service_names["steam"] = "Steam Account"
-
-    # Build per-service lines so we can send targeted messages
+ 
+    # Build per-service lines
     service_lines = {}
     for svc, count in added_counts.items():
         if count > 0:
@@ -1204,13 +1221,13 @@ async def broadcast_new_resources(added_counts: dict):
             service_lines[svc.lower()] = (
                 f"🌱 {emoji} +{count} {name}{'s' if count > 1 else ''} just added!"
             )
-
+ 
     if not service_lines:
         return
-
-    # Fetch all users including their notif prefs
+ 
+    # Fetch all users with pagination (handles >1000 users correctly)
     all_users = []
-    limit, offset = 1000, 0
+    limit, offset = 500, 0
     while True:
         batch = await _sb_get(
             "user_profiles",
@@ -1223,13 +1240,10 @@ async def broadcast_new_resources(added_counts: dict):
         if len(batch) < limit:
             break
         offset += limit
-
-    print(f"📣 Targeted broadcast → {len(all_users)} users")
-
-    sem = asyncio.Semaphore(20)
-    success_count = 0
-
-    # Normalize col names for lookup
+ 
+    print(f"📣 Broadcast → {len(all_users)} users")
+ 
+    # Notification column map
     notif_col = {
         "netflix": "notif_netflix",
         "prime":   "notif_prime",
@@ -1238,56 +1252,93 @@ async def broadcast_new_resources(added_counts: dict):
         "office":  "notif_windows",
         "steam":   "notif_steam",
     }
-
+ 
+    # ── Metrics ──
+    success_count = 0
+    blocked_count = 0
+    failed_count  = 0
+ 
+    # ── Rate limit: Telegram allows ~30 msg/sec globally ──
+    # We use a semaphore of 25 + 0.05s sleep = ~20 msg/sec (safe margin)
+    sem = asyncio.Semaphore(25)
+ 
     async def safe_notify(user: dict):
-        nonlocal success_count
+        nonlocal success_count, blocked_count, failed_count
+ 
         uid = int(user.get("chat_id"))
-
+ 
         # Build lines this user is subscribed to
         user_lines = []
         for svc, line in service_lines.items():
             col = notif_col.get(svc)
-            # Default True if column missing; False only if explicitly False
             subscribed = user.get(col, True)
             if subscribed is not False:
                 user_lines.append(line)
-
+ 
         if not user_lines:
-            print(f"   ⏭ Skipped (all opted out): {uid}")
-            return
-
-        final_line = "\n".join(user_lines)
-
+            return  # user opted out of all relevant services
+ 
+        text = "\n".join(user_lines)
+ 
         async with sem:
-            try:
-                msg = await tg_app.bot.send_message(
-                    chat_id=uid,
-                    text=final_line,
-                    parse_mode="HTML",
-                    disable_notification=False,
-                    disable_web_page_preview=True,
-                    protect_content=True
-                )
-                await asyncio.sleep(10.0 + random.uniform(0.0, 1.0))
-                await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
-                success_count += 1
-                print(f"   ✓ Sent & cleaned: {uid}")
-            except Exception as e:
-                print(f"   ⚠️ Failed for {uid}: {e}")
-
+            # Small delay to stay under Telegram rate limit
+            await asyncio.sleep(0.05 + random.uniform(0, 0.02))
+ 
+            for attempt in range(2):  # 1 retry on flood
+                try:
+                    msg = await tg_app.bot.send_message(
+                        chat_id=uid,
+                        text=text,
+                        parse_mode="HTML",
+                        disable_notification=False,
+                        disable_web_page_preview=True,
+                        protect_content=True
+                    )
+                    success_count += 1
+ 
+                    # Auto-delete after 30 seconds (non-blocking)
+                    asyncio.create_task(_delayed_delete(uid, msg.message_id, delay=30))
+                    return
+ 
+                except Exception as e:
+                    err = str(e).lower()
+ 
+                    if "bot was blocked" in err or "user is deactivated" in err or "chat not found" in err:
+                        blocked_count += 1
+                        return  # no retry for blocked users
+ 
+                    if "flood" in err or "too many requests" in err:
+                        # Extract retry_after if available
+                        retry_after = 5
+                        try:
+                            retry_after = int(str(e).split("retry after")[1].strip().split()[0])
+                        except Exception:
+                            pass
+                        print(f"⏳ Flood wait {retry_after}s for {uid}")
+                        await asyncio.sleep(retry_after + 1)
+                        continue  # retry once
+ 
+                    failed_count += 1
+                    print(f"⚠️ Broadcast failed for {uid}: {e}")
+                    return
+ 
+    # Run all notifications concurrently (semaphore controls actual concurrency)
     await asyncio.gather(
         *(safe_notify(u) for u in all_users),
         return_exceptions=True
     )
-
+ 
+    # Summary to owner
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
-            f"📣 <b>Targeted Broadcast Complete</b>\n\n"
-            + "\n".join(service_lines.values())
+            f"📣 <b>Broadcast Complete</b>\n\n"
+            + "\n".join(f"• {line}" for line in service_lines.values())
             + f"\n\n👥 Total users: <b>{len(all_users)}</b>\n"
-            f"✅ Delivered: <b>{success_count}</b>\n\n"
-            f"<i>Users who opted out of a service were skipped.</i>",
+            f"✅ Delivered: <b>{success_count}</b>\n"
+            f"🚫 Blocked/Inactive: <b>{blocked_count}</b>\n"
+            f"❌ Failed: <b>{failed_count}</b>\n\n"
+            f"<i>Users who opted out were skipped automatically.</i>",
             parse_mode="HTML",
         )
     except Exception:
@@ -2391,6 +2442,15 @@ async def _debounced_broadcast(chat_id: int):
     
     if any(added_counts.values()):
         await broadcast_new_resources(added_counts)
+
+async def _delayed_delete(chat_id: int, message_id: int, delay: int = 30):
+    """Delete a message after a delay without blocking the broadcast loop."""
+    await asyncio.sleep(delay)
+    try:
+        await tg_app.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+ 
 
 async def get_event_countdown(event: dict) -> str:
     """Returns a nice countdown string like '⏳ Ends in 14h 32m' or empty if expired."""
@@ -8643,10 +8703,10 @@ async def handle_callback(update: Update):
             f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
             + (f"🆔 Steam ID: <code>{steam_id}</code>\n" if steam_id else "")
             + claims_left_text
-            + "\n\n⚠️ <b>Rules:</b>\n"
-            "• Do not change the password\n"
-            "• Do not make any purchases\n"
-            "• Do not log out other sessions\n\n"
+            + "\n\n⚠️ <b>Important Notice:</b>\n"
+            "• If you see a <b>Something went wrong</b> message pop up, don't worry! That doesn't mean the account isn't working. The account is fine, but too many people are trying to access it at the same time, which is why the error is showing. Just be patient and try again later.\n\n"
+            "🔓 <b> Security Warning:</b>\n",
+            "• Please do not attempt to change passwords, enable Steam Guard, or alter any account settings. Any modifications to these accounts may result in them being disabled or locked. Use these accounts responsibly and as intended. Enjoy!\n\n"
             "<i>Enjoy your game, wanderer! 🍃</i>"
         )
 

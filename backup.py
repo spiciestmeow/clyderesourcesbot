@@ -204,78 +204,6 @@ async def check_and_award_achievements(chat_id: int, first_name: str, action: st
     if awarded_count > 0:
         print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
 
-async def handle_stats_card(chat_id: int, first_name: str, query=None):
-    """🎴 Beautiful visual stats card — compact single-message summary"""
-
-    profile = await get_user_profile(chat_id)
-    if not profile:
-        await tg_app.bot.send_message(chat_id, "🌿 Please use /start first.")
-        return
-
-    if query and query.message:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-    loading = await send_loading(chat_id, "🌿 <i>Weaving your forest card...</i>")
-
-    # ── Core stats ──
-    level     = profile.get("level") or 1
-    xp        = profile.get("xp") or 0
-    total_xp  = profile.get("total_xp_earned") or 0
-    xp_next   = get_cumulative_xp_for_level(level + 1)
-
-    # ── XP bar (10 blocks) ──
-    xp_progress = min(int((xp / xp_next) * 10), 10) if xp_next > 0 else 10
-    xp_bar      = "🟩" * xp_progress + "⬜️" * (10 - xp_progress)
-    xp_pct      = int((xp / xp_next) * 100) if xp_next > 0 else 100
-
-    # ── Streak ──
-    streak = await calculate_streak(chat_id)
-    if streak >= 30:
-        streak_icon, streak_label = "🌠", "Legendary!"
-    elif streak >= 14:
-        streak_icon, streak_label = "🔥", "On Fire!"
-    elif streak >= 7:
-        streak_icon, streak_label = "⚡", "Hot Streak!"
-    elif streak >= 3:
-        streak_icon, streak_label = "🌱", "Growing!"
-    elif streak >= 1:
-        streak_icon, streak_label = "✨", "Started!"
-    else:
-        streak_icon, streak_label = "💤", "No streak yet"
-
-    # ── Display title ──
-    display_title = await get_active_display_title(chat_id, profile)
-
-    # ── Rank ──
-    if chat_id == OWNER_ID:
-        rank_str = "🌲 Forest Warden"
-    else:
-        rank_data = await _sb_get(
-            "user_leaderboard",
-            **{"chat_id": f"eq.{chat_id}", "select": "rank"}
-        ) or []
-        rank_str = f"#{rank_data[0].get('rank', '?')}" if rank_data else "Unranked"
-
-    # ── Top 3 achievements ──
-    user_achs  = await get_user_achievements(chat_id)
-    unlocked   = [u for u in user_achs if u.get("unlocked_at")]
-    ach_lines  = []
-    for u in unlocked[-3:]:
-        code = u.get("achievement_code", "")
-        ach  = ACHIEVEMENTS_CACHE.get(code, {})
-        if ach:
-            icon = ach.get("icon") or "🏆"
-            ach_lines.append(f"  {icon} {ach.get('name', code)}")
-
-    ach_section = (
-        "\n".join(ach_lines)
-        if ach_lines
-        else "  🌱 None yet — keep exploring!"
-    )
-
 async def handle_award_beta_guardian(chat_id: int, target_id: int):
     """Manually award the Beta Guardian achievement"""
     if chat_id != OWNER_ID:
@@ -377,6 +305,18 @@ async def get_forest_patrons() -> list:
     if cached:
         return json.loads(cached)
 
+    data = await _sb_get(
+        "forest_patrons",
+        **{
+            "select": "display_name,title",
+            "is_visible": "eq.true",
+            "order": "donated_at.desc"
+        }
+    ) or []
+
+    await redis_client.setex("patrons_cache", 3600, json.dumps(data))
+    return data
+
 async def get_earned_titles(chat_id: int, profile: dict) -> list[str]:
     """Get list of earned title strings for a user based on their profile"""
     titles = []
@@ -405,28 +345,10 @@ async def get_earned_titles(chat_id: int, profile: dict) -> list[str]:
 async def get_active_display_title(chat_id: int, profile: dict) -> str:
     """Get the currently active display title for a user"""
     level = profile.get("level", 1)
-    
-    # Check for custom/achievement title stored in profile
     custom_title = profile.get("active_title")
     if custom_title:
         return custom_title
-    
-    # Fall back to level title
     return get_level_title(level)
-
-    data = await _sb_get(
-        "forest_patrons",
-        **{
-            "select": "display_name,title",
-            "is_visible": "eq.true",
-            "order": "donated_at.desc"
-        }
-    ) or []
-
-    # Cache for 1 hour
-    await redis_client.setex("patrons_cache", 3600, json.dumps(data))
-    return data
-
 
 async def add_patron(username: str, title: str = "Kind Wanderer") -> bool:
     """Add a new donor"""
@@ -624,7 +546,10 @@ async def get_steam_claims_today(chat_id: int) -> int:
     ) or []
     return len(data)
 
-async def claim_steam_account(chat_id: int, first_name: str, account_email: str, game_name: str) -> bool:
+async def claim_steam_account(
+    chat_id: int, first_name: str, account_email: str, game_name: str
+) -> bool:
+    # Check if already claimed
     existing_claim = await _sb_get(
         "steam_claims",
         **{
@@ -634,19 +559,22 @@ async def claim_steam_account(chat_id: int, first_name: str, account_email: str,
         }
     ) or []
 
-    await _sb_post("steam_claims", {
+    if existing_claim:
+        return False  # already claimed — don't insert duplicate
+
+    success = await _sb_post("steam_claims", {
         "chat_id": chat_id,
         "first_name": first_name,
         "account_email": account_email,
         "game_name": game_name,
     })
 
-    # ── Check achievements after successful Steam claim ──
-    asyncio.create_task(
-        check_and_award_achievements(chat_id, first_name, action="steam_claim")
-    )
+    if success:
+        asyncio.create_task(
+            check_and_award_achievements(chat_id, first_name, action="steam_claim")
+        )
 
-    return True
+    return success
     
 # ──────────────────────────────────────────────
 # CONFIG
@@ -882,6 +810,17 @@ async def low_stock_monitor():
             counts: dict[str, int] = {}
             for item in data:
                 svc = str(item.get("service_type", "")).lower().strip()
+                
+                # ── FIX: same normalization ──
+                if any(x in svc for x in ("win", "windows")):
+                    svc = "windows"
+                elif "office" in svc:
+                    svc = "office"
+                elif "netflix" in svc:
+                    svc = "netflix"
+                elif "prime" in svc:
+                    svc = "prime"
+                
                 if (str(item.get("status", "")).lower() == "active"
                         and int(item.get("remaining", 0)) > 0):
                     counts[svc] = counts.get(svc, 0) + 1
@@ -1900,6 +1839,7 @@ async def handle_document(update: Update):
                 )
 
                 await send_animated_translated(
+                    chat_id=chat_id,
                     animation_url=file_id,
                     caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
                             "It will now appear every time you view your profile 🌿\n\n"
@@ -1941,6 +1881,7 @@ async def handle_document(update: Update):
         return
 
     loading = await send_animated_translated(
+        chat_id=chat_id,
         animation_url=LOADING_GIF,
         caption="🌿 <i>Unpacking the ancient scrolls...</i>",
     )
@@ -3336,53 +3277,38 @@ async def show_patrons_page(chat_id: int, query=None):
     )
 
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
-    """Always await this — it fetches the active event from Redis/Supabase."""
     event = await get_active_event()
     
-    row1 = [
-        InlineKeyboardButton("📜 Add Patch", callback_data="caretaker_addupdate"),
-        InlineKeyboardButton("📬 View Feedbacks", callback_data="caretaker_viewfeedback"),
-    ]
-    
-    if event:
-        row2 = [
-            InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent"),
-            InlineKeyboardButton("🔴 End Event", callback_data="confirm_end_event"),
-        ]
-    else:
-        row2 = [
-            InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent"),
-            InlineKeyboardButton("🌿 No Active Event", callback_data="noop"),   # cleaner text
-        ]
-    
     return InlineKeyboardMarkup([
-        row1,
-        row2,
         [
-            InlineKeyboardButton("👁️ View Event", callback_data="caretaker_viewevent"),
-            InlineKeyboardButton("🔄 Flush Cache", callback_data="caretaker_flushcache"),
+            InlineKeyboardButton("📜 Patch Notes", callback_data="cpage_addupdate"),
+            InlineKeyboardButton("📬 Feedbacks", callback_data="cpage_viewfeedback"),
         ],
         [
-            InlineKeyboardButton("📊 System Health",  callback_data="caretaker_health"),
-            InlineKeyboardButton("📦 Check Stock",    callback_data="caretaker_checkstock"),
+            InlineKeyboardButton("🎉 Events", callback_data="cpage_events"),
+            InlineKeyboardButton("🔄 Cache", callback_data="cpage_flushcache"),
         ],
         [
-            InlineKeyboardButton("📤 Upload Keys",    callback_data="caretaker_uploadkeys"),
+            InlineKeyboardButton("📊 System Health", callback_data="cpage_health"),
+            InlineKeyboardButton("📦 Stock", callback_data="cpage_checkstock"),
         ],
         [
-            InlineKeyboardButton("📋 View Key Reports", callback_data="caretaker_viewreports"),
-            InlineKeyboardButton("🛠️ Maintenance", callback_data="confirm_toggle_maintenance"),
+            InlineKeyboardButton("📤 Upload Keys", callback_data="cpage_uploadkeys"),
+            InlineKeyboardButton("📋 Reports", callback_data="cpage_viewreports"),
         ],
         [
-            InlineKeyboardButton("📝 Set Forest Info", callback_data="caretaker_setinfo"),
-            InlineKeyboardButton("⚠️ Full Reset", callback_data="caretaker_resetfirst"),
+            InlineKeyboardButton("🛠️ Maintenance", callback_data="cpage_maintenance"),
+            InlineKeyboardButton("📝 Forest Info", callback_data="cpage_setinfo"),
         ],
         [
-            InlineKeyboardButton("🎮 Search Steam", callback_data="caretaker_searchsteam"),
-            InlineKeyboardButton("🎮 Upload Steam", callback_data="caretaker_uploadsteam"),
+            InlineKeyboardButton("⚠️ Full Reset", callback_data="cpage_resetfirst"),
+            InlineKeyboardButton("🎮 Steam", callback_data="cpage_steam"),
         ],
         [
-            InlineKeyboardButton("📋 View & Edit Notion Steam Library", callback_data="view_notion_steam"),
+            InlineKeyboardButton("📋 Notion Library", callback_data="cpage_notion"),
+        ],
+        [
+            InlineKeyboardButton("👤 User Tools", callback_data="cpage_usertools"),
         ],
         [
             InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu"),
@@ -3523,20 +3449,437 @@ async def calculate_streak(chat_id: int) -> int:
     await redis_client.setex(f"streak:{chat_id}", 300, streak)
     return streak
 
+async def show_caretaker_page(chat_id: int, page: str, query=None):
+    """Routes to the correct caretaker sub-page"""
+
+    pages = {
+
+        # ── PATCH NOTES ──
+        "addupdate": (
+            "📜 <b>Patch Notes Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "This lets you add a new patch note entry that all users can see "
+            "when they tap <b>Updates</b> in the bot.\n\n"
+            "📌 <b>Format:</b>\n"
+            "<code>/addupdate\n"
+            "Your Title Here\n"
+            "Full description of changes...</code>\n\n"
+            "• Line 1 after command = Title\n"
+            "• Line 2+ = Description (can be multi-line)\n"
+            "• Date is auto-set to today (Manila time)\n\n"
+            "📋 <b>Shows last 5 patch notes to users</b>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📜 Add Patch Note Now", callback_data="caretaker_addupdate")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── FEEDBACKS ──
+        "viewfeedback": (
+            "📬 <b>User Feedback Viewer</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows the latest <b>15 feedback messages</b> submitted by users "
+            "via the <code>/feedback</code> command.\n\n"
+            "📌 <b>Each entry shows:</b>\n"
+            "• User's name and chat ID\n"
+            "• Date and time submitted\n"
+            "• Full feedback message\n\n"
+            "⚠️ Users are limited to <b>3 feedbacks per day</b> to prevent spam.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📬 View Feedbacks Now", callback_data="caretaker_viewfeedback")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── EVENTS ──
+        "events": (
+            "🎉 <b>Event Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Create and manage forest events that appear as banners "
+            "on the main menu for all users.\n\n"
+            "📌 <b>Create Event Format:</b>\n"
+            "<code>/addevent\n"
+            "Event Title\n"
+            "April 25, 2026\n"
+            "Description here...\n"
+            "bonus:netflix_double</code>\n\n"
+            "🎁 <b>Bonus Types:</b>\n"
+            "• <code>bonus:netflix_double</code> — Doubles Netflix slots\n"
+            "• <code>bonus:netflix_max</code> — Maximizes Netflix slots\n"
+            "• <i>Omit bonus line for normal event</i>\n\n"
+            "⚠️ Creating a new event replaces the current one.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent")],
+                [InlineKeyboardButton("👁️ View Current Event", callback_data="caretaker_viewevent")],
+                [InlineKeyboardButton("🔴 End Current Event", callback_data="confirm_end_event")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── FLUSH CACHE ──
+        "flushcache": (
+            "🔄 <b>Cache Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Clears all Redis cached data so the bot fetches "
+            "fresh data from Supabase on the next request.\n\n"
+            "🗂 <b>Caches that will be cleared:</b>\n"
+            "• VAMT inventory (keys & cookies)\n"
+            "• Achievements list (including GIF URLs)\n"
+            "• Forest Patrons list\n"
+            "• Active event banner\n\n"
+            "✅ Achievements are also <b>immediately reloaded</b> after flush.\n\n"
+            "💡 <b>When to use:</b> After updating data in Supabase directly, "
+            "or when users report seeing outdated info.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Flush All Caches Now", callback_data="caretaker_flushcache")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── SYSTEM HEALTH ──
+        "health": (
+            "📊 <b>System Health Monitor</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Runs a full live diagnostic on all core systems.\n\n"
+            "🔍 <b>What gets checked:</b>\n"
+            "• <b>Redis</b> — Memory usage, peak, and key count\n"
+            "• <b>Supabase</b> — Connection and DB slot usage\n"
+            "• <b>Telegram</b> — Bot API responsiveness\n"
+            "• <b>Env Vars</b> — Required and optional variables\n"
+            "• <b>Maintenance Mode</b> — Current on/off state\n"
+            "• <b>Uptime</b> — How long the bot has been running\n\n"
+            "👥 <b>User Stats</b> — Total, active now, new today/week, level spread\n"
+            "📦 <b>Inventory</b> — Stock levels per service with low-stock warnings\n"
+            "⚡ <b>Today's Activity</b> — XP, reveals, spins, claims, feedbacks\n"
+            "🗂 <b>Redis Snapshot</b> — Active cooldowns, caps, and rate limits\n"
+            "🎉 <b>Active Event</b> — Current event banner and countdown\n"
+            "🏆 <b>Achievements</b> — Total loaded in cache\n\n"
+            "💡 Use this when something feels slow or broken.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📊 Run Health Check Now", callback_data="caretaker_health")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── STOCK CHECK ──
+        "checkstock": (
+            "📦 <b>Stock Level Monitor</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows how many active items are currently available "
+            "for each service in the inventory.\n\n"
+            "📋 <b>Services monitored:</b>\n"
+            "• 🍿 Netflix cookies\n"
+            "• 🎥 Prime Video cookies\n"
+            "• 🪟 Windows keys\n"
+            "• 📑 Office keys\n"
+            "• 🎮 Steam accounts\n\n"
+            "⚠️ Items at or below <b>5</b> will show a warning.\n\n"
+            "🔔 The bot auto-alerts you every 6 hours if stock is low.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📦 Check Stock Now", callback_data="caretaker_checkstock")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── UPLOAD KEYS ──
+        "uploadkeys": (
+            "📤 <b>Key Uploader</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Upload activation keys or cookies by sending a "
+            "<b>.txt</b> or <b>.zip</b> file to the bot.\n\n"
+            "📋 <b>Supported formats:</b>\n"
+            "• Plain keys (one per line)\n"
+            "• Pipe separated: <code>KEY|remaining|service|name</code>\n"
+            "• Cookie files (Netflix, Prime)\n"
+            "• JSON format\n"
+            "• Key:Value block format\n"
+            "• CSV format\n\n"
+            "✅ Service type is <b>auto-detected</b> from filename/content.\n"
+            "✅ After upload, cache is cleared and users are notified automatically.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── VIEW REPORTS ──
+        "viewreports": (
+            "📋 <b>Key Feedback Reports</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows the latest <b>20 reports</b> submitted by users "
+            "when they mark a key or cookie as working or not working.\n\n"
+            "📌 <b>Each report shows:</b>\n"
+            "• User name and ID\n"
+            "• Service type (Netflix, Prime, Windows, etc.)\n"
+            "• The key/cookie that was reported\n"
+            "• Status (✅ Working / ❌ Not Working)\n"
+            "• Timestamp\n\n"
+            "💡 Use this to identify and remove broken keys from the inventory.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📋 View Reports Now", callback_data="caretaker_viewreports")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── MAINTENANCE ──
+        "maintenance": (
+            "🛠️ <b>Maintenance Mode</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Toggles maintenance mode on or off for all users.\n\n"
+            "🔴 <b>When ON:</b>\n"
+            "• All users (except you) see a maintenance message\n"
+            "• All button taps show an alert popup\n"
+            "• No features are accessible\n\n"
+            "🟢 <b>When OFF:</b>\n"
+            "• Everything works normally\n\n"
+            "⚠️ <b>Always turn this OFF after you're done with maintenance!</b>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛠️ Toggle Maintenance Mode", callback_data="confirm_toggle_maintenance")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── SET FOREST INFO ──
+        "setinfo": (
+            "📝 <b>Forest Info Editor</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Updates the bot version number and last-updated timestamp "
+            "shown in the <b>/forest</b> info command.\n\n"
+            "📌 <b>Format (single line):</b>\n"
+            "<code>/setforestinfo 1.4.5 April 14, 2026 · 02:58 PM</code>\n\n"
+            "📌 <b>Format (multi-line):</b>\n"
+            "<code>/setforestinfo\n"
+            "1.4.5\n"
+            "April 14, 2026\n"
+            "02:58 PM</code>\n\n"
+            "• Field 1 = Version number\n"
+            "• Field 2 = Date\n"
+            "• Field 3 = Time (merged as Date · Time)",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📝 Set Forest Info (use command)", callback_data="caretaker_setinfo")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "online_tools": (
+            "🟢 <b>Online Users Viewer</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Shows all users who have been active in the last "
+            "<b>15 minutes</b>, sorted by most recent activity.\n\n"
+            "📋 <b>Each user shows:</b>\n"
+            "• Name and level title\n"
+            "• Presence dot (🟢 Just now / 🟡 Recent / 🔵 Last 15min)\n"
+            "• Minutes since last action\n"
+            "• Total XP\n\n"
+            "🔄 Results are cached for <b>60 seconds</b> to reduce "
+            "database load. Tap Refresh inside to get the latest.\n\n"
+            "💡 You also receive an automatic DM notification "
+            "whenever a user comes online (once per 15 min per user).",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🟢 View Online Users Now", callback_data="show_online_users")],
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "patron_tools": (
+            "👥 <b>Patron & Diagnostics</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌟 <b>Add Patron:</b>\n"
+            "Adds a donor to the public <b>Forest Patrons</b> wall "
+            "visible to all users via the main menu.\n\n"
+            "📌 <b>Format:</b>\n"
+            "<code>/addpatron @username</code>\n"
+            "<code>/addpatron @username Legendary Guardian</code>\n\n"
+            "• If no title given, defaults to <b>Kind Wanderer</b>\n"
+            "• Display name auto-formats with @ prefix\n"
+            "• Patron wall cache clears immediately after adding\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🔬 <b>Achievement Diagnostics:</b>\n"
+            "Shows a full report of all achievements loaded in the "
+            "system — total count, types, and condition breakdown.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "🔬 Run Achievement Diagnostics",
+                    callback_data="run_test_achievements"
+                )],
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "reset_tools": (
+            "🔄 <b>Reset Tools</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "All reset tools require a <b>user chat ID</b>.\n"
+            "You can find any user's ID in the online notification "
+            "messages the bot sends you.\n\n"
+            "📋 <b>Available Resets:</b>\n\n"
+            "🌱 <b>Onboarding</b> — Makes user see the welcome "
+            "tutorial again on their next /start\n"
+            "Command: <code>/resetonboarding &lt;id&gt;</code>\n\n"
+            "🖼️ <b>Profile GIF</b> — Removes the 7-day cooldown so "
+            "user can change their profile logo again immediately\n"
+            "Command: <code>/resetprofilegif &lt;id&gt;</code>\n\n"
+            "📖 <b>Win/Office Guide</b> — Makes user see the "
+            "Windows/Office first-time guide again\n"
+            "Command: <code>/resetguide &lt;id&gt;</code>\n\n"
+            "🎰 <b>Wheel Spin</b> — Removes daily cooldown so user "
+            "can spin the Wheel of Whispers again today\n"
+            "Command: <code>/resetwheel &lt;id&gt;</code>\n\n"
+            "🎮 <b>Steam Claim</b> — Resets today's Steam claim "
+            "count so user can claim again\n"
+            "Command: <code>/resetsteamclaim &lt;id&gt;</code>\n\n"
+            "☀️ <b>Daily Bonus</b> — Resets daily bonus, referral "
+            "lock and pending referral for clean testing\n"
+            "Command: <code>/testdaily &lt;id&gt;</code>\n\n"
+            "📌 <b>To use:</b> Close this and type the command.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── FULL RESET ──
+        "resetfirst": (
+            "⚠️ <b>Full User Reset</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Permanently resets <b>your own</b> profile data.\n\n"
+            "🗑 <b>What gets wiped:</b>\n"
+            "• Level → 1\n"
+            "• XP → 0\n"
+            "• Total XP Earned → 0\n"
+            "• All activity stats (views, reveals, etc.)\n"
+            "• Full XP history\n"
+            "• has_seen_menu flag\n\n"
+            "✅ <b>What is kept:</b>\n"
+            "• Your chat ID and account\n"
+            "• Referral count\n"
+            "• Achievements\n\n"
+            "❌ <b>This cannot be undone!</b>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚠️ Proceed to Reset", callback_data="caretaker_resetfirst")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── STEAM ──
+        "steam": (
+            "🎮 <b>Steam Manager</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Manage Steam accounts in the bot.\n\n"
+            "🔍 <b>Search Steam:</b>\n"
+            "Search by email to view account details, "
+            "live Steam status, and full games list.\n\n"
+            "📤 <b>Upload Steam:</b>\n"
+            "Add one or multiple Steam accounts. "
+            "Minimum required: email + password.\n"
+            "Optional: game name, SteamID64, banner image URL.\n\n"
+            "📋 <b>Notion Library:</b>\n"
+            "View, filter, and update Steam account availability "
+            "directly inside the bot via Notion integration.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 Search Steam", callback_data="caretaker_searchsteam")],
+                [InlineKeyboardButton("📤 Upload Steam", callback_data="caretaker_uploadsteam")],
+                [InlineKeyboardButton("📋 Notion Library", callback_data="view_notion_steam")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── NOTION ──
+        "notion": (
+            "📋 <b>Notion Steam Library</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "View and manage your Steam account library "
+            "stored in Notion directly from the bot.\n\n"
+            "✅ <b>Features:</b>\n"
+            "• See all games with availability status\n"
+            "• Filter by Available / Expired / Recently Updated\n"
+            "• One-tap mark as Available or Expired\n"
+            "• Sorted by most recently updated first\n"
+            "• Paginated (8 per page)\n\n"
+            "💡 Changes made here update your Notion database in real time.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📋 Open Notion Library", callback_data="view_notion_steam")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        "ach_tools": (
+            "🏆 <b>Achievement Tools</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Manage user achievements manually.\n\n"
+            "🌟 <b>Award Beta Guardian:</b>\n"
+            "Gives the special <b>Beta Guardian</b> mythic achievement "
+            "to a user. This is a one-time manual award that also grants "
+            "a permanent slot bonus.\n"
+            "Command: <code>/award_beta &lt;user_id&gt;</code>\n\n"
+            "🗑 <b>Remove Achievement:</b>\n"
+            "Removes a specific achievement from a user by their "
+            "chat ID and achievement code.\n"
+            "Command: <code>/remove_achievement &lt;user_id&gt; &lt;code&gt;</code>\n\n"
+            "🔬 <b>Test Achievements:</b>\n"
+            "Runs a full diagnostic report on the achievement system — "
+            "shows all 54 achievements, their types, and current status.\n"
+            "Command: <code>/test_achievements</code>\n\n"
+            "📌 <b>To use:</b> Close this and type the command directly.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "🔬 Run Achievement Diagnostics",
+                    callback_data="run_test_achievements"
+                )],
+                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
+        # ── USER TOOLS ──
+        "usertools": (
+            "👤 <b>User Management Tools</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Select a tool category below:",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏆 Achievement Tools", callback_data="cpage_ach_tools")],
+                [InlineKeyboardButton("🔄 Reset Tools", callback_data="cpage_reset_tools")],
+                [InlineKeyboardButton("👥 Patron & Diagnostics", callback_data="cpage_patron_tools")],
+                [InlineKeyboardButton("🟢 Online Users", callback_data="cpage_online_tools")],
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+    }
+
+    if page not in pages:
+        return
+
+    text, keyboard = pages[page]
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=CARETAKER_GIF,
+        caption=text,
+        reply_markup=keyboard,
+    )
+
 async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     """📅 30-day streak calendar with activity heatmap"""
-    
+
     manila = pytz.timezone("Asia/Manila")
     now = datetime.now(manila)
-    
-    # ── Fetch last 60 days of XP history ──
+
+    # ── Fetch enough history for longest streak (no arbitrary 500 limit) ──
     data = await _sb_get(
         "xp_history",
         **{
             "chat_id": f"eq.{chat_id}",
             "select": "created_at",
             "order": "created_at.desc",
-            "limit": 500,
+            "limit": 1000,   # increased from 500 to catch longer history
         },
     ) or []
 
@@ -3549,62 +3892,60 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
         except Exception:
             continue
 
-    # ── Calculate streaks ──
+    # ── Current streak from cache ──
     current_streak = await calculate_streak(chat_id)
 
+    # ── FIX: Longest streak — scan all active dates properly ──
     longest_streak = 0
-    temp_streak = 0
-    check_date = now.date()
-    for _ in range(365):
-        if check_date in active_dates:
-            temp_streak += 1
-            longest_streak = max(longest_streak, temp_streak)
-        else:
-            temp_streak = 0
-        check_date -= timedelta(days=1)
+    if active_dates:
+        sorted_dates = sorted(active_dates)
+        temp = 1
+        longest_streak = 1
+        for i in range(1, len(sorted_dates)):
+            diff = (sorted_dates[i] - sorted_dates[i - 1]).days
+            if diff == 1:
+                temp += 1
+                longest_streak = max(longest_streak, temp)
+            elif diff > 1:
+                temp = 1
+        # Edge case: single active day
+        longest_streak = max(longest_streak, current_streak)
 
     # ── Count active days this month ──
     month_start = now.date().replace(day=1)
     days_this_month = sum(
         1 for d in active_dates
-        if d >= month_start and d <= now.date()
+        if month_start <= d <= now.date()
     )
 
-    # ── Build 30-day calendar grid (last 30 days) ──
-    DAY_LABELS = "M T W T F S S"
-    
-    # Find the start date (30 days ago, aligned to Monday)
+    # ── Total active days this year ──
+    year_start = now.date().replace(month=1, day=1)
+    days_this_year = sum(1 for d in active_dates if d >= year_start)
+
+    # ── Build 30-day calendar grid ──
     start_date = now.date() - timedelta(days=29)
-    
-    # Build week rows
     calendar_rows = []
     current_row = []
-    
-    # Pad the first row to align with weekday
-    first_weekday = start_date.weekday()  # 0=Mon, 6=Sun
+
+    # Pad first row to align Monday = col 0
+    first_weekday = start_date.weekday()
     for _ in range(first_weekday):
-        current_row.append("⬛")  # empty padding
-    
+        current_row.append("⬛")
+
     cursor = start_date
     while cursor <= now.date():
         if cursor in active_dates:
-            if cursor == now.date():
-                current_row.append("🟡")  # today + active
-            else:
-                current_row.append("🟩")  # active day
+            current_row.append("🟡" if cursor == now.date() else "🟩")
         else:
-            if cursor == now.date():
-                current_row.append("🔵")  # today, not yet active
-            else:
-                current_row.append("⬜")  # inactive day
-        
+            current_row.append("🔵" if cursor == now.date() else "⬜")
+
         if len(current_row) == 7:
             calendar_rows.append(" ".join(current_row))
             current_row = []
-        
+
         cursor += timedelta(days=1)
-    
-    # Fill last row
+
+    # Pad and append the last incomplete row
     if current_row:
         while len(current_row) < 7:
             current_row.append("⬛")
@@ -3612,60 +3953,71 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 
     calendar_grid = "\n".join(calendar_rows)
 
-    # ── Streak emoji ──
+    # ── Streak status ──
     if current_streak >= 30:
-        streak_emoji = "🌠"
-        streak_label = "Legendary Streak!"
+        streak_emoji, streak_label = "🌠", "Legendary Streak!"
     elif current_streak >= 14:
-        streak_emoji = "🔥"
-        streak_label = "On Fire!"
+        streak_emoji, streak_label = "🔥", "On Fire!"
     elif current_streak >= 7:
-        streak_emoji = "⚡"
-        streak_label = "Hot Streak!"
+        streak_emoji, streak_label = "⚡", "Hot Streak!"
     elif current_streak >= 3:
-        streak_emoji = "🌱"
-        streak_label = "Growing!"
+        streak_emoji, streak_label = "🌱", "Growing!"
     elif current_streak >= 1:
-        streak_emoji = "✨"
-        streak_label = "Getting Started!"
+        streak_emoji, streak_label = "✨", "Getting Started!"
     else:
-        streak_emoji = "💤"
-        streak_label = "Start your streak today!"
+        streak_emoji, streak_label = "💤", "Start your streak today!"
 
-    # ── Milestone hints ──
-    milestones = {7: "🎁 7-day → +20 XP/day bonus", 14: "⚡ 14-day → Special badge", 30: "🌠 30-day → Legendary achievement"}
-    next_milestone = None
-    for days, reward in milestones.items():
+    # ── Next milestone ──
+    milestones = {
+        3:  ("🌱", "+20 XP/day bonus"),
+        7:  ("🎁", "+30 XP/day bonus"),
+        14: ("⚡", "Special badge"),
+        30: ("🌠", "Legendary achievement"),
+    }
+    next_milestone_text = ""
+    for days, (icon, reward) in milestones.items():
         if current_streak < days:
-            next_milestone = f"🎯 Next milestone: {reward} ({days - current_streak} days away)"
+            days_away = days - current_streak
+            next_milestone_text = (
+                f"🎯 <b>Next milestone in {days_away} day{'s' if days_away != 1 else ''}:</b>\n"
+                f"   {icon} {days}-day streak → {reward}\n\n"
+            )
             break
 
-    # ── Build message ──
-    month_name = now.strftime("%B %Y")
+    # ── FIX: Use consistent header label ──
+    HEADER = "<b>Mo Tu We Th Fr Sa Su</b>"
+
+    # ── Consistency bar for this month ──
+    days_in_month = now.day  # days elapsed so far
+    consistency_pct = round((days_this_month / days_in_month) * 100) if days_in_month > 0 else 0
+    consistency_bar = create_daily_progress_bar(days_this_month, days_in_month, length=10)
 
     text = (
         f"📅 <b>{html.escape(first_name)}'s Streak Calendar</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"{streak_emoji} <b>{current_streak}-day streak</b> — {streak_label}\n\n"
-        f"<b>Mo Tu We Th Fr Sa Su</b>\n"
+        f"{HEADER}\n"
         f"{calendar_grid}\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🟩 Active   ⬜ Missed   🟡 Today\n"
+        f"🟩 Active  ⬜ Missed  🟡 Today  🔵 Today (not yet)\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📊 <b>Stats (Last 30 Days)</b>\n\n"
+        f"📊 <b>Your Stats</b>\n\n"
         f"🔥 Current Streak: <b>{current_streak} days</b>\n"
         f"🏆 Longest Streak: <b>{longest_streak} days</b>\n"
-        f"📆 Active This Month: <b>{days_this_month} days</b>\n"
+        f"📆 Active This Month: <b>{days_this_month}/{days_in_month} days</b>\n"
+        f"   {consistency_bar} {consistency_pct}%\n\n"
+        f"🌿 Active This Year: <b>{days_this_year} days</b>\n"
         f"✅ Total Active Days: <b>{len(active_dates)} days</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{next_milestone_text}"
+        f"<i>Come back every day to keep your streak alive! 🍃</i>"
     )
 
-    if next_milestone:
-        text += f"{next_milestone}\n\n"
-
-    text += "<i>Come back every day to keep your streak alive! 🍃</i>"
-
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")],
+        [
+            InlineKeyboardButton("🔄 Refresh", callback_data="show_streak_calendar"),
+            InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page"),
+        ],
     ])
 
     if query and query.message:
@@ -3677,9 +4029,10 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     await send_animated_translated(
         chat_id=chat_id,
         caption=text,
-        animation_url=MORNING_GIF,  # or any fitting GIF you have
+        animation_url=MORNING_GIF,
         reply_markup=keyboard,
     )
+
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4994,7 +5347,7 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
         reply_markup=markup
     )
 
-async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", query=None):
+async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: int = 1, query=None):
     pages = {
         1: (
             "🍿 <b>How to Use a Netflix Cookie — Page 1/3</b>\n"
@@ -5063,7 +5416,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", query=N
         ),
     }
 
-    text, keyboard = pages.get(1)
+    text, keyboard = pages.get(page, pages[1])
 
     if query and query.message:
         try:
@@ -5902,61 +6255,301 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
 async def handle_status(chat_id: int):
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can check system status.")
+        return
+
+    await tg_app.bot.send_message(chat_id, "🔍 <i>Running full diagnostics...</i>", parse_mode="HTML")
+
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    ago_15min   = (now - timedelta(minutes=15)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    ago_1hr     = (now - timedelta(hours=1)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    ago_24hr    = (now - timedelta(hours=24)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    week_start  = (now - timedelta(days=7)).astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    # ── Run all checks in parallel ──
     async def check_redis():
         try:
-            info = await asyncio.wait_for(redis_client.info("memory"), timeout=3.0)
-            used = round(info["used_memory"] / 1024 / 1024, 2)
+            info     = await asyncio.wait_for(redis_client.info("memory"), timeout=3.0)
+            used_mb  = round(info["used_memory"] / 1024 / 1024, 2)
+            peak_mb  = round(info.get("used_memory_peak", 0) / 1024 / 1024, 2)
             key_count = await asyncio.wait_for(redis_client.dbsize(), timeout=3.0)
-            return f"✅ OK ({used} MB, {key_count} keys)"
+            flag = "⚠️" if used_mb > 50 else "✅"
+            return flag, used_mb, peak_mb, key_count
         except Exception as e:
-            return f"❌ {e}"
+            return "❌", 0, 0, 0
 
     async def check_supabase():
         try:
             result = await _sb_get("user_profiles", select="chat_id", limit=1)
             slots_used = 10 - db_sem._value
             flag = "⚠️" if slots_used >= 8 else "✅"
-            return f"{flag} OK ({slots_used}/10 slots used)" if result is not None else "❌ Query returned None"
+            ok = result is not None
+            return flag, slots_used, ok
         except Exception as e:
-            return f"❌ {e}"
+            return "❌", 0, False
 
     async def check_telegram():
         try:
             me = await asyncio.wait_for(tg_app.bot.get_me(), timeout=5.0)
-            return f"✅ OK"
+            return "✅", me.username
         except Exception as e:
-            return f"❌ {e}"
+            return "❌", str(e)[:30]
 
     async def check_env():
         required = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "REDIS_URL", "OWNER_ID", "WEBHOOK_SECRET"]
-        missing = [v for v in required if not os.getenv(v)]
-        return "✅ All set" if not missing else f"❌ Missing: {', '.join(missing)}"
+        optional = ["NOTION_TOKEN", "NOTION_DATABASE_ID", "STEAM_API_KEY"]
+        missing_req = [v for v in required if not os.getenv(v)]
+        missing_opt = [v for v in optional if not os.getenv(v)]
+        return missing_req, missing_opt
 
-    redis_status, supabase_status, telegram_status, env_status, maintenance = await asyncio.gather(
+    # ── User stats ──
+    async def get_user_stats():
+        try:
+            total     = await _sb_get("user_profiles", select="chat_id", limit=5000)
+            active_15 = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago_15min}"})
+            active_1h = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago_1hr}"})
+            active_24 = await _sb_get("user_profiles", **{"select": "chat_id", "last_active": f"gte.{ago_24hr}"})
+            new_today = await _sb_get("user_profiles", **{"select": "chat_id", "created_at": f"gte.{today_start}"})
+            new_week  = await _sb_get("user_profiles", **{"select": "chat_id", "created_at": f"gte.{week_start}"})
+            # Level distribution
+            levels    = await _sb_get("user_profiles", select="level", limit=5000)
+            lv_dist = {}
+            if levels:
+                for u in levels:
+                    lv = u.get("level", 1)
+                    bucket = f"Lv{lv}" if lv <= 9 else "Lv10+"
+                    lv_dist[bucket] = lv_dist.get(bucket, 0) + 1
+            return {
+                "total":     len(total or []),
+                "active_15": len(active_15 or []),
+                "active_1h": len(active_1h or []),
+                "active_24": len(active_24 or []),
+                "new_today": len(new_today or []),
+                "new_week":  len(new_week or []),
+                "lv_dist":   lv_dist,
+            }
+        except Exception as e:
+            print(f"User stats error: {e}")
+            return {}
+
+    # ── Inventory stats ──
+    async def get_inventory_stats():
+        try:
+            SERVICE_EMOJIS = {"netflix": "🍿", "prime": "🎥", "windows": "🪟", "office": "📑"}
+            vamt = await get_vamt_data() or []
+            counts = {}
+            for item in vamt:
+                svc = str(item.get("service_type", "")).lower().strip()
+
+                if any(x in svc for x in ("win", "windows")):
+                    svc = "windows"
+                elif "office" in svc:
+                    svc = "office"
+                elif "netflix" in svc:
+                    svc = "netflix"
+                elif "prime" in svc:
+                    svc = "prime"
+
+                if str(item.get("status", "")).lower() == "active" and int(item.get("remaining", 0)) > 0:
+                    counts[svc] = counts.get(svc, 0) + 1
+
+            steam_avail  = await _sb_get("steamCredentials", **{"select": "status", "status": "eq.Available"}) or []
+            steam_all    = await _sb_get("steamCredentials", **{"select": "status"}) or []
+            return counts, len(steam_avail), len(steam_all), SERVICE_EMOJIS
+        except Exception as e:
+            print(f"Inventory stats error: {e}")
+            return {}, 0, 0, {}
+
+    # ── Activity stats ──
+    async def get_activity_stats():
+        try:
+            xp_today   = await _sb_get("xp_history", **{"select": "xp_earned", "created_at": f"gte.{today_start}"}) or []
+            xp_1hr     = await _sb_get("xp_history", **{"select": "xp_earned", "created_at": f"gte.{ago_1hr}"}) or []
+            reveals_nf = await _sb_get("xp_history", **{"select": "chat_id", "action": "eq.reveal_netflix", "created_at": f"gte.{today_start}"}) or []
+            reveals_pr = await _sb_get("xp_history", **{"select": "chat_id", "action": "eq.reveal_prime",   "created_at": f"gte.{today_start}"}) or []
+            spins      = await _sb_get("wheel_spins", **{"select": "chat_id", "created_at": f"gte.{today_start}"}) or []
+            claims     = await _sb_get("steam_claims", **{"select": "chat_id", "claimed_at": f"gte.{today_start}"}) or []
+            feedbacks  = await _sb_get("feedback", **{"select": "chat_id", "created_at": f"gte.{today_start}"}) or []
+            total_xp   = sum(r.get("xp_earned", 0) for r in xp_today)
+            hr_xp      = sum(r.get("xp_earned", 0) for r in xp_1hr)
+            return {
+                "xp_today":     total_xp,
+                "xp_1hr":       hr_xp,
+                "nf_reveals":   len(reveals_nf),
+                "pr_reveals":   len(reveals_pr),
+                "wheel_spins":  len(spins),
+                "steam_claims": len(claims),
+                "feedbacks":    len(feedbacks),
+            }
+        except Exception as e:
+            print(f"Activity stats error: {e}")
+            return {}
+
+    # ── Redis key breakdown ──
+    async def get_redis_snapshot():
+        try:
+            # Count key patterns
+            cd_keys   = len(await redis_client.keys("xpcd:*"))
+            daily_bon = len(await redis_client.keys("daily_bonus:*"))
+            wheel_cd  = len(await redis_client.keys("wheel_spin:*"))
+            reveals   = len(await redis_client.keys("daily_reveals:*"))
+            views     = len(await redis_client.keys("daily_views:*"))
+            spam_keys = len(await redis_client.keys("rl:*"))
+            online_n  = len(await redis_client.keys("online_notif:*"))
+            return {
+                "cooldowns":   cd_keys,
+                "daily_bonus": daily_bon,
+                "wheel_cd":    wheel_cd,
+                "reveals":     reveals,
+                "views":       views,
+                "spam":        spam_keys,
+                "online":      online_n,
+            }
+        except Exception as e:
+            print(f"Redis snapshot error: {e}")
+            return {}
+
+    # ── Active event ──
+    async def get_event_info():
+        try:
+            event = await get_active_event()
+            if not event:
+                return None
+            return event
+        except:
+            return None
+
+    # ── Run everything in parallel ──
+    (
+        redis_result,
+        supabase_result,
+        telegram_result,
+        env_result,
+        user_stats,
+        (inv_counts, steam_avail, steam_total, svc_emojis),
+        activity,
+        redis_snap,
+        active_event,
+        maintenance,
+    ) = await asyncio.gather(
         check_redis(),
         check_supabase(),
         check_telegram(),
         check_env(),
+        get_user_stats(),
+        get_inventory_stats(),
+        get_activity_stats(),
+        get_redis_snapshot(),
+        get_event_info(),
         get_maintenance_mode(),
     )
 
-    uptime = datetime.now(pytz.utc) - BOT_START_TIME
-    hours, rem = divmod(int(uptime.total_seconds()), 3600)
-    minutes, seconds = divmod(rem, 60)
-    uptime_str = f"{hours}h {minutes}m {seconds}s"
-    maintenance_status = "🔴 ON (users blocked)" if maintenance else "🟢 OFF"
+    redis_flag, redis_mb, redis_peak, redis_keys = redis_result
+    sb_flag, sb_slots, sb_ok = supabase_result
+    tg_flag, tg_name = telegram_result
+    missing_req, missing_opt = env_result
 
-    await tg_app.bot.send_message(
-        chat_id,
-        f"🌿 <b>System Health Check</b>\n\n"
-        f"<b>Redis:</b>       {redis_status}\n"
-        f"<b>Supabase:</b>    {supabase_status}\n"
-        f"<b>Telegram:</b>    {telegram_status}\n"
-        f"<b>Env Vars:</b>    {env_status}\n"
-        f"<b>Maintenance:</b> {maintenance_status}\n\n"
-        f"<b>Uptime:</b> {uptime_str}",
-        parse_mode="HTML",
+    env_flag = "✅" if not missing_req else "❌"
+    maintenance_status = "🔴 ON — users are blocked!" if maintenance else "🟢 OFF"
+
+    uptime = datetime.now(pytz.utc) - BOT_START_TIME
+    h, r   = divmod(int(uptime.total_seconds()), 3600)
+    m, s   = divmod(r, 60)
+    uptime_str = f"{h}h {m}m {s}s"
+
+    ach_count = len(ACHIEVEMENTS_CACHE)
+
+    # ── Build level distribution string ──
+    lv_dist = user_stats.get("lv_dist", {})
+    lv_line = "  " + "  ".join(
+        f"{k}:{v}" for k, v in sorted(lv_dist.items(), key=lambda x: x[0])
+    ) if lv_dist else "  N/A"
+
+    # ── Inventory lines ──
+    inv_lines = ""
+    for svc in ("netflix", "prime", "windows", "office"):
+        count = inv_counts.get(svc, 0)
+        emoji = svc_emojis.get(svc, "📦")
+        warn  = " ⚠️" if count <= 5 else ""
+        inv_lines += f"  {emoji} {svc.title()}: <b>{count}</b>{warn}\n"
+    inv_lines += f"  🎮 Steam: <b>{steam_avail}</b> available / {steam_total} total"
+
+    # ── Optional env ──
+    opt_line = ""
+    if missing_opt:
+        opt_line = f"\n⚠️ Optional missing: {', '.join(missing_opt)}"
+    req_line = f"\n❌ Required missing: {', '.join(missing_req)}" if missing_req else ""
+
+    # ── Event line ──
+    event_line = "🌿 No active event" 
+    if active_event:
+        countdown = await get_event_countdown(active_event)
+        bonus = f" [{active_event.get('bonus_type', '')}]" if active_event.get('bonus_type') else ""
+        event_line = f"🎉 <b>{active_event.get('title', 'Unnamed')}</b>{bonus}{countdown}"
+
+    text = (
+        f"📊 <b>System Health — Full Report</b>\n"
+        f"🕒 {now.strftime('%B %d, %Y • %I:%M %p')} Manila\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"⚙️ <b>CORE SYSTEMS</b>\n"
+        f"{redis_flag} Redis: <b>{redis_mb} MB</b> used (peak {redis_peak} MB) • {redis_keys} keys\n"
+        f"{sb_flag} Supabase: {'Connected' if sb_ok else 'ERROR'} • {sb_slots}/10 slots\n"
+        f"{tg_flag} Telegram: @{tg_name}\n"
+        f"{env_flag} Env Vars: {'All set' if not missing_req else 'MISSING required'}"
+        f"{req_line}{opt_line}\n"
+        f"🛠️ Maintenance: {maintenance_status}\n"
+        f"⏱️ Uptime: <b>{uptime_str}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"👥 <b>USER STATS</b>\n"
+        f"  Total Wanderers: <b>{user_stats.get('total', 0):,}</b>\n"
+        f"  🟢 Online now (15m): <b>{user_stats.get('active_15', 0)}</b>\n"
+        f"  🟡 Last hour: <b>{user_stats.get('active_1h', 0)}</b>\n"
+        f"  🔵 Last 24h: <b>{user_stats.get('active_24', 0)}</b>\n"
+        f"  🌱 New today: <b>{user_stats.get('new_today', 0)}</b>\n"
+        f"  📅 New this week: <b>{user_stats.get('new_week', 0)}</b>\n"
+        f"  Level spread:\n{lv_line}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"📦 <b>INVENTORY</b>\n"
+        f"{inv_lines}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"⚡ <b>TODAY'S ACTIVITY</b>\n"
+        f"  ✨ XP awarded today: <b>{activity.get('xp_today', 0):,}</b>\n"
+        f"  ⚡ XP last hour: <b>{activity.get('xp_1hr', 0):,}</b>\n"
+        f"  🍿 Netflix reveals: <b>{activity.get('nf_reveals', 0)}</b>\n"
+        f"  🎥 Prime reveals: <b>{activity.get('pr_reveals', 0)}</b>\n"
+        f"  🌟 Wheel spins: <b>{activity.get('wheel_spins', 0)}</b>\n"
+        f"  🎮 Steam claims: <b>{activity.get('steam_claims', 0)}</b>\n"
+        f"  📬 Feedbacks: <b>{activity.get('feedbacks', 0)}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"🗂 <b>REDIS KEY SNAPSHOT</b>\n"
+        f"  XP cooldowns active: <b>{redis_snap.get('cooldowns', 0)}</b>\n"
+        f"  Daily bonuses claimed: <b>{redis_snap.get('daily_bonus', 0)}</b>\n"
+        f"  Wheel cooldowns: <b>{redis_snap.get('wheel_cd', 0)}</b>\n"
+        f"  Reveal caps active: <b>{redis_snap.get('reveals', 0)}</b>\n"
+        f"  View caps active: <b>{redis_snap.get('views', 0)}</b>\n"
+        f"  Rate limit keys: <b>{redis_snap.get('spam', 0)}</b>\n"
+        f"  Online notifs sent: <b>{redis_snap.get('online', 0)}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"🎉 <b>ACTIVE EVENT</b>\n"
+        f"  {event_line}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"🏆 <b>ACHIEVEMENT SYSTEM</b>\n"
+        f"  Loaded in cache: <b>{ach_count}</b> achievements\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"<i>All data live • Redis snapshot is current</i> 🍃"
     )
+
+    await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
 
 async def handle_key_feedback(chat_id: int, first_name: str, key_id: str, service_type: str, is_working: bool, query):
     status = "working" if is_working else "not_working"
@@ -6915,14 +7508,14 @@ async def handle_callback(update: Update):
         await redis_client.delete("online_users_cache")
         await handle_online_users(chat_id, query)
         return
+
+    elif data == "view_notion_steam_refresh":
+        await view_notion_steam_library(chat_id, page=0, query=query)
+        return
     
     elif data == "show_settings_page":
         await handle_settings_page(chat_id, first_name, query)
         return
-    
-    elif data == "show_stats_card":
-            await handle_stats_card(chat_id, first_name, query)
-            return
     
     elif data == "show_achievements":
         await show_achievements_page(chat_id, query, page=0)
@@ -7081,6 +7674,26 @@ async def handle_callback(update: Update):
 
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
+        return
+    
+    elif data.startswith("cpage_"):
+        if chat_id != OWNER_ID:
+            await query.answer("🌿 Only the Forest Caretaker may enter.", show_alert=True)
+            return
+        page_name = data.replace("cpage_", "")
+        await show_caretaker_page(chat_id, page_name, query)
+        return
+    
+    elif data == "run_test_achievements":
+        if chat_id != OWNER_ID:
+            return
+        await handle_test_achievements(chat_id)
+        return
+
+    elif data == "caretaker_home":
+        if chat_id != OWNER_ID:
+            return
+        await handle_caretaker(chat_id, first_name)
         return
     
     elif data.startswith("cookie_tutorial_"):
@@ -8601,7 +9214,7 @@ async def handle_callback(update: Update):
                 "Only Game Name</code>\n\n"
                 "⚠️ <i>Minimum required: email + password</i>\n"
                 "<i>Tip: Use /searchsteam first to check for duplicates.</i>",
-                animation_url=STEAM_RESULT_GIF,
+                animation_url=STEAM_GIF,
             )
         elif data == "caretaker_searchsteam":
             await handle_searchsteam_command(chat_id, "/searchsteam")
@@ -9003,9 +9616,6 @@ async def process_update(update_data: dict):
     
     elif text.startswith("/history"):
         await handle_history(chat_id, first_name)
-
-    elif text.startswith("/card") or text.startswith("/statscard"):
-            await handle_stats_card(chat_id, first_name)
 
     elif text.startswith("/streak"):
             await show_streak_calendar(chat_id, first_name)
