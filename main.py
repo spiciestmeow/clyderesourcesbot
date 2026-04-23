@@ -8409,6 +8409,12 @@ async def handle_callback(update: Update):
     elif data.startswith("set_title|"):
         chosen_title = data.split("|", 1)[1].strip()
 
+        # Fetch profile here since it may not be set yet at this point
+        profile = await get_user_profile(chat_id)
+        if not profile:
+            await query.answer("🌿 Profile not found.", show_alert=True)
+            return
+
         # Validate: title must exist in level titles AND be unlocked
         current_level = profile.get("level", 1)
         valid_titles = [
