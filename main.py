@@ -2841,14 +2841,33 @@ async def get_referral_link(chat_id: int) -> str:
     
     return f"https://t.me/{BOT_USERNAME}?start=ref_{chat_id}"
 
-
 async def store_pending_referral(new_chat_id: int, referrer_id: int) -> bool:
-    """Store pending referral. Returns True if stored, False if self-referral."""
     if referrer_id == new_chat_id:
         return False
-    await redis_client.setex(f"pending_ref:{new_chat_id}", 86400, str(referrer_id))
+    
+    # Check if already referred before
+    existing = await _sb_get(
+        "referrals",
+        **{"referred_id": f"eq.{new_chat_id}", "select": "id"}
+    )
+    if existing:
+        return False  # already has a referrer, don't overwrite
+    
+    await redis_client.setex(f"pending_ref:{new_chat_id}", 604800, str(referrer_id))
+    
+    # Notify referrer their link was clicked
+    try:
+        await tg_app.bot.send_message(
+            referrer_id,
+            "🌲 <b>Someone clicked your invite link!</b>\n\n"
+            "🌿 Waiting for them to complete onboarding...\n"
+            "<i>You'll earn +25 XP once they join! 🍃</i>",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    
     return True
-
 
 async def get_pending_referrer(chat_id: int) -> int | None:
     key = f"pending_ref:{chat_id}"
@@ -3197,13 +3216,14 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
                 )
             )
             try:
+                # Change duration from temporary to a proper message
                 await tg_app.bot.send_message(
                     chat_id,
-                    f"🎁 <b>Welcome Bonus!</b>\n\n"
-                    f"✨ <b>+{extra_welcome} Forest Energy</b> has been added to your path!\n\n"
-                    f"A friend invited you to the clearing — the forest rewards bonds. 🌿\n\n"
-                    f"<i>The trees remember every step you've taken...</i> 🍃",
-                    parse_mode="HTML",
+                    "🎁 <b>Welcome Bonus!</b>\n\n"
+                    f"✨ <b>+{extra_welcome} Forest Energy</b> added!\n\n"
+                    "A friend invited you to the clearing.\n"
+                    "<i>The forest rewards bonds. 🌿</i>",
+                    parse_mode="HTML"
                 )
             except Exception:
                 pass
@@ -5264,6 +5284,69 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
+async def handle_referral_history(chat_id: int):
+    data = await _sb_get(
+        "referrals",
+        **{
+            "referrer_id": f"eq.{chat_id}",
+            "select": "referred_id,created_at,awarded",
+            "order": "created_at.desc",
+            "limit": 20,
+        }
+    ) or []
+
+    profile = await get_user_profile(chat_id)
+    total_count = profile.get("referral_count", 0) if profile else 0
+    total_xp = total_count * REFERRAL_XP
+
+    if not data:
+        text = (
+            "🌲 <b>Your Referral History</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌫️ You haven't referred anyone yet.\n\n"
+            "Share your invite link and earn "
+            f"<b>+{REFERRAL_XP} XP</b> per friend! 🍃"
+        )
+    else:
+        manila = pytz.timezone("Asia/Manila")
+        lines = []
+        for i, r in enumerate(data, 1):
+            try:
+                dt = datetime.fromisoformat(
+                    r["created_at"].replace("Z", "+00:00")
+                ).astimezone(manila)
+                date_str = dt.strftime("%b %d, %Y")
+            except Exception:
+                date_str = "—"
+
+            status = "✅ Awarded" if r.get("awarded") else "⏳ Pending"
+            lines.append(f"{i}. {status} — {date_str}")
+
+        text = (
+            "🌲 <b>Your Referral History</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"👥 Total Referred: <b>{total_count}</b>\n"
+            f"✨ Total XP Earned: <b>{total_xp}</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            + "\n".join(lines) +
+            "\n\n<i>Keep inviting wanderers to grow the forest! 🍃</i>"
+        )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "🔗 Share My Link", 
+            callback_data="invite_friends"
+        )],
+        [InlineKeyboardButton("⬅️ Back", callback_data="main_menu")],
+    ])
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=INVITE_GIF,
+        reply_markup=keyboard,
+    )
+
 async def handle_online_users(chat_id: int, query=None):
     """🟢 Public online users page — active in last 15 minutes"""
     manila = pytz.timezone("Asia/Manila")
@@ -10065,6 +10148,9 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/referrals"):
+        await handle_referral_history(chat_id)
 
     elif text.startswith("/uploadwinoffice"):
         await handle_uploadwinoffice_command(chat_id, raw)
