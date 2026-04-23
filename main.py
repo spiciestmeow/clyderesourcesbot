@@ -4224,9 +4224,14 @@ async def send_delayed_feedback_buttons(
     game_name: str,
     delay: int = 30
 ):
-    """Send feedback buttons after delay"""
+    """Send feedback buttons after delay — skips if user already responded"""
     await asyncio.sleep(delay)
-    
+
+    # ✅ NEW: Skip if user already submitted feedback before the 30s is up
+    fb_key = f"steam_fb:{chat_id}:{account_email}"
+    if await redis_client.get(fb_key):
+        return
+
     try:
         await tg_app.bot.send_message(
             chat_id=chat_id,
@@ -4248,10 +4253,12 @@ async def send_delayed_feedback_buttons(
                         callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
                     ),
                 ],
-                [InlineKeyboardButton(
-                    "⏳ Not tried yet",
-                    callback_data=f"remind_later|{account_email}|{game_name[:30]}"
-                )]
+                [
+                    InlineKeyboardButton(
+                        "⏳ Not tried yet — remind me later",
+                        callback_data=f"remind_later|{account_email}|{game_name[:30]}"
+                    )
+                ]
             ])
         )
     except Exception as e:
@@ -8869,7 +8876,7 @@ async def handle_callback(update: Update):
         if len(parts) == 3:
             _, account_email, game_name = parts
 
-            # One undo only
+            # One undo only per account per session
             undo_key = f"steam_undo:{chat_id}:{account_email}"
             if not await redis_client.set(undo_key, 1, ex=60, nx=True):
                 await query.answer(
@@ -8881,12 +8888,25 @@ async def handle_callback(update: Update):
             # Reset feedback spam guard so they can resubmit
             await redis_client.delete(f"steam_fb:{chat_id}:{account_email}")
 
+            # ── Fetch stored claim data from Redis ──
+            stored = await redis_client.get(f"steam_claim_data:{chat_id}:{account_email}")
+            claim_data = json.loads(stored) if stored else {}
+            password = claim_data.get("password", "—")
+            game_name_stored = claim_data.get("game_name", game_name)
+            steam_id = claim_data.get("steam_id", "")
+            release_type = claim_data.get("release_type", "daily")
+            type_badge = (
+                "🌟 Sunday Bonus Account"
+                if release_type == "sunday_noon"
+                else "📅 Daily Account"
+            )
+
             # Notify owner of undo
             await tg_app.bot.send_message(
                 OWNER_ID,
                 f"↩️ <b>Steam Feedback Undone</b>\n\n"
                 f"👤 {html.escape(first_name)} (<code>{chat_id}</code>)\n"
-                f"🎮 {html.escape(game_name)}\n"
+                f"🎮 {html.escape(game_name_stored)}\n"
                 f"📧 <code>{html.escape(account_email)}</code>\n\n"
                 f"<i>User undid their ❌ report — account status unchanged.</i>",
                 parse_mode="HTML"
@@ -8894,44 +8914,30 @@ async def handle_callback(update: Update):
 
             await query.answer("↩️ Undone! No changes made.", show_alert=True)
 
-            # Restore original feedback buttons
+            # ── Strip the "You reported this as" appended line from caption ──
             try:
-                await tg_app.bot.send_message(
-                    chat_id=chat_id,
-                    text=(
-                        f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━\n\n"
-                        f"📧 Login: "
-                        f"<tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
-                        f"🔑 Password: "
-                        f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
-                        f"⏳ <b>Please try the account now.</b>\n"
-                        f"Feedback buttons will appear in "
-                        f"<b>30 seconds</b>.\n\n"
-                        f"<i>Take your time, wanderer. 🍃</i>"
-                    ),
-                    parse_mode="HTML"
-                )
-
-                # Schedule delayed feedback buttons
-                asyncio.create_task(
-                    send_delayed_feedback_buttons(
-                        chat_id=chat_id,
-                        account_email=account_email,
-                        game_name=game_name,
-                        delay=30
-                    )
-                )
-                # Strip the "You reported this as" line from caption
                 current = query.message.caption or query.message.text or ""
                 clean_caption = current.split("\n\n━━━")[0]
                 await query.message.edit_caption(
-                    caption=clean_caption,
+                    caption=(
+                        clean_caption +
+                        "\n\n<i>↩️ Feedback cleared. New buttons coming shortly...</i>"
+                    ),
                     parse_mode="HTML",
-                    reply_markup=feedback_kb
+                    reply_markup=None
                 )
             except Exception:
                 pass
+
+            # ── Reschedule feedback buttons after short delay ──
+            asyncio.create_task(
+                send_delayed_feedback_buttons(
+                    chat_id=chat_id,
+                    account_email=account_email,
+                    game_name=game_name_stored,
+                    delay=10
+                )
+            )
 
     elif data.startswith("remind_later|"):
         parts = data.split("|")
@@ -9117,10 +9123,23 @@ async def handle_callback(update: Update):
         # ── Deliver ──
         password = acc.get("password", "")
         steam_id = acc.get("steam_id", "")
+        release_type = acc.get("release_type", "daily")
         type_badge = (
             "🌟 Sunday Bonus Account"
             if release_type == "sunday_noon"
             else "📅 Daily Account"
+        )
+
+        # ── Store claim data in Redis for undo support (2 min window) ──
+        await redis_client.setex(
+            f"steam_claim_data:{chat_id}:{account_email}",
+            120,
+            json.dumps({
+                "password": password,
+                "game_name": game_name,
+                "steam_id": steam_id,
+                "release_type": release_type,
+            })
         )
 
         claims_after = claims_today + 1 if tier != "legend" else 0
@@ -9151,24 +9170,14 @@ async def handle_callback(update: Update):
             f"• Please do not attempt to change passwords, enable Steam Guard, or alter any account settings. "
             f"Any modifications may result in them being disabled or locked. "
             f"Use these accounts responsibly. Enjoy!\n\n"
+            f"⏳ Feedback buttons will appear in <b>30 seconds</b> after you've had time to try it.\n\n"
             f"<i>Enjoy your game, wanderer! 🍃</i>"
         )
 
         image_url = acc.get("image_url", "").strip() if acc.get("image_url") else ""
 
         # ── Feedback buttons ──
-        feedback_kb = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "✅ Working",
-                    callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
-                ),
-                InlineKeyboardButton(
-                    "❌ Not Working",
-                    callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
-                ),
-            ]
-        ])
+        feedback_kb = None
 
         if image_url:
             try:
@@ -9198,6 +9207,16 @@ async def handle_callback(update: Update):
             f"✨ <i>{html.escape(game_name)} successfully claimed!</i>",
             duration=3
         ))
+
+        # ✅ NEW: Send feedback prompt 30 seconds later
+        asyncio.create_task(
+            send_delayed_feedback_buttons(
+                chat_id=chat_id,
+                account_email=account_email,
+                game_name=game_name,
+                delay=30
+            )
+        )
 
         # ── Award XP for successful Steam claim ──
         if tier == "legend":
