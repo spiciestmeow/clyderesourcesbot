@@ -300,11 +300,13 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
         f"<i>The ancient forest spirits have recognized you, {html.escape(first_name)}!</i> 🌲✨"
     )
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         animation_url=ach.get("gif_url") or "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
         caption=caption,
     )
+
+    await _remember(chat_id, msg.message_id)
 
     # ── TEMP PERK REMINDER (3 seconds delay so it appears after the animation) ──
     if perk_text:
@@ -3495,11 +3497,12 @@ async def show_patrons_page(chat_id: int, query=None):
         except:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=DONOR_GIF,
     )
+    await _remember(chat_id, msg.message_id) 
 
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
     event = await get_active_event()
@@ -3591,7 +3594,7 @@ async def send_milestone_message(chat_id: int, first_name: str, milestone: int):
 
     emoji, flavor = MILESTONE_LABELS.get(milestone, ("🌟", "Amazing progress!"))
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         animation_url=LOADING_GIF,  # swap for a celebration GIF if you have one
         caption=(
@@ -3603,6 +3606,7 @@ async def send_milestone_message(chat_id: int, first_name: str, milestone: int):
             "Keep exploring the clearing! 🍃✨"
         )
     )
+    await _remember(chat_id, msg.message_id)
 
 async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
     if xp_amount <= 0:
@@ -4288,12 +4292,13 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
         except Exception:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=MORNING_GIF,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
@@ -4582,11 +4587,12 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
         "<i>The forest grows with you.</i> 🍃✨"
     )
     try:
-        await send_animated_translated(
+        msg = await send_animated_translated(
             chat_id=chat_id,
             animation_url=LOADING_GIF,
             caption=caption,
         )
+        await _remember(chat_id, msg.message_id)  # ← ADD
     except Exception:
         pass
 
@@ -5400,12 +5406,13 @@ async def handle_referral_history(chat_id: int):
         [InlineKeyboardButton("⬅️ Back", callback_data="invite_friends")],
     ])
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=INVITE_GIF,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id)
 
 async def handle_online_users(chat_id: int, query=None):
     """🟢 Public online users page — active in last 15 minutes"""
@@ -5511,12 +5518,13 @@ async def handle_online_users(chat_id: int, query=None):
         except Exception:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         animation_url=MORNING_GIF,
         caption=text,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id) 
     
 async def handle_profile_page(chat_id: int, first_name: str, query=None):
     """Fixed version — shows achievement summary directly in profile"""
@@ -5815,12 +5823,13 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
         except Exception:
             pass  # fallback if edit fails
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=MIDNIGHT_GIF,
         reply_markup=markup
     )
+    await _remember(chat_id, msg.message_id)
 
 async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: int = 1, query=None):
     pages = {
@@ -5904,12 +5913,13 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
         except Exception:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=COOKIE_TUTORIAL_GIF,
         reply_markup=keyboard
     )
+    await _remember(chat_id, msg.message_id)
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
     limit  = 8
@@ -6160,11 +6170,12 @@ async def handle_wheel_leaderboard(chat_id: int):
 
     text += "\n<i>May your spins bring you great fortune, wanderer...</i> 🍃✨"
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=WHEEL_BOARD_GIF,
     )
+    await _remember(chat_id, msg.message_id)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FEEDBACK
@@ -6674,12 +6685,13 @@ async def handle_invite(chat_id: int, first_name: str):
         [InlineKeyboardButton("📜 My Referral History", callback_data="show_referral_history")],
     ])
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=caption,
         animation_url=INVITE_GIF,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id)
     return
 
 async def handle_toggle_maintenance(chat_id: int):
@@ -6708,7 +6720,7 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
     except Exception:
         pass
 
-    # ── fetch from Redis first, fallback to RAM ──
+    # ── 1. Collect Redis mem tracked messages ──
     try:
         message_ids = await redis_client.lrange(f"mem:{chat_id}", 0, -1)
         await redis_client.delete(f"mem:{chat_id}")
@@ -6717,30 +6729,92 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
         message_ids = forest_memory.get(chat_id, [])
         forest_memory[chat_id] = []
 
+    # ── 2. Collect reveal doc messages (netflix/prime .txt files) ──
+    for svc in ("netflix", "prime"):
+        reveal_msg_id = await redis_client.get(f"reveal_msg:{chat_id}:{svc}")
+        if reveal_msg_id:
+            message_ids.append(reveal_msg_id)
+            await redis_client.delete(f"reveal_msg:{chat_id}:{svc}")
+
+    # ── 3. Collect any stored loading/temp message IDs ──
+    for key_suffix in (
+        "loading_msg",
+        "winoffice_loading",
+        "steam_loading",
+        "inventory_loading",
+    ):
+        stored_id = await redis_client.get(f"{key_suffix}:{chat_id}")
+        if stored_id:
+            message_ids.append(stored_id)
+            await redis_client.delete(f"{key_suffix}:{chat_id}")
+
+    # ── 4. Delete all collected messages ──
     for mid in message_ids:
         try:
             await tg_app.bot.delete_message(chat_id, int(mid))
         except Exception:
             pass
 
+    # ── 5. Cancel all pending waiting/ghost states ──
+    ghost_keys = [
+        f"waiting_for_logo:{chat_id}",
+        f"winoffice_pending_cat:{chat_id}",
+        f"onboarding_step:{chat_id}",
+        f"reveal_spam:{chat_id}:netflix",
+        f"reveal_spam:{chat_id}:prime",
+        f"steam_claim_spam:{chat_id}",
+        f"pending_broadcast:{chat_id}",
+        f"steam_reminded:{chat_id}:*",   # wildcard — handled below
+    ]
+    for key in ghost_keys:
+        await redis_client.delete(key)
+
+    # ── 6. Clear wildcard steam reminder keys ──
+    try:
+        reminder_keys = await redis_client.keys(f"steam_reminded:{chat_id}:*")
+        if reminder_keys:
+            await redis_client.delete(*reminder_keys)
+
+        feedback_keys = await redis_client.keys(f"steam_fb:{chat_id}:*")
+        if feedback_keys:
+            await redis_client.delete(*feedback_keys)
+
+        claim_data_keys = await redis_client.keys(f"steam_claim_data:{chat_id}:*")
+        if claim_data_keys:
+            await redis_client.delete(*claim_data_keys)
+
+        reveal_key_keys = await redis_client.keys(f"reveal_key:{chat_id}:*")
+        if reveal_key_keys:
+            await redis_client.delete(*reveal_key_keys)
+
+        winkey_keys = await redis_client.keys(f"winkey:{chat_id}:*")
+        if winkey_keys:
+            await redis_client.delete(*winkey_keys)
+    except Exception as e:
+        print(f"⚠️ Wildcard key cleanup failed: {e}")
+
+    # ── 7. Animation sequence ──
     loading = await send_animated_translated(
         chat_id=chat_id,
         animation_url=CLEAN_GIF,
         caption="🌫️ <b>The ancient mist begins to thicken...</b>",
     )
     await asyncio.sleep(1.8)
-    await safe_edit(loading,"🍃 <b>The wind spirit awakens...</b>")
+    await safe_edit(loading, "🍃 <b>The wind spirit awakens...</b>")
     await asyncio.sleep(2.0)
-    await safe_edit(loading,"✨ <b>The forest is resetting...</b>")
+    await safe_edit(loading, "✨ <b>The forest is resetting...</b>")
     await asyncio.sleep(1.2)
     try:
         await tg_app.bot.delete_message(chat_id, loading.message_id)
     except Exception:
         pass
 
+    # ── 8. Award XP ──
     action_xp, _ = await add_xp(chat_id, first_name, "clear")
     if action_xp:
-        await send_xp_feedback(chat_id, action_xp,duration=1) 
+        await send_xp_feedback(chat_id, action_xp, duration=1)
+
+    # ── 9. Show fresh menu ──
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
 async def handle_status(chat_id: int):
@@ -7434,12 +7508,13 @@ async def show_wheel_history(chat_id: int, query=None):
         except Exception:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=WHEEL_WHISPERS_GIF,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id)
 
 async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query, first_name: str):
     pending_cat = category
