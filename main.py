@@ -7363,6 +7363,8 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
     # ====================== BULK SEARCH ======================
     if len(lines) > 1:
+        ITEMS_PER_PAGE = 8
+
         loading_msg = await tg_app.bot.send_message(
             chat_id,
             f"📋 <b>Processing {len(lines)} accounts...</b>\n\n<i>Searching Supabase...</i>",
@@ -7391,36 +7393,66 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
             else:
                 not_found_results.append(f"❌ <code>{html.escape(term)}</code> — Not found")
 
-        total     = len(lines)
-        succeeded = len(found_results)
-        failed    = len(not_found_results)
-
-        summary_header = (
-            f"📊 <b>Bulk Search Results</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"✅ Found: <b>{succeeded}</b>  |  ❌ Not Found: <b>{failed}</b>  |  📋 Total: <b>{total}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
-        )
-
-        grouped_lines = []
-        if found_results:
-            grouped_lines.append("🟢 <b>Found Accounts</b>")
-            grouped_lines.extend(found_results)
-        if not_found_results:
-            if found_results:
-                grouped_lines.append("")
-            grouped_lines.append("🔴 <b>Not Found</b>")
-            grouped_lines.extend(not_found_results)
-
-        final_text = summary_header + "\n\n".join(grouped_lines)
-
-        # Delete the loading message before sending results
         try:
             await loading_msg.delete()
         except Exception:
             pass
 
-        await send_animated_translated(chat_id, final_text, animation_url=STEAM_RESULT_GIF)
+        total     = len(lines)
+        succeeded = len(found_results)
+        failed    = len(not_found_results)
+
+        # Combine all result lines
+        all_result_lines = []
+        if found_results:
+            all_result_lines.append("🟢 <b>Found Accounts</b>")
+            all_result_lines.extend(found_results)
+        if not_found_results:
+            if found_results:
+                all_result_lines.append("")
+            all_result_lines.append("🔴 <b>Not Found</b>")
+            all_result_lines.extend(not_found_results)
+
+        # Paginate
+        total_pages = max(1, (len(all_result_lines) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+        start = page * ITEMS_PER_PAGE
+        page_lines = all_result_lines[start:start + ITEMS_PER_PAGE]
+
+        summary_header = (
+            f"📊 <b>Bulk Search Results</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✅ Found: <b>{succeeded}</b>  |  ❌ Not Found: <b>{failed}</b>  |  📋 Total: <b>{total}</b>\n"
+            f"📄 Page {page + 1} of {total_pages}\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+        )
+
+        final_text = summary_header + "\n\n".join(page_lines)
+
+        # Navigation buttons
+        # Encode the search terms as a Redis key to avoid huge callback_data
+        bulk_key = f"bulk_search:{chat_id}"
+        await redis_client.setex(bulk_key, 600, json.dumps(lines))  # 10 min TTL
+
+        buttons = []
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"bulk_page|{page-1}"))
+        if start + ITEMS_PER_PAGE < len(all_result_lines):
+            nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"bulk_page|{page+1}"))
+        if nav:
+            buttons.append(nav)
+        buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")])
+
+        markup = InlineKeyboardMarkup(buttons) if buttons else None
+
+        if query and query.message:
+            try:
+                await query.message.edit_text(final_text, parse_mode="HTML", reply_markup=markup)
+                return
+            except Exception:
+                pass
+
+        await send_animated_translated(chat_id, final_text, animation_url=STEAM_RESULT_GIF, reply_markup=markup)
         return
 
     # ====================== SINGLE SEARCH ======================
@@ -8161,6 +8193,25 @@ async def handle_callback(update: Update):
 
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
+        return
+
+    elif data.startswith("bulk_page|"):
+        if chat_id != OWNER_ID:
+            return
+        try:
+            page = int(data.split("|")[1])
+            bulk_key = f"bulk_search:{chat_id}"
+            stored = await redis_client.get(bulk_key)
+            if not stored:
+                await query.answer("Search expired. Please search again.", show_alert=True)
+                return
+            lines = json.loads(stored)
+            # Re-run the bulk search with the stored terms and new page
+            fake_text = "/searchsteam\n" + "\n".join(lines)
+            await handle_searchsteam_command(chat_id, fake_text, page=page, query=query)
+        except Exception as e:
+            print(f"Bulk page error: {e}")
+            await query.answer("Error loading page", show_alert=True)
         return
     
     elif data.startswith("cpage_"):
