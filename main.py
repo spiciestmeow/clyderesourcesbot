@@ -34,6 +34,8 @@ SUPPORTED_LANGUAGES = {
     "ceb": ("🇵🇭", "Bisaya"),
 }
 
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2966,6 +2968,22 @@ async def _try_award_referral(chat_id: int):
     finally:
         await redis_client.delete(lock_key)
 
+# ──────────────────────────────────────────────
+# MILESTONES VALUE
+# ──────────────────────────────────────────────
+MILESTONES = [100, 250, 500, 1000, 2500, 5000, 10000, 25000]
+
+MILESTONE_LABELS = {
+    100:   ("🌱", "Your roots are growing strong!"),
+    250:   ("🌿", "The forest begins to notice you!"),
+    500:   ("🍃", "You're becoming a true wanderer!"),
+    1000:  ("🌟", "A thousand steps in the clearing!"),
+    2500:  ("✨", "The ancient trees bow to you!"),
+    5000:  ("🌠", "You are truly one with the forest!"),
+    10000: ("🏆", "A legend walks among the trees!"),
+    25000: ("🪐", "The forest spirits are in awe!"),
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3131,6 +3149,15 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
                 send_level_up_message(chat_id, first_name, old_level, new_level)
             )
 
+        # ── MILESTONE CHECK ──
+        if ok:
+            base_xp = profile.get("xp") or 0
+            crossed = get_crossed_milestones(base_xp, new_xp)
+            if crossed:
+                asyncio.create_task(
+                    send_milestone_message(chat_id, first_name, crossed[-1])
+                )
+
     # ── new user — first tap stat is recorded ──
     else:
         stat_field = _STAT_FIELD.get(action)
@@ -3173,6 +3200,14 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
         print("🔵 NEW USER PAYLOAD KEYS:", list(payload.keys()))
         ok = await _sb_upsert("user_profiles", payload, on_conflict="chat_id")
         print(f"🔵 NEW USER UPSERT for {chat_id}: ok={ok}")
+
+        # ── MILESTONE CHECK for new users ──
+        if ok and first_xp > 0:
+            crossed = get_crossed_milestones(0, first_xp)
+            if crossed:
+                asyncio.create_task(
+                    send_milestone_message(chat_id, first_name, crossed[-1])
+                )
 
         # Insert into referrals table
         if pending_referrer and ok:
@@ -3543,6 +3578,31 @@ def _greeting(tz_str: str = "Asia/Manila", first_name: str = None) -> tuple[str,
     else:  # 6 PM – 9:59 PM
         text = f"Good evening, {name}" if not is_weekend else f"Cozy weekend evening, {name}"
         return "🌙", text, EVENING_GIF
+
+
+def get_crossed_milestones(old_xp: int, new_xp: int) -> list[int]:
+    """Returns milestones crossed between old and new XP"""
+    return [m for m in MILESTONES if old_xp < m <= new_xp]
+
+
+async def send_milestone_message(chat_id: int, first_name: str, milestone: int):
+    """Sends an immersive milestone celebration message"""
+    await asyncio.sleep(2)  # delay so it appears after XP feedback popup
+
+    emoji, flavor = MILESTONE_LABELS.get(milestone, ("🌟", "Amazing progress!"))
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=LOADING_GIF,  # swap for a celebration GIF if you have one
+        caption=(
+            f"{emoji} <b>Milestone Reached!</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎉 <b>{html.escape(first_name)}, you just hit "
+            f"{milestone:,} XP!</b>\n\n"
+            f"<i>{flavor}</i>\n\n"
+            "Keep exploring the clearing! 🍃✨"
+        )
+    )
 
 async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
     if xp_amount <= 0:
@@ -6608,9 +6668,9 @@ async def handle_invite(chat_id: int, first_name: str):
             InlineKeyboardButton(
                 "🔗 Share Invite Link 🌲",
                 url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!%0A%0AGet%20premium%20resources%20%2B%20XP%20bonuses%20%F0%9F%8C%BF"
-            )
+            ),
+            InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}"),
         ],
-        [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")],
         [InlineKeyboardButton("📜 My Referral History", callback_data="show_referral_history")],
     ])
 
