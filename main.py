@@ -4269,88 +4269,63 @@ async def send_delayed_feedback_buttons(
     except Exception as e:
         print(f"🔴 Failed to send delayed feedback: {e}")
 
-
 async def send_reminder_feedback(
     chat_id: int,
     account_email: str,
     game_name: str,
-    delay: int = 300
+    delay: int = 300,
+    is_final: bool = False  # ← new
 ):
-    """Send a second reminder after longer delay — only fires once"""
     await asyncio.sleep(delay)
 
-    # Skip if already submitted
     fb_key = f"steam_fb:{chat_id}:{account_email}"
     if await redis_client.get(fb_key):
         return
 
-    try:
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                "🌿 <b>Reminder!</b>\n\n"
-                f"Did you get a chance to try\n"
-                f"<b>{html.escape(game_name)}</b> yet?\n\n"
-                "<i>Your feedback helps keep the "
-                "forest clean.</i> 🍃"
-            ),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        "✅ Working",
-                        callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
-                    ),
-                    InlineKeyboardButton(
-                        "❌ Not Working",
-                        callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
-                    ),
-                ],
-                [InlineKeyboardButton(
-                    "🚫 Skip Feedback",
-                    callback_data=f"skip_feedback|{account_email}"
-                )]
-            ])
+    if is_final:
+        text = (
+            "🌿 <b>Last reminder!</b>\n\n"
+            f"We won't ask again about <b>{html.escape(game_name)}</b>.\n\n"
+            "<i>Did it work? 🍃</i>"
         )
-    except Exception as e:
-        print(f"🔴 Reminder failed: {e}")
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"),
+                InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"),
+            ],
+            [InlineKeyboardButton("🚫 Skip", callback_data=f"skip_feedback|{account_email}")]
+        ])
+    else:
+        text = (
+            "🌿 <b>Reminder!</b>\n\n"
+            f"Did you get a chance to try <b>{html.escape(game_name)}</b> yet?\n\n"
+            "<i>Your feedback helps keep the forest clean.</i> 🍃"
+        )
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"),
+                InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"),
+            ],
+            [InlineKeyboardButton("🚫 Skip Feedback", callback_data=f"skip_feedback|{account_email}")]
+        ])
 
-async def send_reminder_feedback(
-    chat_id: int,
-    account_email: str,
-    game_name: str,
-    delay: int = 300  # 5 minutes
-):
-    """Send a second reminder after longer delay"""
-    await asyncio.sleep(delay)
-    
+        # Schedule the final reminder only from the first one
+        asyncio.create_task(
+            send_reminder_feedback(
+                chat_id=chat_id,
+                account_email=account_email,
+                game_name=game_name,
+                delay=1500,  # 25 more minutes (total 30 min from claim)
+                is_final=True
+            )
+        )
+
     try:
         await tg_app.bot.send_message(
             chat_id=chat_id,
-            text=(
-                "🌿 <b>Reminder!</b>\n\n"
-                f"Did you get a chance to try\n"
-                f"<b>{html.escape(game_name)}</b> yet?\n\n"
-                "<i>Your feedback helps keep the "
-                "forest clean.</i> 🍃"
-            ),
+            text=text,
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        "✅ Working",
-                        callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
-                    ),
-                    InlineKeyboardButton(
-                        "❌ Not Working",
-                        callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
-                    ),
-                ],
-                [InlineKeyboardButton(
-                    "🚫 Skip Feedback",
-                    callback_data=f"skip_feedback|{account_email}"
-                )]
-            ])
+            reply_markup=buttons
         )
     except Exception as e:
         print(f"🔴 Reminder failed: {e}")
