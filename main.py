@@ -7675,6 +7675,9 @@ async def handle_callback(update: Update):
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
     data      = query.data
 
+    # ── Update presence on EVERY button tap ──
+    asyncio.create_task(update_last_active(chat_id))
+
     FEEDBACK_PREFIXES = (
         "kfb_ok|",
         "kfb_bad|",
@@ -7691,8 +7694,6 @@ async def handle_callback(update: Update):
     )
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
-
-    asyncio.create_task(update_last_active(chat_id))
 
     # ── ONBOARDING GUARD FOR CALLBACKS ──
     ONBOARDING_ALLOWED = (
@@ -7723,7 +7724,6 @@ async def handle_callback(update: Update):
         return
 
     elif data == "show_online_users":
-            await update_last_active(chat_id)  # ✅ await directly so it saves BEFORE the query
             await redis_client.delete("online_users_cache")
             await handle_online_users(chat_id, query)
             return
