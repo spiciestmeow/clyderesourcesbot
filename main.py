@@ -35,6 +35,20 @@ SUPPORTED_LANGUAGES = {
 }
 
 
+LEVEL_TITLE_DESCRIPTIONS = {
+    1: ("🌱 Young Sprout",        "Your first steps into the enchanted forest."),
+    2: ("🌿 Forest Sprout",       "The trees are beginning to recognize you."),
+    3: ("🍃 Gentle Wanderer",     "You move through the clearing with quiet curiosity."),
+    4: ("🌳 Woodland Explorer",   "The hidden paths of the forest open before you."),
+    5: ("🌲 Whispering Wanderer", "The ancient trees whisper your name in the wind."),
+    6: ("🪵 Tree Guardian",       "You stand firm like the oldest oak in the clearing."),
+    7: ("🌌 Mist Walker",         "You drift through the forest like morning fog."),
+    8: ("✨ Enchanted Keeper",    "The forest spirits have chosen you as their keeper."),
+    9: ("🌠 Ancient Soul",        "Your roots run deeper than the oldest tree."),
+    10: ("🌟 Eternal Guardian",   "The entire enchanted clearing bows to your wisdom."),
+}
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
@@ -332,39 +346,6 @@ async def get_forest_patrons() -> list:
 
     await redis_client.setex("patrons_cache", 3600, json.dumps(data))
     return data
-
-async def get_earned_titles(chat_id: int, profile: dict) -> list[str]:
-    """Get list of earned title strings for a user based on their profile"""
-    titles = []
-    level = profile.get("level", 1)
-    
-    # Add level-based titles
-    title = get_level_title(level)
-    if title:
-        titles.append(title)
-    
-    # Add achievement-based titles if any
-    user_achs = await get_user_achievements(chat_id)
-    for u in user_achs:
-        if u.get("unlocked_at"):
-            code = u.get("achievement_code", "")
-            ach = ACHIEVEMENTS_CACHE.get(code, {})
-            reward = ach.get("reward", {})
-            if reward.get("type") == "title":
-                title_text = reward.get("title_text")
-                if title_text:
-                    titles.append(title_text)
-    
-    return titles
-
-
-async def get_active_display_title(chat_id: int, profile: dict) -> str:
-    """Get the currently active display title for a user"""
-    level = profile.get("level", 1)
-    custom_title = profile.get("active_title")
-    if custom_title:
-        return custom_title
-    return get_level_title(level)
 
 async def add_patron(username: str, title: str = "Kind Wanderer") -> bool:
     """Add a new donor"""
@@ -5930,45 +5911,55 @@ async def handle_set_title(chat_id: int, first_name: str, query=None):
     if not profile:
         return
 
-    earned_titles = await get_earned_titles(chat_id, profile)
-    
-    if not earned_titles:
-        await tg_app.bot.send_message(
-            chat_id,
-            "🌿 <b>No custom titles earned yet!</b>\n\n"
-            "Keep leveling up and unlocking achievements to earn titles. 🍃",
-            parse_mode="HTML"
-        )
-        return
+    current_level = profile.get("level", 1)
+    active_title  = profile.get("active_title")
 
-    current = await get_active_display_title(chat_id, profile)
-    default_title = get_level_title(profile.get("level", 1))
-    is_using_default = not profile.get("active_title")
+    # Build list of unlocked titles (all levels UP TO current level)
+    unlocked = {
+        lvl: data
+        for lvl, data in LEVEL_TITLE_DESCRIPTIONS.items()
+        if lvl <= current_level
+    }
+
+    current_display = active_title or LEVEL_TITLE_DESCRIPTIONS.get(current_level, ("", ""))[0]
 
     text = (
         "🏷️ <b>Choose Your Forest Title</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"📌 Current title: <b>{current}</b>\n"
-        f"🌿 Default title: <b>{default_title}</b>\n\n"
-        "Select a title to display on your profile:\n\n"
-        "<i>✅ = currently active</i>"
+        f"📌 <b>Active:</b> {current_display}\n"
+        f"⭐ You are Level <b>{current_level}</b> — "
+        f"<b>{len(unlocked)}</b> title(s) unlocked\n\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
     )
 
+    # Show each unlocked title with description
+    for lvl in sorted(unlocked.keys(), reverse=True):  # newest first
+        title_name, description = unlocked[lvl]
+        is_active = (active_title == title_name) or \
+                    (not active_title and lvl == current_level)
+        lock_icon = "✅" if is_active else f"Lv{lvl}"
+        text += f"{lock_icon} <b>{title_name}</b>\n"
+        text += f"   <i>{description}</i>\n\n"
+
+    text += "━━━━━━━━━━━━━━━━━━\n"
+    text += "<i>Tap a title below to equip it. 🍃</i>"
+
+    # Build buttons
     buttons = []
-    for title in earned_titles:
-        is_active = title == current
-        label = f"✅ {title}" if is_active else f"🏷️ {title}"
+    for lvl in sorted(unlocked.keys(), reverse=True):
+        title_name, _ = unlocked[lvl]
+        is_active = (active_title == title_name) or \
+                    (not active_title and lvl == current_level)
+        label = f"✅ {title_name}" if is_active else f"🏷️ {title_name}"
         buttons.append([
-            InlineKeyboardButton(label, callback_data=f"set_title|{title[:50]}")
+            InlineKeyboardButton(label, callback_data=f"set_title|{title_name[:50]}")
         ])
 
-    # Reset to default button — only show if using a custom title
-    if not is_using_default:
+    # Reset only if using a non-default title
+    default_title = LEVEL_TITLE_DESCRIPTIONS.get(current_level, ("", ""))[0]
+    if active_title and active_title != default_title:
         buttons.append([
-            InlineKeyboardButton(
-                "🔄 Reset to Default Title",
-                callback_data="reset_title"
-            )
+            InlineKeyboardButton("🔄 Reset to Current Level Title", callback_data="reset_title")
         ])
 
     buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
@@ -8415,9 +8406,36 @@ async def handle_callback(update: Update):
         await send_onboarding_step(chat_id, first_name, step=step)
         return
     
-    elif data == "show_set_title":
-        await handle_set_title(chat_id, first_name, query)
-        return
+    elif data.startswith("set_title|"):
+        chosen_title = data.split("|", 1)[1].strip()
+
+        # Validate: title must exist in level titles AND be unlocked
+        current_level = profile.get("level", 1)
+        valid_titles = [
+            title_name
+            for lvl, (title_name, _) in LEVEL_TITLE_DESCRIPTIONS.items()
+            if lvl <= current_level
+        ]
+
+        if chosen_title not in valid_titles:
+            await query.answer("❌ You haven't unlocked this title!", show_alert=True)
+            return
+
+        await _sb_patch(
+            f"user_profiles?chat_id=eq.{chat_id}",
+            {"active_title": chosen_title}
+        )
+
+        await query.answer(f"✅ Title set!", show_alert=False)
+
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            f"🏷️ <b>Title updated!</b>\n\n"
+            f"You are now known as:\n<b>{chosen_title}</b> 🌿",
+            duration=4
+        ))
+
+        await handle_profile_page(chat_id, first_name, query)
 
     elif data == "show_online_users":
             await redis_client.delete("online_users_cache")
@@ -8443,31 +8461,6 @@ async def handle_callback(update: Update):
             await show_streak_calendar(chat_id, first_name, query)
             return
     
-    elif data.startswith("set_title|"):
-        chosen_title = data.split("|", 1)[1].strip()
-
-        # Verify user actually earned this title
-        earned = await get_earned_titles(chat_id, profile)
-        if chosen_title not in earned:
-            await query.answer("❌ You haven't earned this title!", show_alert=True)
-            return
-
-        await _sb_patch(
-            f"user_profiles?chat_id=eq.{chat_id}",
-            {"active_title": chosen_title}
-        )
-
-        await query.answer(f"✅ Title set to: {chosen_title}", show_alert=False)
-
-        asyncio.create_task(send_temporary_message(
-            chat_id,
-            f"🏷️ <b>Title updated!</b>\n\n"
-            f"You are now known as:\n<b>{chosen_title}</b> 🌿",
-            duration=4
-        ))
-
-        await handle_profile_page(chat_id, first_name, query)
-        
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
         await safe_edit(
