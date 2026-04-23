@@ -5663,13 +5663,17 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
-                InlineKeyboardButton("🏆 Achievements",   callback_data="show_achievements"),
+                InlineKeyboardButton("🏷️ Set Title", callback_data="show_set_title"),
             ],
             [
                 InlineKeyboardButton("📜 XP History",  callback_data="history_page_0"),
                 InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
             ],
-            [InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar")],
+
+            [
+                InlineKeyboardButton("🏆 Achievements",   callback_data="show_achievements"),
+                InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
+            ],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
         ])
 
@@ -5920,6 +5924,67 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
         reply_markup=keyboard
     )
     await _remember(chat_id, msg.message_id)
+
+async def handle_set_title(chat_id: int, first_name: str, query=None):
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return
+
+    earned_titles = await get_earned_titles(chat_id, profile)
+    
+    if not earned_titles:
+        await tg_app.bot.send_message(
+            chat_id,
+            "🌿 <b>No custom titles earned yet!</b>\n\n"
+            "Keep leveling up and unlocking achievements to earn titles. 🍃",
+            parse_mode="HTML"
+        )
+        return
+
+    current = await get_active_display_title(chat_id, profile)
+    default_title = get_level_title(profile.get("level", 1))
+    is_using_default = not profile.get("active_title")
+
+    text = (
+        "🏷️ <b>Choose Your Forest Title</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 Current title: <b>{current}</b>\n"
+        f"🌿 Default title: <b>{default_title}</b>\n\n"
+        "Select a title to display on your profile:\n\n"
+        "<i>✅ = currently active</i>"
+    )
+
+    buttons = []
+    for title in earned_titles:
+        is_active = title == current
+        label = f"✅ {title}" if is_active else f"🏷️ {title}"
+        buttons.append([
+            InlineKeyboardButton(label, callback_data=f"set_title|{title[:50]}")
+        ])
+
+    # Reset to default button — only show if using a custom title
+    if not is_using_default:
+        buttons.append([
+            InlineKeyboardButton(
+                "🔄 Reset to Default Title",
+                callback_data="reset_title"
+            )
+        ])
+
+    buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=MYID_GIF,
+        caption=text,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
     limit  = 8
@@ -8349,6 +8414,10 @@ async def handle_callback(update: Update):
             pass
         await send_onboarding_step(chat_id, first_name, step=step)
         return
+    
+    elif data == "show_set_title":
+        await handle_set_title(chat_id, first_name, query)
+        return
 
     elif data == "show_online_users":
             await redis_client.delete("online_users_cache")
@@ -8373,6 +8442,31 @@ async def handle_callback(update: Update):
     elif data == "show_streak_calendar":
             await show_streak_calendar(chat_id, first_name, query)
             return
+    
+    elif data.startswith("set_title|"):
+        chosen_title = data.split("|", 1)[1].strip()
+
+        # Verify user actually earned this title
+        earned = await get_earned_titles(chat_id, profile)
+        if chosen_title not in earned:
+            await query.answer("❌ You haven't earned this title!", show_alert=True)
+            return
+
+        await _sb_patch(
+            f"user_profiles?chat_id=eq.{chat_id}",
+            {"active_title": chosen_title}
+        )
+
+        await query.answer(f"✅ Title set to: {chosen_title}", show_alert=False)
+
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            f"🏷️ <b>Title updated!</b>\n\n"
+            f"You are now known as:\n<b>{chosen_title}</b> 🌿",
+            duration=4
+        ))
+
+        await handle_profile_page(chat_id, first_name, query)
         
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
@@ -8550,6 +8644,25 @@ async def handle_callback(update: Update):
         page_name = data.replace("cpage_", "")
         await show_caretaker_page(chat_id, page_name, query)
         return
+    
+    elif data == "reset_title":
+        await _sb_patch(
+            f"user_profiles?chat_id=eq.{chat_id}",
+            {"active_title": None}
+        )
+
+        default = get_level_title(profile.get("level", 1))
+
+        await query.answer("🔄 Title reset to default!", show_alert=False)
+
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            f"🔄 <b>Title reset!</b>\n\n"
+            f"Back to your default:\n<b>{default}</b> 🌿",
+            duration=4
+        ))
+
+        await handle_profile_page(chat_id, first_name, query)
     
     elif data == "run_test_achievements":
         if chat_id != OWNER_ID:
@@ -10389,6 +10502,9 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/settitle"):
+        await handle_set_title(chat_id, first_name)
 
     elif text.startswith("/referrals"):
         await handle_referral_history(chat_id)
