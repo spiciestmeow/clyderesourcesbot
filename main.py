@@ -4218,6 +4218,85 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
+async def send_delayed_feedback_buttons(
+    chat_id: int,
+    account_email: str,
+    game_name: str,
+    delay: int = 30
+):
+    """Send feedback buttons after delay"""
+    await asyncio.sleep(delay)
+    
+    try:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "🎮 <b>Have you tried the account yet?</b>\n\n"
+                f"Game: <b>{html.escape(game_name)}</b>\n\n"
+                "Please let us know if it worked!\n"
+                "<i>Your feedback helps the forest grow.</i> 🍃"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Working",
+                        callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Not Working",
+                        callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
+                    ),
+                ],
+                [InlineKeyboardButton(
+                    "⏳ Not tried yet",
+                    callback_data=f"remind_later|{account_email}|{game_name[:30]}"
+                )]
+            ])
+        )
+    except Exception as e:
+        print(f"🔴 Failed to send delayed feedback: {e}")
+
+async def send_reminder_feedback(
+    chat_id: int,
+    account_email: str,
+    game_name: str,
+    delay: int = 300  # 5 minutes
+):
+    """Send a second reminder after longer delay"""
+    await asyncio.sleep(delay)
+    
+    try:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "🌿 <b>Reminder!</b>\n\n"
+                f"Did you get a chance to try\n"
+                f"<b>{html.escape(game_name)}</b> yet?\n\n"
+                "<i>Your feedback helps keep the "
+                "forest clean.</i> 🍃"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Working",
+                        callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Not Working",
+                        callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
+                    ),
+                ],
+                [InlineKeyboardButton(
+                    "🚫 Skip Feedback",
+                    callback_data=f"skip_feedback|{account_email}"
+                )]
+            ])
+        )
+    except Exception as e:
+        print(f"🔴 Reminder failed: {e}")
+
 # ── IMPROVED: Send animation + auto-translated caption ──
 async def send_animated_translated(
     chat_id: int,
@@ -7591,9 +7670,9 @@ async def handle_uploadwinoffice_command(chat_id: int, raw_text: str):
             payload = {
                 "key_id":       key_id,
                 "remaining":    remaining,
-                "service_type": service_type,
+                "service_type": display_name,
                 "status":       "active",
-                "display_name": display_name,
+                "display_name": default_name,
             }
 
             success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
@@ -7601,14 +7680,19 @@ async def handle_uploadwinoffice_command(chat_id: int, raw_text: str):
             if success:
                 imported += 1
                 added_counts[service_type] = added_counts.get(service_type, 0) + 1
-                short = key_id[:25] + "…" if len(key_id) > 25 else key_id
+                short = key_id[:30] + "…" if len(key_id) > 30 else key_id
                 results.append(
-                    f"✅ {emoji} <code>{html.escape(short)}</code> "
-                    f"→ <b>{html.escape(display_name)}</b> — {remaining} uses"
+                    f"✅ {emoji} <b>{html.escape(display_name)}</b>\n"
+                    f"   🔑 <code>{html.escape(short)}</code>\n"
+                    f"   📦 Remaining: <b>{remaining}</b>"
                 )
             else:
                 skipped += 1
-                results.append(f"⚠️ <code>{html.escape(key_id[:25])}</code> — Skipped (duplicate?)")
+                results.append(
+                    f"❌ {emoji} <b>{html.escape(display_name)}</b>\n"
+                    f"   🔑 <code>{html.escape(key_id[:30])}</code>\n"
+                    f"   ⚠️ Skipped — already exists or rejected by Supabase"
+                )
 
     # Clear cache so keys show immediately
     await redis_client.delete("vamt_cache")
@@ -8812,18 +8896,32 @@ async def handle_callback(update: Update):
 
             # Restore original feedback buttons
             try:
-                feedback_kb = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton(
-                            "✅ Working",
-                            callback_data=f"stfb_ok|{account_email}|{game_name}"
-                        ),
-                        InlineKeyboardButton(
-                            "❌ Not Working",
-                            callback_data=f"stfb_bad|{account_email}|{game_name}"
-                        ),
-                    ]
-                ])
+                await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━\n\n"
+                        f"📧 Login: "
+                        f"<tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
+                        f"🔑 Password: "
+                        f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
+                        f"⏳ <b>Please try the account now.</b>\n"
+                        f"Feedback buttons will appear in "
+                        f"<b>30 seconds</b>.\n\n"
+                        f"<i>Take your time, wanderer. 🍃</i>"
+                    ),
+                    parse_mode="HTML"
+                )
+
+                # Schedule delayed feedback buttons
+                asyncio.create_task(
+                    send_delayed_feedback_buttons(
+                        chat_id=chat_id,
+                        account_email=account_email,
+                        game_name=game_name,
+                        delay=30
+                    )
+                )
                 # Strip the "You reported this as" line from caption
                 current = query.message.caption or query.message.text or ""
                 clean_caption = current.split("\n\n━━━")[0]
@@ -8832,6 +8930,41 @@ async def handle_callback(update: Update):
                     parse_mode="HTML",
                     reply_markup=feedback_kb
                 )
+            except Exception:
+                pass
+
+    elif data.startswith("remind_later|"):
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, account_email, game_name = parts
+            
+            await query.answer(
+                "⏳ No problem! We'll remind you in 5 minutes.",
+                show_alert=True
+            )
+            
+            # Schedule 5 minute reminder
+            asyncio.create_task(
+                send_reminder_feedback(
+                    chat_id=chat_id,
+                    account_email=account_email,
+                    game_name=game_name,
+                    delay=300
+                )
+            )
+
+    elif data.startswith("skip_feedback|"):
+        parts = data.split("|")
+        if len(parts) == 2:
+            _, account_email = parts
+            
+            await query.answer(
+                "🌿 No worries! Thanks anyway.",
+                show_alert=False
+            )
+            
+            try:
+                await query.message.delete()
             except Exception:
                 pass
 
@@ -9510,20 +9643,20 @@ async def handle_callback(update: Update):
                     "🗝️ <b>Manual Win / Office Key Entry</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                     "<b>Basic:</b>\n"
-                    "<code>/uploadkeys2\n"
+                    "<code>/uploadwinoffice\n"
                     "windows\n"
                     "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
                     "<b>With custom display name:</b>\n"
-                    "<code>/uploadkeys2\n"
+                    "<code>/uploadwinoffice\n"
                     "windows|Windows 11 Pro\n"
                     "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
                     "<b>With remaining count:</b>\n"
-                    "<code>/uploadkeys2\n"
+                    "<code>/uploadwinoffice\n"
                     "office|Office 2021 Pro\n"
                     "XXXXX-XXXXX-XXXXX-XXXXX|50\n"
                     "YYYYY-YYYYY-YYYYY-YYYYY|30</code>\n\n"
                     "<b>Mixed blocks (separate with blank line):</b>\n"
-                    "<code>/uploadkeys2\n"
+                    "<code>/uploadwinoffice\n"
                     "windows|Windows 10 LTSC\n"
                     "XXXXX-XXXXX-XXXXX-XXXXX|50\n\n"
                     "office|Office 2019\n"
