@@ -2404,7 +2404,6 @@ async def update_last_active(chat_id: int, action: str = "browsing"):
         f"user_profiles?chat_id=eq.{chat_id}",
         {
             "last_active": datetime.now(pytz.utc).isoformat(),
-            "last_action": action
         }
     )
     # Notify owner — only once per 15 min per user (avoid spam)
