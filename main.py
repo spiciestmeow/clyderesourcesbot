@@ -4227,9 +4227,14 @@ async def send_delayed_feedback_buttons(
     """Send feedback buttons after delay — skips if user already responded"""
     await asyncio.sleep(delay)
 
-    # ✅ NEW: Skip if user already submitted feedback before the 30s is up
+    # Skip if user already submitted feedback
     fb_key = f"steam_fb:{chat_id}:{account_email}"
     if await redis_client.get(fb_key):
+        return
+
+    # Skip if user already got a reminder (prevent double prompt)
+    reminded_key = f"steam_reminded:{chat_id}:{account_email}"
+    if await redis_client.get(reminded_key):
         return
 
     try:
@@ -4255,7 +4260,7 @@ async def send_delayed_feedback_buttons(
                 ],
                 [
                     InlineKeyboardButton(
-                        "⏳ Not tried yet — remind me later",
+                        "⏳ Not tried yet — remind me in 5 min",
                         callback_data=f"remind_later|{account_email}|{game_name[:30]}"
                     )
                 ]
@@ -4263,6 +4268,52 @@ async def send_delayed_feedback_buttons(
         )
     except Exception as e:
         print(f"🔴 Failed to send delayed feedback: {e}")
+
+
+async def send_reminder_feedback(
+    chat_id: int,
+    account_email: str,
+    game_name: str,
+    delay: int = 300
+):
+    """Send a second reminder after longer delay — only fires once"""
+    await asyncio.sleep(delay)
+
+    # Skip if already submitted
+    fb_key = f"steam_fb:{chat_id}:{account_email}"
+    if await redis_client.get(fb_key):
+        return
+
+    try:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "🌿 <b>Reminder!</b>\n\n"
+                f"Did you get a chance to try\n"
+                f"<b>{html.escape(game_name)}</b> yet?\n\n"
+                "<i>Your feedback helps keep the "
+                "forest clean.</i> 🍃"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Working",
+                        callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Not Working",
+                        callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
+                    ),
+                ],
+                [InlineKeyboardButton(
+                    "🚫 Skip Feedback",
+                    callback_data=f"skip_feedback|{account_email}"
+                )]
+            ])
+        )
+    except Exception as e:
+        print(f"🔴 Reminder failed: {e}")
 
 async def send_reminder_feedback(
     chat_id: int,
@@ -8943,12 +8994,28 @@ async def handle_callback(update: Update):
         parts = data.split("|")
         if len(parts) == 3:
             _, account_email, game_name = parts
-            
+
+            # Prevent the original 30s prompt from re-firing if it hasn't yet
+            reminded_key = f"steam_reminded:{chat_id}:{account_email}"
+            await redis_client.setex(reminded_key, 600, "1")  # 10 min guard
+
             await query.answer(
-                "⏳ No problem! We'll remind you in 5 minutes.",
-                show_alert=True
+                "⏳ Got it! We'll remind you in 5 minutes.",
+                show_alert=False
             )
-            
+
+            # Edit the message to confirm
+            try:
+                await query.message.edit_text(
+                    f"⏳ <b>No problem!</b>\n\n"
+                    f"We'll check back with you about <b>{html.escape(game_name)}</b> in 5 minutes.\n\n"
+                    f"<i>Enjoy your game! 🍃</i>",
+                    parse_mode="HTML",
+                    reply_markup=None
+                )
+            except Exception:
+                pass
+
             # Schedule 5 minute reminder
             asyncio.create_task(
                 send_reminder_feedback(
