@@ -7723,9 +7723,10 @@ async def handle_callback(update: Update):
         return
 
     elif data == "show_online_users":
-        await redis_client.delete("online_users_cache")
-        await handle_online_users(chat_id, query)
-        return
+            await update_last_active(chat_id)  # ✅ await directly so it saves BEFORE the query
+            await redis_client.delete("online_users_cache")
+            await handle_online_users(chat_id, query)
+            return
 
     elif data == "view_notion_steam_refresh":
         await view_notion_steam_library(chat_id, page=0, query=query)
