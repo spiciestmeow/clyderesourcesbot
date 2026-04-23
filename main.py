@@ -6962,10 +6962,10 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
                 callback_data="toggle_notif|steam"
             ),
         ],
-        [InlineKeyboardButton(
-            f"{'🎞️ GIFs: ON' if gifs_on else '🔇 GIFs: OFF'}",
-            callback_data="toggle_notif|gifs"
-        )],
+        # [InlineKeyboardButton(
+        #     f"{'🎞️ GIFs: ON' if gifs_on else '🔇 GIFs: OFF'}",
+        #     callback_data="toggle_notif|gifs"
+        # )],
         [InlineKeyboardButton(
             "🌲 Invite Friends & Earn 25 XP",
             callback_data="invite_friends"
