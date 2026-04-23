@@ -6332,6 +6332,19 @@ def get_freshness_badge(last_updated: str | None) -> str:
     except Exception:
         return "⚪ Unknown age"
 
+async def get_wheel_history(chat_id: int) -> list:
+    """Fetch last 5 wheel spins for a user"""
+    data = await _sb_get(
+        "wheel_spins",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "select": "rarity,xp_earned,got_bonus_slot,got_fresh_cookie,created_at",
+            "order": "created_at.desc",
+            "limit": 5,
+        }
+    ) or []
+    return data
+
 async def get_active_event() -> dict | None:
     cached = await redis_client.get("active_event")
     if cached:
@@ -7285,6 +7298,87 @@ async def handle_confirm_toggle_maintenance(chat_id: int):
         "Are you sure you want to continue?",
         parse_mode="HTML",
         reply_markup=confirm_kb,
+    )
+
+async def show_wheel_history(chat_id: int, query=None):
+    """Show last 5 wheel spins"""
+    data = await get_wheel_history(chat_id)
+    
+    manila = pytz.timezone("Asia/Manila")
+    
+    RARITY_EMOJIS = {
+        "Common":    "🌿",
+        "Uncommon":  "🍃",
+        "Rare":      "🌟",
+        "Epic":      "✨",
+        "Legendary": "🌠",
+        "Secret":    "🪄",
+    }
+
+    if not data:
+        text = (
+            "🎰 <b>Your Wheel History</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌫️ You haven't spun the wheel yet!\n\n"
+            "<i>Try your luck today, wanderer.</i> 🍃"
+        )
+    else:
+        lines = []
+        for i, spin in enumerate(data, 1):
+            rarity = spin.get("rarity", "Unknown")
+            xp = spin.get("xp_earned", 0)
+            emoji = RARITY_EMOJIS.get(rarity, "🌿")
+            bonus_slot = "  +1 reveal slot" if spin.get("got_bonus_slot") else ""
+            fresh_cookie = "  +fresh cookie!" if spin.get("got_fresh_cookie") else ""
+
+            # Human-readable time ago
+            try:
+                dt = datetime.fromisoformat(
+                    spin["created_at"].replace("Z", "+00:00")
+                ).astimezone(manila)
+                diff = datetime.now(manila) - dt
+                total_mins = int(diff.total_seconds() / 60)
+
+                if total_mins < 2:
+                    time_str = "just now"
+                elif total_mins < 60:
+                    time_str = f"{total_mins} mins ago"
+                elif total_mins < 1440:
+                    time_str = f"{total_mins // 60}h ago"
+                else:
+                    time_str = f"{total_mins // 1440}d ago"
+            except Exception:
+                time_str = "unknown"
+
+            lines.append(
+                f"{i}. {emoji} <b>{rarity}</b> — +{xp} XP{bonus_slot}{fresh_cookie}\n"
+                f"   🕒 {time_str}"
+            )
+
+        text = (
+            "🎰 <b>Your Last 5 Spins</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            + "\n\n".join(lines) +
+            "\n\n━━━━━━━━━━━━━━━━━━\n"
+            "<i>Keep spinning for bigger rewards! 🍃</i>"
+        )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
+        [InlineKeyboardButton("⬅️ Back to Wheel", callback_data="show_wheel_menu")],
+    ])
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=WHEEL_WHISPERS_GIF,
+        reply_markup=keyboard,
     )
 
 async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query, first_name: str):
@@ -8614,7 +8708,10 @@ async def handle_callback(update: Update):
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
-            [InlineKeyboardButton("🏆 Wheel Leaderboard", callback_data="wheel_leaderboard")],
+            [
+                InlineKeyboardButton("🏆 Wheel Leaderboard", callback_data="wheel_leaderboard"),
+                InlineKeyboardButton("📜 My Spin History", callback_data="show_wheel_history"),
+            ],
             [InlineKeyboardButton("ℹ️ About the Wheel", callback_data="about_wheel")],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
         ])
@@ -8624,6 +8721,10 @@ async def handle_callback(update: Update):
             caption=caption,
             reply_markup=keyboard
         )
+        return
+        
+    elif data == "show_wheel_history":
+        await show_wheel_history(chat_id, query)
         return
 
     # ── ACTUAL SPIN ──
