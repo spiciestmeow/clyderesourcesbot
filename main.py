@@ -7692,6 +7692,8 @@ async def handle_callback(update: Update):
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
 
+    asyncio.create_task(update_last_active(chat_id))
+
     # ── ONBOARDING GUARD FOR CALLBACKS ──
     ONBOARDING_ALLOWED = (
         "onboarding_step_", "onboarding_skip", "onboarding_complete", "show_main_menu"
@@ -7845,8 +7847,6 @@ async def handle_callback(update: Update):
             reply_markup=kb_start(),
         )
         return
-
-    asyncio.create_task(update_last_active(chat_id))
 
     # ── INVENTORY ──
     if data == "check_vamt":
@@ -9547,8 +9547,6 @@ async def process_update(update_data: dict):
                 reply_markup=kb_start(),
             )
             return
-
-    asyncio.create_task(update_last_active(chat_id))
 
     # ── Command dispatch ──
     if text.startswith("/start"):
