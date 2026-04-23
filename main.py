@@ -5337,7 +5337,7 @@ async def handle_referral_history(chat_id: int):
             "🔗 Share My Link", 
             callback_data="invite_friends"
         )],
-        [InlineKeyboardButton("⬅️ Back", callback_data="main_menu")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="invite_friends")],
     ])
 
     await send_animated_translated(
@@ -6597,7 +6597,8 @@ async def handle_invite(chat_id: int, first_name: str):
                 url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!%0A%0AGet%20premium%20resources%20%2B%20XP%20bonuses%20%F0%9F%8C%BF"
             )
         ],
-        [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")]
+        [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")],
+        [InlineKeyboardButton("📜 My Referral History", callback_data="show_referral_history")],
     ])
 
     await send_animated_translated(
@@ -8124,6 +8125,10 @@ async def handle_callback(update: Update):
             await redis_client.delete("online_users_cache")
             await handle_online_users(chat_id, query)
             return
+    
+    elif data == "show_referral_history":
+        await handle_referral_history(chat_id)
+        return
 
     elif data == "view_notion_steam_refresh":
         await view_notion_steam_library(chat_id, page=0, query=query)
