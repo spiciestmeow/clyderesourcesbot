@@ -9272,6 +9272,10 @@ async def handle_callback(update: Update):
         await handle_invite(chat_id, first_name)
         return   # important
     
+    elif data == "show_set_title":
+        await handle_set_title(chat_id, first_name, query)
+        return
+    
     elif data == "show_profile_page":
         await handle_profile_page(chat_id, first_name, query)
         return
