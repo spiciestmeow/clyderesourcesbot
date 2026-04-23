@@ -2370,7 +2370,8 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "notif_netflix,notif_prime,notif_windows,notif_steam,"
                 "profile_gif_id,profile_gif_changes,"
                 "all_slots_bonus,windows_views_bonus,netflix_reveals_bonus,"
-                "prime_reveals_bonus,daily_reveals_bonus"
+                "prime_reveals_bonus,daily_reveals_bonus,"
+                "active_title" 
             ),
         },
     )
@@ -4468,7 +4469,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
 
     profile = await get_user_profile(chat_id)
     level      = profile.get("level", 1) if profile else 1
-    title      = get_level_title(level)
+    title = profile.get("active_title") or get_level_title(level) if profile else get_level_title(level)
     level_info = f"🏷️ {title} • ⭐ Level {level}"
     if profile:
         await redis_client.delete(f"streak:{chat_id}")
@@ -5602,11 +5603,11 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
             pass
 
     streak_txt = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Just getting started!"
-
+    title = profile.get("active_title") or get_level_title(level)
     caption = (
         f"👤 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ <b>{get_level_title(level)}</b>\n"
+        f"🏷️ <b>{title}</b>\n"
         f"⭐ Level <b>{level}</b> • {streak_txt}\n\n"
         f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
         f"{create_progress_bar(xp, xp_required_next, 12)}\n"
