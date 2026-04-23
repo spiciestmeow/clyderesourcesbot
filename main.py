@@ -3624,6 +3624,32 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
 
     pages = {
 
+        # ── UPLOAD MANUAL KEYS ──
+        "uploadkeys": (
+            "📤 <b>Key Uploader</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Upload activation keys or cookies by sending a "
+            "<b>.txt</b> or <b>.zip</b> file to the bot.\n\n"
+            "📋 <b>Supported formats:</b>\n"
+            "• Plain keys (one per line)\n"
+            "• Pipe separated: <code>KEY|remaining|service|name</code>\n"
+            "• Cookie files (Netflix, Prime)\n"
+            "• JSON format\n"
+            "• Key:Value block format\n"
+            "• CSV format\n\n"
+            "✅ Service type is <b>auto-detected</b> from filename/content.\n"
+            "✅ After upload, cache is cleared and users are notified automatically.\n\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "🗝️ <b>Manual Key Entry</b>\n\n"
+            "Type Windows or Office keys directly — no file needed.\n"
+            "Supports custom display name and remaining count.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
+                [InlineKeyboardButton("🗝️ Manual Win/Office Entry", callback_data="caretaker_manualkeys")],  # ← NEW
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
+
         # ── PATCH NOTES ──
         "addupdate": (
             "📜 <b>Patch Notes Manager</b>\n"
@@ -7486,6 +7512,155 @@ async def edit_translated(query, text: str, lang: str = None, **kwargs):
     translated = await translate_text(text, lang)
     return await query.message.edit_caption(caption=translated, **kwargs)
 
+async def handle_uploadwinoffice_command(chat_id: int, raw_text: str):
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload keys.")
+        return
+
+    body = raw_text[len("/uploadwinoffice"):].strip()
+
+    SERVICE_MAP = {
+        "windows": ("windows", "Win Key", "🪟"),
+        "win":     ("windows", "Win Key", "🪟"),
+        "office":  ("office",  "Office Key", "📑"),
+    }
+
+    if not body:
+        await send_animated_translated(
+            chat_id,
+            "🗝️ <b>Win / Office Key Uploader</b>\n\n"
+            "<b>Basic (auto display name):</b>\n"
+            "<code>/uploadkeys2\n"
+            "windows\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+            "<b>With custom display name:</b>\n"
+            "<code>/uploadkeys2\n"
+            "windows|Windows 11 Pro\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+            "<b>With remaining count:</b>\n"
+            "<code>/uploadkeys2\n"
+            "office|Office 2021 Pro\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX|50\n"
+            "YYYYY-YYYYY-YYYYY-YYYYY|30</code>\n\n"
+            "<b>Bulk mixed blocks:</b>\n"
+            "<code>/uploadkeys2\n"
+            "windows|Windows 10 Home\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX\n"
+            "YYYYY-YYYYY-YYYYY-YYYYY\n\n"
+            "office|Office 2019\n"
+            "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ|25</code>\n\n"
+            "• First line of each block = <code>service|Custom Name</code>\n"
+            "• Custom name is optional — defaults to Win Key / Office Key\n"
+            "• Key lines support <code>KEY|remaining</code> format\n"
+            "• Separate blocks with a blank line\n\n"
+            "<i>Tip: Use /checkstock to verify after uploading.</i>",
+            animation_url=CARETAKER_GIF,
+        )
+        return
+
+    imported = 0
+    skipped = 0
+    results = []
+    added_counts = {}
+
+    # Split into blocks by blank lines
+    blocks = [b.strip() for b in body.split("\n\n") if b.strip()]
+
+    for block in blocks:
+        lines = [l.strip() for l in block.split("\n") if l.strip() and not l.startswith("#")]
+        if not lines:
+            continue
+
+        # First line = service type (with optional custom display name)
+        # Format: "windows" OR "windows|Windows 11 Pro"
+        first = lines[0]
+        first_parts = first.split("|", 1)
+        service_raw = first_parts[0].strip().lower()
+        custom_name = first_parts[1].strip() if len(first_parts) > 1 else None
+
+        if service_raw not in SERVICE_MAP:
+            skipped += len(lines) - 1
+            results.append(
+                f"❌ Unknown service: <code>{html.escape(first_parts[0])}</code> "
+                f"— use <code>windows</code> or <code>office</code>"
+            )
+            continue
+
+        service_type, default_name, emoji = SERVICE_MAP[service_raw]
+
+        # Use custom name if provided, otherwise use default
+        display_name = custom_name if custom_name else default_name
+
+        key_lines = lines[1:]
+        if not key_lines:
+            results.append(f"⚠️ No keys found under <b>{display_name}</b> block")
+            continue
+
+        for line in key_lines:
+            # Parse KEY|remaining or just KEY
+            if "|" in line:
+                parts = line.split("|")
+                key_id = parts[0].strip()
+                remaining = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip().isdigit() else 999
+            else:
+                key_id = line.strip()
+                remaining = 999
+
+            if not key_id:
+                continue
+
+            payload = {
+                "key_id":       key_id,
+                "remaining":    remaining,
+                "service_type": service_type,
+                "status":       "active",
+                "display_name": display_name,
+            }
+
+            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+
+            if success:
+                imported += 1
+                added_counts[service_type] = added_counts.get(service_type, 0) + 1
+                short = key_id[:25] + "…" if len(key_id) > 25 else key_id
+                results.append(
+                    f"✅ {emoji} <code>{html.escape(short)}</code> "
+                    f"→ <b>{html.escape(display_name)}</b> — {remaining} uses"
+                )
+            else:
+                skipped += 1
+                results.append(f"⚠️ <code>{html.escape(key_id[:25])}</code> — Skipped (duplicate?)")
+
+    # Clear cache so keys show immediately
+    await redis_client.delete("vamt_cache")
+
+    # Build summary with per-service breakdown
+    breakdown = ""
+    if added_counts:
+        breakdown = "\n".join(
+            f"{'🪟' if svc == 'windows' else '📑'} {svc.title()}: <b>+{cnt}</b>"
+            for svc, cnt in added_counts.items()
+        )
+        breakdown = f"\n<b>Breakdown:</b>\n{breakdown}\n"
+
+    summary = (
+        f"🗝️ <b>Key Upload Complete!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"✅ Imported: <b>{imported}</b>\n"
+        f"⚠️ Skipped: <b>{skipped}</b>\n"
+        f"{breakdown}\n"
+        f"<b>Results:</b>\n"
+        + "\n".join(results[:20])
+    )
+
+    if len(results) > 20:
+        summary += f"\n<i>...and {len(results) - 20} more</i>"
+
+    if imported > 0:
+        asyncio.create_task(broadcast_new_resources(added_counts))
+
+    await send_animated_translated(chat_id, summary, animation_url=CARETAKER_GIF)
+
 async def handle_uploadsteam_command(chat_id: int, raw_text: str):
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload Steam accounts.")
@@ -9347,6 +9522,45 @@ async def handle_callback(update: Update):
                     "<code>/addupdate\nYour Title Here\nYour full description here...</code>"
                 ),
             )
+
+        elif data == "caretaker_manualkeys":
+            await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=CARETAKER_GIF,
+                caption=(
+                    "🗝️ <b>Manual Win / Office Key Entry</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "<b>Basic:</b>\n"
+                    "<code>/uploadkeys2\n"
+                    "windows\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+                    "<b>With custom display name:</b>\n"
+                    "<code>/uploadkeys2\n"
+                    "windows|Windows 11 Pro\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+                    "<b>With remaining count:</b>\n"
+                    "<code>/uploadkeys2\n"
+                    "office|Office 2021 Pro\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX|50\n"
+                    "YYYYY-YYYYY-YYYYY-YYYYY|30</code>\n\n"
+                    "<b>Mixed blocks (separate with blank line):</b>\n"
+                    "<code>/uploadkeys2\n"
+                    "windows|Windows 10 LTSC\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX|50\n\n"
+                    "office|Office 2019\n"
+                    "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ|25</code>\n\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "• <code>windows</code> or <code>office</code> = service type\n"
+                    "• <code>|Custom Name</code> = optional display name\n"
+                    "• <code>KEY|50</code> = key with remaining count\n"
+                    "<i>Close this and type the command above.</i> 🍃"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Upload Keys", callback_data="cpage_uploadkeys")],
+                    [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                ])
+            )
+
         elif data == "caretaker_addevent":
             await tg_app.bot.send_message(
                 chat_id,
@@ -9611,6 +9825,9 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/uploadwinoffice"):
+        await handle_uploadwinoffice_command(chat_id, raw)
 
     elif text.startswith("/online"):
             await handle_online_users(chat_id)
