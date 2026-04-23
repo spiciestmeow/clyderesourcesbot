@@ -3624,7 +3624,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
 
     pages = {
 
-        # ── UPLOAD MANUAL KEYS ──
+        # ── UPLOAD KEYS ──
         "uploadkeys": (
             "📤 <b>Key Uploader</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -3773,27 +3773,6 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "🔔 The bot auto-alerts you every 6 hours if stock is low.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📦 Check Stock Now", callback_data="caretaker_checkstock")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
-            ])
-        ),
-
-        # ── UPLOAD KEYS ──
-        "uploadkeys": (
-            "📤 <b>Key Uploader</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "Upload activation keys or cookies by sending a "
-            "<b>.txt</b> or <b>.zip</b> file to the bot.\n\n"
-            "📋 <b>Supported formats:</b>\n"
-            "• Plain keys (one per line)\n"
-            "• Pipe separated: <code>KEY|remaining|service|name</code>\n"
-            "• Cookie files (Netflix, Prime)\n"
-            "• JSON format\n"
-            "• Key:Value block format\n"
-            "• CSV format\n\n"
-            "✅ Service type is <b>auto-detected</b> from filename/content.\n"
-            "✅ After upload, cache is cleared and users are notified automatically.",
-            InlineKeyboardMarkup([
-                [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
                 [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
