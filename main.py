@@ -8243,6 +8243,10 @@ async def handle_callback(update: Update):
     elif data == "caretaker_home":
         if chat_id != OWNER_ID:
             return
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         await handle_caretaker(chat_id, first_name)
         return
     
