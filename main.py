@@ -7447,10 +7447,22 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
         if query and query.message:
             try:
-                await query.message.edit_text(final_text, parse_mode="HTML", reply_markup=markup)
+                await query.message.edit_caption(
+                    caption=final_text,
+                    parse_mode="HTML",
+                    reply_markup=markup
+                )
                 return
             except Exception:
-                pass
+                try:
+                    await query.message.edit_text(
+                        text=final_text,
+                        parse_mode="HTML",
+                        reply_markup=markup
+                    )
+                    return
+                except Exception:
+                    pass
 
         await send_animated_translated(chat_id, final_text, animation_url=STEAM_RESULT_GIF, reply_markup=markup)
         return
@@ -8206,7 +8218,7 @@ async def handle_callback(update: Update):
                 await query.answer("Search expired. Please search again.", show_alert=True)
                 return
             lines = json.loads(stored)
-            # Re-run the bulk search with the stored terms and new page
+            # Pass query so it edits instead of sending new message
             fake_text = "/searchsteam\n" + "\n".join(lines)
             await handle_searchsteam_command(chat_id, fake_text, page=page, query=query)
         except Exception as e:
