@@ -1373,7 +1373,22 @@ def extract_cookie_metadata(content: str) -> dict:
             continue
         lower = line.lower()
 
-        if lower.startswith("plan:"):
+        # Handle comment lines like "# Region: ZA" or "Region: ZA"
+        clean = line.lstrip("#").strip()
+        clean_lower = clean.lower()
+
+        if clean_lower.startswith("plan:"):
+            meta["plan"] = clean.split(":", 1)[1].strip().title()
+
+        elif clean_lower.startswith("region:"):
+            meta["region"] = clean.split(":", 1)[1].strip().upper()
+
+        elif clean_lower.startswith("country:"):
+            meta["region"] = clean.split(":", 1)[1].strip().upper()
+
+        # ← NEW: catch "Profile: LIVEGHOSTCITY" style if region embedded
+        # and also parse standalone Region/Plan lines without "#"
+        elif lower.startswith("plan:"):
             meta["plan"] = line.split(":", 1)[1].strip().title()
 
         elif lower.startswith("region:"):
@@ -1446,15 +1461,24 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             # These always start with a domain like .netflix.com or .amazon.com
             COOKIE_DOMAINS = (
                 ".netflix.com",
+                "www.netflix.com",      # ← ADD THIS
                 ".amazon.com",
+                "www.amazon.com",       # ← ADD THIS
                 ".primevideo.com",
+                "www.primevideo.com",   # ← ADD THIS (from previous fix)
                 ".hotstar.com",
+                "www.hotstar.com",      # ← ADD THIS
                 ".disneyplus.com",
+                "www.disneyplus.com",   # ← ADD THIS
                 ".hulu.com",
+                "www.hulu.com",         # ← ADD THIS
             )
             cookie_lines = [
                 line for line in content.splitlines()
-                if line.strip() and line.strip().lower().startswith(COOKIE_DOMAINS)
+                if line.strip() and (
+                    line.strip().lower().startswith(COOKIE_DOMAINS) or
+                    line.strip().lower().startswith("www.")  
+                )
             ]
             if cookie_lines:
                 cookie_block = "\n".join(cookie_lines)
