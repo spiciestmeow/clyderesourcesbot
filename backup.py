@@ -4595,6 +4595,16 @@ async def show_steam_accounts(
     ).astimezone(pytz.utc).isoformat()
     now_iso = now.astimezone(pytz.utc).isoformat()
 
+    user_claims_data = await _sb_get(
+        "steam_claims",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "select": "account_email",
+            "limit": 500,
+        }
+    ) or []
+    already_claimed_emails = {c["account_email"] for c in user_claims_data}
+
     # ── Lv1-6: Website only ──
     if tier == "public":
         hours, mins = get_time_until_drop()
@@ -4766,6 +4776,14 @@ async def show_steam_accounts(
     claims_today = await get_steam_claims_today(chat_id) if level < 10 else 0
     claims_left = max(0, daily_limit - claims_today) if level < 10 else 999
 
+    # Hide already claimed accounts
+    total_before_filter = len(accounts)
+    accounts = [
+        acc for acc in accounts
+        if acc.get("email", "") not in already_claimed_emails
+    ]
+    total_claimed = len(already_claimed_emails)
+
     # ── Pagination ──
     start = page * ITEMS_PER_PAGE
     page_accounts = accounts[start:start + ITEMS_PER_PAGE]
@@ -4787,6 +4805,7 @@ async def show_steam_accounts(
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"🏷️ {tier_label}{sunday_line}\n"
         f"📦 <b>{len(accounts)}</b> account(s) available\n"
+        f"✅ You claimed: <b>{total_claimed}</b> account(s)\n"
     )
 
     if level < 10:
@@ -9661,13 +9680,19 @@ async def handle_callback(update: Update):
             chat_id, first_name, account_email, game_name
         )
         if not success:
-            await send_temporary_message(
-                chat_id,
-                "🌿 <b>You have already claimed this Steam account!</b>\n\n",
-                duration=3
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "🎮 <b>You already claimed this account!</b>\n\n"
+                    f"🌿 <b>{html.escape(game_name)}</b> is already in your collection.\n\n"
+                    "Tap below to view your claimed accounts and find your credentials. 🍃"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 View My Claims", callback_data="my_steam_claims")],
+                    [InlineKeyboardButton("🎮 Back to Steam", callback_data="vamt_filter_steam")],
+                ])
             )
-    
-            await show_steam_accounts(chat_id, first_name, level, query, page=page)
             return
         
         # ── Deliver ──
