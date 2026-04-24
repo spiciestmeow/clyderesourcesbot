@@ -4776,13 +4776,19 @@ async def show_steam_accounts(
     claims_today = await get_steam_claims_today(chat_id) if level < 10 else 0
     claims_left = max(0, daily_limit - claims_today) if level < 10 else 999
 
-    # Hide already claimed accounts
-    total_before_filter = len(accounts)
+    # ── Count totals BEFORE filtering ──
+    total_all = len(accounts)
+    total_claimed_by_user = sum(
+        1 for acc in accounts
+        if acc.get("email", "") in already_claimed_emails
+    )
+
+    # ── Hide already claimed accounts ──
     accounts = [
         acc for acc in accounts
         if acc.get("email", "") not in already_claimed_emails
     ]
-    total_claimed = len(already_claimed_emails)
+    total_available = len(accounts)
 
     # ── Pagination ──
     start = page * ITEMS_PER_PAGE
@@ -4804,8 +4810,9 @@ async def show_steam_accounts(
         f"🎮 <b>Steam Accounts</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"🏷️ {tier_label}{sunday_line}\n"
-        f"📦 <b>{len(accounts)}</b> account(s) available\n"
-        f"✅ You claimed: <b>{total_claimed}</b> account(s)\n"
+        f"📦 Total Games: <b>{total_all}</b>\n"
+        f"✅ Available: <b>{total_available}</b>\n"
+        f"🎯 You claimed: <b>{total_claimed_by_user}</b>\n"
     )
 
     if level < 10:
