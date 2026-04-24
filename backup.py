@@ -1364,6 +1364,50 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     # ── Fallback ──
     return "unknown", "Netflix Cookie"
 
+def extract_cookie_metadata(content: str) -> dict:
+    """Extract Region/Country and Plan from cookie file header — both optional"""
+    meta = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+
+        if lower.startswith("plan:"):
+            meta["plan"] = line.split(":", 1)[1].strip().title()
+
+        elif lower.startswith("region:"):
+            meta["region"] = line.split(":", 1)[1].strip().upper()
+
+        elif lower.startswith("country:"):
+            meta["region"] = line.split(":", 1)[1].strip().upper()
+
+    return meta
+
+
+def build_display_name(service: str, meta: dict, fallback: str) -> str:
+    base_map = {
+        "netflix": "Netflix",
+        "prime":   "Prime Video",
+        "office":  "Office",
+        "windows": "Windows",
+    }
+    base = base_map.get(service, fallback)
+
+    if not meta:
+        return fallback
+
+    parts = [base]
+    if meta.get("plan"):
+        parts.append(meta["plan"])
+    if meta.get("region"):
+        parts.append(meta["region"])
+
+    if len(parts) == 1:
+        return fallback
+
+    return " ".join(parts)
+
 async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, list[str], dict]:
     imported = 0
     skipped = 0
@@ -1388,6 +1432,10 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     )
 
     if is_cookie_file:
+        # ── NEW: Extract Plan/Region from header ──
+        meta = extract_cookie_metadata(content)
+        detected_display = build_display_name(detected_service, meta, detected_display)
+
         # Try to extract only the cookie block
         if "# copy the cookies from here" in content.lower():
             # Find the marker regardless of exact spacing/casing
