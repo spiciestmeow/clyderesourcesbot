@@ -5249,7 +5249,16 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         # ── Deliver the cookie ──
         cookie = str(item.get("key_id", "")).strip()
         display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
+
+        # ── USE service_type as the title (it has the plan detail e.g. "Netflix Premium GB") ──
+        raw_service_type = str(item.get("service_type") or "").strip()
+        title_name = raw_service_type if raw_service_type else display_name
+
         action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
+
+        # Plan detail from service_type now, not display_name
+        plan_detail = raw_service_type.replace("Netflix", "").replace("PrimeVideo", "").strip()
+        plan_line = f"📋  Plan: <b>{plan_detail}</b>\n" if plan_detail and plan_detail.lower() != "cookie" else ""
 
         freshness    = get_freshness_badge(item.get("last_updated"))
         dot          = freshness[0]
@@ -5257,23 +5266,40 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         service_name = "Netflix" if service_type == "netflix" else "Prime Video"
         accent       = "🔴" if service_type == "netflix" else "🔵"
 
+        # Region flag — check service_type now
+        region_hints = {
+            "PL": "🇵🇱", "FR": "🇫🇷", "VN": "🇻🇳", "GB": "🇬🇧",
+            "US": "🇺🇸", "PH": "🇵🇭", "KR": "🇰🇷", "JP": "🇯🇵",
+        }
+        region_flag = ""
+        for code, flag in region_hints.items():
+            if raw_service_type.upper().endswith(code):
+                region_flag = f" {flag}"
+                break
+
         caption = (
-            f"{accent} <b>{display_name}</b>\n"
+            f"{accent} <b>{title_name}</b>{region_flag}\n"
             f"──────────────────────\n\n"
             f"{dot}  Freshness: <b>{age_text}</b>\n"
+            f"{plan_line}"
             f"📦  Uses remaining: <b>{item.get('remaining', 0)}</b>\n"
+            f"🌐  Service: <b>{service_name}</b>\n"
             f"📄  Delivered as <code>.txt</code> file below\n\n"
             f"<i>Import the file using a cookie editor extension.</i>"
         )
 
+        manila = pytz.timezone("Asia/Manila")
+        revealed_at = datetime.now(manila).strftime('%Y-%m-%d at %H:%M:%S')
+
         file_content = (
-            f"🌿🍃 Clyde's Enchanted Clearing — Secret {service_type.title()} Cookie 🌿🍃\n"
+            f"🌿🍃 Clyde's Enchanted Clearing — Secret {title_name} Cookie 🌿🍃\n"
             "══════════════════════════════════════════════════════════════\n"
             f"🌳 Cookie Spirit Awakened\n"
-            f"Name : {display_name}\n"
+            f"Name : {title_name}\n"
+            f"Plan : {plan_detail if plan_detail and plan_detail.lower() != 'cookie' else service_name}\n"
             f"Status : ✅ Working\n"
             f"Remaining: {item.get('remaining', 0)} uses\n"
-            f"Revealed on : {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}\n"
+            f"Revealed on : {revealed_at} (PH Time)\n"
             "🌲 Guard it well, wanderer.\n"
             "══════════════════════════════════════════════════════════════\n"
             f"{cookie}\n"
