@@ -7,6 +7,7 @@ import zipfile
 import io
 import html
 import httpx
+import hashlib
 import pytz
 import redis.asyncio as aioredis
 from collections import Counter
@@ -1478,8 +1479,10 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             errors.append(f"❌ {filename}: Cookie block was empty after extraction")
             return 0, 1, errors, {}
 
+        key_id, cookie_data = make_key_id(cookie_block)
         payload = {
-            "key_id":       cookie_block,
+            "key_id":       key_id,
+            "cookie_data":  cookie_data,
             "remaining":    999,
             "service_type": detected_service,
             "status":       "active",
@@ -4927,7 +4930,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         await asyncio.sleep(1.5)
 
         # ── Deliver the cookie ──
-        cookie = str(item.get("key_id", "")).strip()
+        cookie = str(item.get("cookie_data") or item.get("key_id", "")).strip()
         display_name = str(item.get("display_name") or "").strip() or f"{service_type.title()} Cookie"
         action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
 
@@ -5939,6 +5942,19 @@ async def handle_updates(chat_id: int):
         disable_web_page_preview=True
     )
 
+
+
+def make_key_id(content: str) -> tuple[str, str | None]:
+    """
+    Returns (key_id, cookie_data).
+    If content is too large for PK index (>2000 bytes), 
+    key_id = MD5 hash, cookie_data = full content.
+    Otherwise key_id = content, cookie_data = None.
+    """
+    if len(content.encode('utf-8')) > 2000:
+        hashed = hashlib.md5(content.encode('utf-8')).hexdigest()
+        return hashed, content
+    return content, None
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
