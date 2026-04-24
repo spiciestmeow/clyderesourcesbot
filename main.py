@@ -24,6 +24,7 @@ from telegram.ext import Application
 from deep_translator import GoogleTranslator
 from gifs import *
 from telegram import InputMediaPhoto
+from regions import REGION_HINTS, get_region_flag
 
 # ──────────────────────────────────────────────
 # AUTO TRANSLATION SYSTEM — English + Tagalog + Bisaya (using deep-translator)
@@ -5079,6 +5080,7 @@ async def show_paginated_cookie_list(
 
     for idx, item in enumerate(page_items, start=start + 1):
         raw_svc    = str(item.get("service_type") or service_type).strip()
+
         item_label = raw_svc if raw_svc != raw_svc.lower() else raw_svc.title()
 
         badge     = get_freshness_badge(item.get("last_updated"))
@@ -5088,16 +5090,8 @@ async def show_paginated_cookie_list(
         age_label = badge[2:].strip() if len(badge) > 1 else "Unknown age"
         remaining = item.get("remaining", 0)
 
-        # ── Region flag (same logic as reveal_cookie) ──
-        region_hints = {
-            "PL": "🇵🇱", "FR": "🇫🇷", "VN": "🇻🇳", "GB": "🇬🇧",
-            "US": "🇺🇸", "PH": "🇵🇭", "KR": "🇰🇷", "JP": "🇯🇵",
-        }
-        region_flag = ""
-        for code, flag in region_hints.items():
-            if raw_svc.upper().endswith(code):
-                region_flag = f" {flag}"
-                break
+       # REMOVE the old dict + for loop, replace with:
+        region_flag = get_region_flag(raw_svc)
 
         body += f"{dot} <b>{item_label}</b>{region_flag}\n"
         body += f"   {age_label}  ·  {remaining} uses left\n\n"
@@ -5269,16 +5263,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         service_name = "Netflix" if service_type == "netflix" else "Prime Video"
         accent       = "🔴" if service_type == "netflix" else "🔵"
 
-        # Region flag — check service_type now
-        region_hints = {
-            "PL": "🇵🇱", "FR": "🇫🇷", "VN": "🇻🇳", "GB": "🇬🇧",
-            "US": "🇺🇸", "PH": "🇵🇭", "KR": "🇰🇷", "JP": "🇯🇵",
-        }
-        region_flag = ""
-        for code, flag in region_hints.items():
-            if raw_service_type.upper().endswith(code):
-                region_flag = f" {flag}"
-                break
+        region_flag = get_region_flag(raw_service_type)
 
         caption = (
             f"{accent} <b>{title_name}</b>{region_flag}\n"
