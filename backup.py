@@ -1371,9 +1371,8 @@ def extract_cookie_metadata(content: str) -> dict:
         line = line.strip()
         if not line:
             continue
-        lower = line.lower()
 
-        # Handle comment lines like "# Region: ZA" or "Region: ZA"
+        # Strip leading # and whitespace (handles both "# Region: ZA" and "Region: ZA")
         clean = line.lstrip("#").strip()
         clean_lower = clean.lower()
 
@@ -1385,17 +1384,6 @@ def extract_cookie_metadata(content: str) -> dict:
 
         elif clean_lower.startswith("country:"):
             meta["region"] = clean.split(":", 1)[1].strip().upper()
-
-        # ← NEW: catch "Profile: LIVEGHOSTCITY" style if region embedded
-        # and also parse standalone Region/Plan lines without "#"
-        elif lower.startswith("plan:"):
-            meta["plan"] = line.split(":", 1)[1].strip().title()
-
-        elif lower.startswith("region:"):
-            meta["region"] = line.split(":", 1)[1].strip().upper()
-
-        elif lower.startswith("country:"):
-            meta["region"] = line.split(":", 1)[1].strip().upper()
 
     return meta
 
