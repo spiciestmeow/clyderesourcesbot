@@ -5064,14 +5064,6 @@ async def show_paginated_cookie_list(
     body = ""
     buttons = []
 
-    FRESHNESS_COMPACT = {
-        "🟢": "Fresh",
-        "🟡": "Recent",
-        "🟠": "Aging",
-        "🔴": "Old",
-        "⚪": "Unknown",
-    }
-
     if user_level >= 6:
         tier_header = (
             "✨ <b>Freshest Cookies First</b>\n"
@@ -5107,12 +5099,12 @@ async def show_paginated_cookie_list(
                 region_flag = f" {flag}"
                 break
 
-        body += f"{dot} <b>{item_label}</b>\n"
+        body += f"{dot} <b>{item_label}</b>{region_flag}\n"
         body += f"   {age_label}  ·  {remaining} uses left\n\n"
         
         buttons.append([
             InlineKeyboardButton(
-                f"Reveal  {dot}  {item_label}",
+                f"Reveal  {dot}  {item_label}{region_flag}",
                 callback_data=f"reveal_{service_type}|{idx}|{page}"
             )
         ])
