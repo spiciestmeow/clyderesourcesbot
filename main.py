@@ -5091,7 +5091,9 @@ async def show_paginated_cookie_list(
 
         badge     = get_freshness_badge(item.get("last_updated"))
         dot       = badge[0]
-        age_label = FRESHNESS_COMPACT.get(dot, "")
+
+        # ── CHANGE THIS: use full badge instead of compact map ──
+        age_label = badge[2:].strip() if len(badge) > 1 else "Unknown age"
         remaining = item.get("remaining", 0)
 
         body += f"{dot} <b>{item_label}</b>\n"
