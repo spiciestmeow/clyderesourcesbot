@@ -5942,19 +5942,13 @@ async def handle_updates(chat_id: int):
         disable_web_page_preview=True
     )
 
-
-
 def make_key_id(content: str) -> tuple[str, str | None]:
-    """
-    Returns (key_id, cookie_data).
-    If content is too large for PK index (>2000 bytes), 
-    key_id = MD5 hash, cookie_data = full content.
-    Otherwise key_id = content, cookie_data = None.
-    """
-    if len(content.encode('utf-8')) > 2000:
-        hashed = hashlib.md5(content.encode('utf-8')).hexdigest()
-        return hashed, content
+    """Always hash large content (cookies). Short keys stay as-is."""
+    encoded = content.encode('utf-8')
+    if len(encoded) > 200:
+        return hashlib.md5(encoded).hexdigest(), content
     return content, None
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
