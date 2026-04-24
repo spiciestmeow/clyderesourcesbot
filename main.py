@@ -5096,6 +5096,17 @@ async def show_paginated_cookie_list(
         age_label = badge[2:].strip() if len(badge) > 1 else "Unknown age"
         remaining = item.get("remaining", 0)
 
+        # ── Region flag (same logic as reveal_cookie) ──
+        region_hints = {
+            "PL": "🇵🇱", "FR": "🇫🇷", "VN": "🇻🇳", "GB": "🇬🇧",
+            "US": "🇺🇸", "PH": "🇵🇭", "KR": "🇰🇷", "JP": "🇯🇵",
+        }
+        region_flag = ""
+        for code, flag in region_hints.items():
+            if raw_svc.upper().endswith(code):
+                region_flag = f" {flag}"
+                break
+
         body += f"{dot} <b>{item_label}</b>\n"
         body += f"   {age_label}  ·  {remaining} uses left\n\n"
         
