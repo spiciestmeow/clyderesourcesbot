@@ -34,9 +34,26 @@ SUPPORTED_LANGUAGES = {
     "ceb": ("🇵🇭", "Bisaya"),
 }
 
+
+LEVEL_TITLE_DESCRIPTIONS = {
+    1: ("🌱 Young Sprout",        "Your first steps into the enchanted forest."),
+    2: ("🌿 Forest Sprout",       "The trees are beginning to recognize you."),
+    3: ("🍃 Gentle Wanderer",     "You move through the clearing with quiet curiosity."),
+    4: ("🌳 Woodland Explorer",   "The hidden paths of the forest open before you."),
+    5: ("🌲 Whispering Wanderer", "The ancient trees whisper your name in the wind."),
+    6: ("🪵 Tree Guardian",       "You stand firm like the oldest oak in the clearing."),
+    7: ("🌌 Mist Walker",         "You drift through the forest like morning fog."),
+    8: ("✨ Enchanted Keeper",    "The forest spirits have chosen you as their keeper."),
+    9: ("🌠 Ancient Soul",        "Your roots run deeper than the oldest tree."),
+    10: ("🌟 Eternal Guardian",   "The entire enchanted clearing bows to your wisdom."),
+}
+
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
 # ══════════════════════════════════════════════════════════════════════════════
+BOT_READY = False  # global flag
 
 ACHIEVEMENTS_CACHE: dict = {}
 
@@ -61,6 +78,17 @@ async def get_user_achievements(chat_id: int) -> list:
         **{"chat_id": f"eq.{chat_id}", "select": "*"}
     ) or []
     return data
+
+async def get_user_telegram_photo(chat_id: int) -> str | None:
+    """Fetch user's Telegram profile photo file_id"""
+    try:
+        photos = await tg_app.bot.get_user_profile_photos(user_id=chat_id, limit=1)
+        if not photos or photos.total_count == 0:
+            return None
+        return photos.photos[0][-1].file_id  # highest res, file_id doesn't expire
+    except Exception as e:
+        print(f"⚠️ Could not fetch profile photo for {chat_id}: {e}")
+        return None
 
 async def get_gif_enabled(chat_id: int) -> bool:
     val = await redis_client.get(f"setting:gifs:{chat_id}")
@@ -286,11 +314,13 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
         f"<i>The ancient forest spirits have recognized you, {html.escape(first_name)}!</i> 🌲✨"
     )
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         animation_url=ach.get("gif_url") or "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
         caption=caption,
     )
+
+    await _remember(chat_id, msg.message_id)
 
     # ── TEMP PERK REMINDER (3 seconds delay so it appears after the animation) ──
     if perk_text:
@@ -316,39 +346,6 @@ async def get_forest_patrons() -> list:
 
     await redis_client.setex("patrons_cache", 3600, json.dumps(data))
     return data
-
-async def get_earned_titles(chat_id: int, profile: dict) -> list[str]:
-    """Get list of earned title strings for a user based on their profile"""
-    titles = []
-    level = profile.get("level", 1)
-    
-    # Add level-based titles
-    title = get_level_title(level)
-    if title:
-        titles.append(title)
-    
-    # Add achievement-based titles if any
-    user_achs = await get_user_achievements(chat_id)
-    for u in user_achs:
-        if u.get("unlocked_at"):
-            code = u.get("achievement_code", "")
-            ach = ACHIEVEMENTS_CACHE.get(code, {})
-            reward = ach.get("reward", {})
-            if reward.get("type") == "title":
-                title_text = reward.get("title_text")
-                if title_text:
-                    titles.append(title_text)
-    
-    return titles
-
-
-async def get_active_display_title(chat_id: int, profile: dict) -> str:
-    """Get the currently active display title for a user"""
-    level = profile.get("level", 1)
-    custom_title = profile.get("active_title")
-    if custom_title:
-        return custom_title
-    return get_level_title(level)
 
 async def add_patron(username: str, title: str = "Kind Wanderer") -> bool:
     """Add a new donor"""
@@ -687,41 +684,38 @@ BOT_USERNAME: str | None = None
 # ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global tg_app, http, redis_client
+    global tg_app, http, redis_client, BOT_READY
 
-    # Shared HTTP connection pool (20 connections max)
     http = httpx.AsyncClient(
         timeout=12.0,
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     )
-    # Inside lifespan() after starting Telegram
-    await load_achievements_cache()
-    print("✅ Achievement system loaded (54 achievements)")
 
-    # Redis for cooldowns + VAMT cache
     redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
-    # Telegram application
     tg_app = Application.builder().token(TOKEN).build()
     await tg_app.initialize()
     await tg_app.start()
 
-    # ── ADD THIS ──
+    await load_achievements_cache()
+    print("✅ Achievement system loaded")
+
     asyncio.create_task(steam_daily_release_scheduler())
-    print("⏰ Steam daily release scheduler started")
-
     asyncio.create_task(low_stock_monitor())
-    print("⏰ Low stock monitor started")
 
-    # ── ADD THESE 4 LINES ──
     global BOT_USERNAME
     me = await tg_app.bot.get_me()
     BOT_USERNAME = me.username
     print(f"✅ Bot username cached: @{BOT_USERNAME}")
 
-    print("✅ Bot started — FastAPI lifespan ready")
-    yield
+    # ✅ Set AFTER everything is ready — only ONE yield
+    BOT_READY = True
+    await redis_client.setex("bot_just_restarted", 180, "1")
+    print("✅ Bot fully ready")
 
-    # ── teardown ──
+    yield  # ← only one yield here
+
+    # teardown
+    BOT_READY = False
     await tg_app.stop()
     await tg_app.shutdown()
     await http.aclose()
@@ -970,6 +964,37 @@ async def _sb_post(path: str, payload: dict | list) -> bool:
             print(f"🔴 SB POST {path}: {e}")
             return False
         
+async def _send_cold_start_notice(chat_id: int):
+    """Tells user bot just woke up, waits until ready, then auto-deletes"""
+    try:
+        msg = await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "⏳ <b>The forest is waking up...</b>\n\n"
+                "The bot just restarted. Your request will be ready in a moment.\n"
+                "<i>Please wait a few seconds before tapping buttons.</i> 🍃"
+            ),
+            parse_mode="HTML"
+        )
+
+        # Wait until bot is actually ready (max 15 seconds)
+        for _ in range(15):
+            if BOT_READY:
+                break
+            await asyncio.sleep(1)
+
+        await asyncio.sleep(2)  # small buffer after ready
+
+        try:
+            await tg_app.bot.delete_message(
+                chat_id=chat_id,
+                message_id=msg.message_id
+            )
+        except Exception:
+            pass
+
+    except Exception:
+        pass
 
 # ──────────────────────────────────────────────
 # NOTION INTEGRATION (Ready for Render)
@@ -1111,16 +1136,33 @@ async def get_vamt_data() -> list | None:
     if cached:
         print("⚡ [CACHE] VAMT from Redis")
         return json.loads(cached)
-
-    print("📡 [SUPABASE] Fetching fresh VAMT data…")
-    data = await _sb_get("vamt_keys", select="*", order="service_type.asc")
-    if data is not None:
-        await redis_client.setex("vamt_cache", CACHE_TTL, json.dumps(data))
-        print(f"✅ VAMT cached — {len(data)} items")
-    else:
-        print("🔴 Supabase returned nothing for vamt_keys")
-    return data
-
+ 
+    # ── Stampede lock: only ONE coroutine fetches at a time ──
+    lock_key = "vamt_cache_lock"
+    acquired = await redis_client.set(lock_key, 1, ex=10, nx=True)
+ 
+    if not acquired:
+        # Another coroutine is already fetching — wait and retry
+        for _ in range(10):
+            await asyncio.sleep(0.5)
+            cached = await redis_client.get("vamt_cache")
+            if cached:
+                print("⚡ [CACHE] VAMT from Redis (waited for lock)")
+                return json.loads(cached)
+        # Fallback: fetch anyway if lock holder failed
+        print("⚠️ Lock wait timed out — fetching directly")
+ 
+    try:
+        print("📡 [SUPABASE] Fetching fresh VAMT data…")
+        data = await _sb_get("vamt_keys", select="*", order="service_type.asc")
+        if data is not None:
+            await redis_client.setex("vamt_cache", CACHE_TTL, json.dumps(data))
+            print(f"✅ VAMT cached — {len(data)} items")
+        else:
+            print("🔴 Supabase returned nothing for vamt_keys")
+        return data
+    finally:
+        await redis_client.delete(lock_key)
 
 async def send_supabase_error(chat_id: int, query=None):
     """
@@ -1187,15 +1229,15 @@ async def handle_flushcache(chat_id: int):
 async def broadcast_new_resources(added_counts: dict):
     if not added_counts or not any(added_counts.values()):
         return
-
+ 
     service_emojis = {
         "netflix": "🍿", "prime": "🎥", "windows": "🪟",
         "win": "🪟", "office": "📑", "steam": "🎮",
     }
     service_names = DISPLAY_NAME_MAP.copy()
     service_names["steam"] = "Steam Account"
-
-    # Build per-service lines so we can send targeted messages
+ 
+    # Build per-service lines
     service_lines = {}
     for svc, count in added_counts.items():
         if count > 0:
@@ -1204,13 +1246,13 @@ async def broadcast_new_resources(added_counts: dict):
             service_lines[svc.lower()] = (
                 f"🌱 {emoji} +{count} {name}{'s' if count > 1 else ''} just added!"
             )
-
+ 
     if not service_lines:
         return
-
-    # Fetch all users including their notif prefs
+ 
+    # Fetch all users with pagination (handles >1000 users correctly)
     all_users = []
-    limit, offset = 1000, 0
+    limit, offset = 500, 0
     while True:
         batch = await _sb_get(
             "user_profiles",
@@ -1223,13 +1265,10 @@ async def broadcast_new_resources(added_counts: dict):
         if len(batch) < limit:
             break
         offset += limit
-
-    print(f"📣 Targeted broadcast → {len(all_users)} users")
-
-    sem = asyncio.Semaphore(20)
-    success_count = 0
-
-    # Normalize col names for lookup
+ 
+    print(f"📣 Broadcast → {len(all_users)} users")
+ 
+    # Notification column map
     notif_col = {
         "netflix": "notif_netflix",
         "prime":   "notif_prime",
@@ -1238,56 +1277,93 @@ async def broadcast_new_resources(added_counts: dict):
         "office":  "notif_windows",
         "steam":   "notif_steam",
     }
-
+ 
+    # ── Metrics ──
+    success_count = 0
+    blocked_count = 0
+    failed_count  = 0
+ 
+    # ── Rate limit: Telegram allows ~30 msg/sec globally ──
+    # We use a semaphore of 25 + 0.05s sleep = ~20 msg/sec (safe margin)
+    sem = asyncio.Semaphore(25)
+ 
     async def safe_notify(user: dict):
-        nonlocal success_count
+        nonlocal success_count, blocked_count, failed_count
+ 
         uid = int(user.get("chat_id"))
-
+ 
         # Build lines this user is subscribed to
         user_lines = []
         for svc, line in service_lines.items():
             col = notif_col.get(svc)
-            # Default True if column missing; False only if explicitly False
             subscribed = user.get(col, True)
             if subscribed is not False:
                 user_lines.append(line)
-
+ 
         if not user_lines:
-            print(f"   ⏭ Skipped (all opted out): {uid}")
-            return
-
-        final_line = "\n".join(user_lines)
-
+            return  # user opted out of all relevant services
+ 
+        text = "\n".join(user_lines)
+ 
         async with sem:
-            try:
-                msg = await tg_app.bot.send_message(
-                    chat_id=uid,
-                    text=final_line,
-                    parse_mode="HTML",
-                    disable_notification=False,
-                    disable_web_page_preview=True,
-                    protect_content=True
-                )
-                await asyncio.sleep(10.0 + random.uniform(0.0, 1.0))
-                await tg_app.bot.delete_message(chat_id=uid, message_id=msg.message_id)
-                success_count += 1
-                print(f"   ✓ Sent & cleaned: {uid}")
-            except Exception as e:
-                print(f"   ⚠️ Failed for {uid}: {e}")
-
+            # Small delay to stay under Telegram rate limit
+            await asyncio.sleep(0.05 + random.uniform(0, 0.02))
+ 
+            for attempt in range(2):  # 1 retry on flood
+                try:
+                    msg = await tg_app.bot.send_message(
+                        chat_id=uid,
+                        text=text,
+                        parse_mode="HTML",
+                        disable_notification=False,
+                        disable_web_page_preview=True,
+                        protect_content=True
+                    )
+                    success_count += 1
+ 
+                    # Auto-delete after 30 seconds (non-blocking)
+                    asyncio.create_task(_delayed_delete(uid, msg.message_id, delay=30))
+                    return
+ 
+                except Exception as e:
+                    err = str(e).lower()
+ 
+                    if "bot was blocked" in err or "user is deactivated" in err or "chat not found" in err:
+                        blocked_count += 1
+                        return  # no retry for blocked users
+ 
+                    if "flood" in err or "too many requests" in err:
+                        # Extract retry_after if available
+                        retry_after = 5
+                        try:
+                            retry_after = int(str(e).split("retry after")[1].strip().split()[0])
+                        except Exception:
+                            pass
+                        print(f"⏳ Flood wait {retry_after}s for {uid}")
+                        await asyncio.sleep(retry_after + 1)
+                        continue  # retry once
+ 
+                    failed_count += 1
+                    print(f"⚠️ Broadcast failed for {uid}: {e}")
+                    return
+ 
+    # Run all notifications concurrently (semaphore controls actual concurrency)
     await asyncio.gather(
         *(safe_notify(u) for u in all_users),
         return_exceptions=True
     )
-
+ 
+    # Summary to owner
     try:
         await tg_app.bot.send_message(
             OWNER_ID,
-            f"📣 <b>Targeted Broadcast Complete</b>\n\n"
-            + "\n".join(service_lines.values())
+            f"📣 <b>Broadcast Complete</b>\n\n"
+            + "\n".join(f"• {line}" for line in service_lines.values())
             + f"\n\n👥 Total users: <b>{len(all_users)}</b>\n"
-            f"✅ Delivered: <b>{success_count}</b>\n\n"
-            f"<i>Users who opted out of a service were skipped.</i>",
+            f"✅ Delivered: <b>{success_count}</b>\n"
+            f"🚫 Blocked/Inactive: <b>{blocked_count}</b>\n"
+            f"❌ Failed: <b>{failed_count}</b>\n\n"
+            f"<i>Users who opted out were skipped automatically.</i>",
             parse_mode="HTML",
         )
     except Exception:
@@ -1796,26 +1872,74 @@ async def handle_document(update: Update):
 
         document = message.document
         animation = message.animation
+        photo = message.photo  # ← ADD THIS
+
+        ACCEPTED_MIME_TYPES = (
+            "image/gif",
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+            "image/webp",
+        )
+        ACCEPTED_EXTENSIONS = (".gif", ".png", ".jpg", ".jpeg", ".webp")
 
         file_id = None
+        is_animated = False
+
         if animation:
+            # Telegram GIF/animation
             file_id = animation.file_id
-        elif document and (document.mime_type == "image/gif" or document.file_name.lower().endswith(".gif")):
-            if document.file_size and document.file_size > 10 * 1024 * 1024:
-                await message.reply_text("❌ GIF is too big. Maximum 10 MB.")
+            is_animated = True
+
+        elif photo:
+            # Compressed photo sent directly
+            file_id = photo[-1].file_id  # highest resolution
+
+        elif document:
+            fname = (document.file_name or "").lower()
+            mime = document.mime_type or ""
+
+            is_accepted = (
+                mime in ACCEPTED_MIME_TYPES or
+                any(fname.endswith(ext) for ext in ACCEPTED_EXTENSIONS)
+            )
+
+            if not is_accepted:
+                await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
+                msg = await send_animated_translated(
+                    chat_id=chat_id,
+                    animation_url=LOADING_GIF,
+                    caption=(
+                        "❌ <b>Unsupported file type, wanderer!</b>\n\n"
+                        "🌿 Please send one of the following:\n"
+                        "• <b>GIF</b> — animated logo\n"
+                        "• <b>PNG / JPG / WEBP</b> — static logo\n\n"
+                        "<i>The forest only accepts these formats... 🍃</i>"
+                    ),
+                )
+                await asyncio.sleep(3)
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
                 return
+
+            if document.file_size and document.file_size > 10 * 1024 * 1024:
+                await message.reply_text("❌ File is too big. Maximum 10 MB.")
+                return
+
             file_id = document.file_id
+            is_animated = mime == "image/gif" or fname.endswith(".gif")
+
         else:
-            # Reset waiting key so they can retry immediately
             await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
-            
             msg = await send_animated_translated(
                 chat_id=chat_id,
                 animation_url=LOADING_GIF,
                 caption=(
-                    "❌ <b>That's not a GIF, wanderer!</b>\n\n"
-                    "🌿 Please send an actual <b>GIF</b> file or animation.\n"
-                    "<i>The forest only accepts GIF magic... 🍃</i>"
+                    "❌ <b>Please send an image or GIF, wanderer!</b>\n\n"
+                    "🌿 Supported: <b>GIF, PNG, JPG, WEBP</b>\n"
+                    "<i>The forest is waiting... 🍃</i>"
                 ),
             )
             await asyncio.sleep(3)
@@ -1824,13 +1948,12 @@ async def handle_document(update: Update):
             except Exception:
                 pass
             return
-
+        
         if file_id:
             success = await set_user_profile_gif(chat_id, file_id)
             if success:
                 await redis_client.setex(f"profile_gif_cooldown:{chat_id}", 7*24*3600, "1")
 
-                # ── Increment per-user counter in DB ──
                 profile = await get_user_profile(chat_id)
                 current_count = (profile.get("profile_gif_changes") or 0) + 1
                 await _sb_patch(
@@ -1838,13 +1961,26 @@ async def handle_document(update: Update):
                     {"profile_gif_changes": current_count}
                 )
 
-                await send_animated_translated(
-                    chat_id=chat_id,
-                    animation_url=file_id,
-                    caption="✨ <b>Your profile logo has been enchanted and SAVED!</b>\n\n"
-                            "It will now appear every time you view your profile 🌿\n\n"
-                            "<i>Try /profile to see it live.</i>",
-                )
+                logo_type = "animated GIF" if is_animated else "image"  # ← dynamic label
+
+                # Use send_photo for static, send_animation for GIF
+                if is_animated:
+                    await send_animated_translated(
+                        chat_id=chat_id,
+                        animation_url=file_id,
+                        caption=f"✨ <b>Your profile {logo_type} has been saved!</b>\n\n"
+                                "It will now appear every time you view your profile 🌿\n\n"
+                                "<i>Try /profile to see it live.</i>",
+                    )
+                else:
+                    await tg_app.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=file_id,
+                        caption=f"✨ <b>Your profile {logo_type} has been saved!</b>\n\n"
+                                "It will now appear every time you view your profile 🌿\n\n"
+                                "<i>Try /profile to see it live.</i>",
+                        parse_mode="HTML",
+                    )
             else:
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
         return
@@ -2108,8 +2244,15 @@ async def send_onboarding_step(chat_id: int, first_name: str, step: int):
             "Every action in the clearing earns you <b>XP</b>:\n\n"
             "• View any list → <b>+8 XP</b>\n"
             "• Reveal a Netflix cookie → <b>+14 XP</b>\n"
-            "• Daily login bonus → <b>+10 to +30 XP</b>\n"
-            "• Spin the Wheel of Whispers → <b>+13 to +100 XP</b>\n\n"
+            "• Spin the Wheel of Whispers → <b>+13 to +75 XP</b>\n\n"
+            "🌅 <b>Daily Login Streak Bonus:</b>\n\n"
+            "• Day 1 → <b>+10 XP</b> 🌅\n"
+            "• Day 2 → <b>+12 XP</b> 🌱\n"
+            "• Day 3-6 → <b>+20 XP</b> 🔥\n"
+            "• Day 7-13 → <b>+30 XP</b> ⚡\n"
+            "• Day 14-29 → <b>+40 XP</b> 🌟\n"
+            "• Day 30-59 → <b>+50 XP</b> 🏆\n"
+            "• Day 60+ → <b>+60 XP</b> 🌠\n\n"
             "⭐ <b>Why level up?</b>\n"
             "Higher levels unlock more items per day!\n\n"
             "• Level 1 → 5 Netflix cookies/day\n"
@@ -2119,7 +2262,7 @@ async def send_onboarding_step(chat_id: int, first_name: str, step: int):
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("← Back", callback_data="onboarding_step_1"),
-             InlineKeyboardButton("Next → Your First Action 🎯", callback_data="onboarding_step_3")],
+            InlineKeyboardButton("Next → Your First Action 🎯", callback_data="onboarding_step_3")],
             [InlineKeyboardButton("⏩ Skip Tour", callback_data="onboarding_skip")],
         ])
 
@@ -2227,7 +2370,8 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "notif_netflix,notif_prime,notif_windows,notif_steam,"
                 "profile_gif_id,profile_gif_changes,"
                 "all_slots_bonus,windows_views_bonus,netflix_reveals_bonus,"
-                "prime_reveals_bonus,daily_reveals_bonus"
+                "prime_reveals_bonus,daily_reveals_bonus,"
+                "active_title" 
             ),
         },
     )
@@ -2246,7 +2390,6 @@ async def update_last_active(chat_id: int, action: str = "browsing"):
         f"user_profiles?chat_id=eq.{chat_id}",
         {
             "last_active": datetime.now(pytz.utc).isoformat(),
-            "last_action": action
         }
     )
     # Notify owner — only once per 15 min per user (avoid spam)
@@ -2391,6 +2534,15 @@ async def _debounced_broadcast(chat_id: int):
     
     if any(added_counts.values()):
         await broadcast_new_resources(added_counts)
+
+async def _delayed_delete(chat_id: int, message_id: int, delay: int = 30):
+    """Delete a message after a delay without blocking the broadcast loop."""
+    await asyncio.sleep(delay)
+    try:
+        await tg_app.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+ 
 
 async def get_event_countdown(event: dict) -> str:
     """Returns a nice countdown string like '⏳ Ends in 14h 32m' or empty if expired."""
@@ -2598,24 +2750,28 @@ async def _check_daily_bonus(chat_id: int, first_name: str, profile: dict) -> tu
     ttl = int((midnight - now).total_seconds())
     key = f"daily_bonus:{chat_id}"
 
-    # ATOMIC: only one concurrent request wins this SET
-    # nx=True means "only set if key does NOT exist"
-    # If the key already exists, set() returns None → bonus already claimed
     claimed = await redis_client.set(key, 1, ex=ttl, nx=True)
     if not claimed:
-        return 0, ""  # already claimed today — bonus not available
+        return 0, ""
 
-    # Won the race — compute bonus amount
     streak = await calculate_streak(chat_id)
-    if streak >= 7:
-        bonus, label = 30, "🔥🔥 7-Day Streak Bonus!"
+
+    if streak >= 60:
+        bonus, label = 60, "🌠 Ancient Soul Bonus!"
+    elif streak >= 30:
+        bonus, label = 50, "🏆 Devoted Wanderer Bonus!"
+    elif streak >= 14:
+        bonus, label = 40, "🌟 Forest Regular Bonus!"
+    elif streak >= 7:
+        bonus, label = 30, "⚡ Week Warrior Bonus!"
     elif streak >= 3:
         bonus, label = 20, "🔥 3-Day Streak Bonus!"
+    elif streak >= 2:
+        bonus, label = 12, "🌱 Getting Started!"
     else:
         bonus, label = 10, "🌅 Daily Login Bonus!"
 
     return bonus, label
-
 # ──────────────────────────────────────────────
 # NOTIFICATION PREFERENCE HELPERS
 # ──────────────────────────────────────────────
@@ -2671,14 +2827,33 @@ async def get_referral_link(chat_id: int) -> str:
     
     return f"https://t.me/{BOT_USERNAME}?start=ref_{chat_id}"
 
-
 async def store_pending_referral(new_chat_id: int, referrer_id: int) -> bool:
-    """Store pending referral. Returns True if stored, False if self-referral."""
     if referrer_id == new_chat_id:
         return False
-    await redis_client.setex(f"pending_ref:{new_chat_id}", 86400, str(referrer_id))
+    
+    # Check if already referred before
+    existing = await _sb_get(
+        "referrals",
+        **{"referred_id": f"eq.{new_chat_id}", "select": "id"}
+    )
+    if existing:
+        return False  # already has a referrer, don't overwrite
+    
+    await redis_client.setex(f"pending_ref:{new_chat_id}", 604800, str(referrer_id))
+    
+    # Notify referrer their link was clicked
+    try:
+        await tg_app.bot.send_message(
+            referrer_id,
+            "🌲 <b>Someone clicked your invite link!</b>\n\n"
+            "🌿 Waiting for them to complete onboarding...\n"
+            "<i>You'll earn +25 XP once they join! 🍃</i>",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    
     return True
-
 
 async def get_pending_referrer(chat_id: int) -> int | None:
     key = f"pending_ref:{chat_id}"
@@ -2776,6 +2951,22 @@ async def _try_award_referral(chat_id: int):
         await award_referral_bonus(referrer_id, chat_id, new_name)
     finally:
         await redis_client.delete(lock_key)
+
+# ──────────────────────────────────────────────
+# MILESTONES VALUE
+# ──────────────────────────────────────────────
+MILESTONES = [100, 250, 500, 1000, 2500, 5000, 10000, 25000]
+
+MILESTONE_LABELS = {
+    100:   ("🌱", "Your roots are growing strong!"),
+    250:   ("🌿", "The forest begins to notice you!"),
+    500:   ("🍃", "You're becoming a true wanderer!"),
+    1000:  ("🌟", "A thousand steps in the clearing!"),
+    2500:  ("✨", "The ancient trees bow to you!"),
+    5000:  ("🌠", "You are truly one with the forest!"),
+    10000: ("🏆", "A legend walks among the trees!"),
+    25000: ("🪐", "The forest spirits are in awe!"),
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XP ENGINE
@@ -2942,6 +3133,15 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
                 send_level_up_message(chat_id, first_name, old_level, new_level)
             )
 
+        # ── MILESTONE CHECK ──
+        if ok:
+            base_xp = profile.get("xp") or 0
+            crossed = get_crossed_milestones(base_xp, new_xp)
+            if crossed:
+                asyncio.create_task(
+                    send_milestone_message(chat_id, first_name, crossed[-1])
+                )
+
     # ── new user — first tap stat is recorded ──
     else:
         stat_field = _STAT_FIELD.get(action)
@@ -2985,6 +3185,14 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
         ok = await _sb_upsert("user_profiles", payload, on_conflict="chat_id")
         print(f"🔵 NEW USER UPSERT for {chat_id}: ok={ok}")
 
+        # ── MILESTONE CHECK for new users ──
+        if ok and first_xp > 0:
+            crossed = get_crossed_milestones(0, first_xp)
+            if crossed:
+                asyncio.create_task(
+                    send_milestone_message(chat_id, first_name, crossed[-1])
+                )
+
         # Insert into referrals table
         if pending_referrer and ok:
             await _sb_post("referrals", {
@@ -3027,13 +3235,14 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
                 )
             )
             try:
+                # Change duration from temporary to a proper message
                 await tg_app.bot.send_message(
                     chat_id,
-                    f"🎁 <b>Welcome Bonus!</b>\n\n"
-                    f"✨ <b>+{extra_welcome} Forest Energy</b> has been added to your path!\n\n"
-                    f"A friend invited you to the clearing — the forest rewards bonds. 🌿\n\n"
-                    f"<i>The trees remember every step you've taken...</i> 🍃",
-                    parse_mode="HTML",
+                    "🎁 <b>Welcome Bonus!</b>\n\n"
+                    f"✨ <b>+{extra_welcome} Forest Energy</b> added!\n\n"
+                    "A friend invited you to the clearing.\n"
+                    "<i>The forest rewards bonds. 🌿</i>",
+                    parse_mode="HTML"
                 )
             except Exception:
                 pass
@@ -3270,11 +3479,12 @@ async def show_patrons_page(chat_id: int, query=None):
         except:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=DONOR_GIF,
     )
+    await _remember(chat_id, msg.message_id) 
 
 async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
     event = await get_active_event()
@@ -3353,6 +3563,32 @@ def _greeting(tz_str: str = "Asia/Manila", first_name: str = None) -> tuple[str,
     else:  # 6 PM – 9:59 PM
         text = f"Good evening, {name}" if not is_weekend else f"Cozy weekend evening, {name}"
         return "🌙", text, EVENING_GIF
+
+
+def get_crossed_milestones(old_xp: int, new_xp: int) -> list[int]:
+    """Returns milestones crossed between old and new XP"""
+    return [m for m in MILESTONES if old_xp < m <= new_xp]
+
+
+async def send_milestone_message(chat_id: int, first_name: str, milestone: int):
+    """Sends an immersive milestone celebration message"""
+    await asyncio.sleep(2)  # delay so it appears after XP feedback popup
+
+    emoji, flavor = MILESTONE_LABELS.get(milestone, ("🌟", "Amazing progress!"))
+
+    msg = await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=LOADING_GIF,  # swap for a celebration GIF if you have one
+        caption=(
+            f"{emoji} <b>Milestone Reached!</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎉 <b>{html.escape(first_name)}, you just hit "
+            f"{milestone:,} XP!</b>\n\n"
+            f"<i>{flavor}</i>\n\n"
+            "Keep exploring the clearing! 🍃✨"
+        )
+    )
+    await _remember(chat_id, msg.message_id)
 
 async def send_xp_feedback(chat_id: int, xp_amount: int, duration: int = 2):
     if xp_amount <= 0:
@@ -3453,6 +3689,32 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
     """Routes to the correct caretaker sub-page"""
 
     pages = {
+
+        # ── UPLOAD KEYS ──
+        "uploadkeys": (
+            "📤 <b>Key Uploader</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Upload activation keys or cookies by sending a "
+            "<b>.txt</b> or <b>.zip</b> file to the bot.\n\n"
+            "📋 <b>Supported formats:</b>\n"
+            "• Plain keys (one per line)\n"
+            "• Pipe separated: <code>KEY|remaining|service|name</code>\n"
+            "• Cookie files (Netflix, Prime)\n"
+            "• JSON format\n"
+            "• Key:Value block format\n"
+            "• CSV format\n\n"
+            "✅ Service type is <b>auto-detected</b> from filename/content.\n"
+            "✅ After upload, cache is cleared and users are notified automatically.\n\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "🗝️ <b>Manual Key Entry</b>\n\n"
+            "Type Windows or Office keys directly — no file needed.\n"
+            "Supports custom display name and remaining count.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
+                [InlineKeyboardButton("🗝️ Manual Win/Office Entry", callback_data="caretaker_manualkeys")],  # ← NEW
+                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+            ])
+        ),
 
         # ── PATCH NOTES ──
         "addupdate": (
@@ -3577,27 +3839,6 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "🔔 The bot auto-alerts you every 6 hours if stock is low.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📦 Check Stock Now", callback_data="caretaker_checkstock")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
-            ])
-        ),
-
-        # ── UPLOAD KEYS ──
-        "uploadkeys": (
-            "📤 <b>Key Uploader</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "Upload activation keys or cookies by sending a "
-            "<b>.txt</b> or <b>.zip</b> file to the bot.\n\n"
-            "📋 <b>Supported formats:</b>\n"
-            "• Plain keys (one per line)\n"
-            "• Pipe separated: <code>KEY|remaining|service|name</code>\n"
-            "• Cookie files (Netflix, Prime)\n"
-            "• JSON format\n"
-            "• Key:Value block format\n"
-            "• CSV format\n\n"
-            "✅ Service type is <b>auto-detected</b> from filename/content.\n"
-            "✅ After upload, cache is cleared and users are notified automatically.",
-            InlineKeyboardMarkup([
-                [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
                 [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
@@ -3954,26 +4195,33 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     calendar_grid = "\n".join(calendar_rows)
 
     # ── Streak status ──
-    if current_streak >= 30:
-        streak_emoji, streak_label = "🌠", "Legendary Streak!"
+    if current_streak >= 60:
+        streak_emoji, streak_label = "🌠", "Ancient Soul!"
+    elif current_streak >= 30:
+        streak_emoji, streak_label = "🏆", "Devoted Wanderer!"
     elif current_streak >= 14:
-        streak_emoji, streak_label = "🔥", "On Fire!"
+        streak_emoji, streak_label = "🌟", "Forest Regular!"
     elif current_streak >= 7:
-        streak_emoji, streak_label = "⚡", "Hot Streak!"
+        streak_emoji, streak_label = "⚡", "Week Warrior!"
     elif current_streak >= 3:
-        streak_emoji, streak_label = "🌱", "Growing!"
+        streak_emoji, streak_label = "🔥", "On Fire!"
+    elif current_streak >= 2:
+        streak_emoji, streak_label = "🌱", "Getting Started!"
     elif current_streak >= 1:
-        streak_emoji, streak_label = "✨", "Getting Started!"
+        streak_emoji, streak_label = "✨", "First Step!"
     else:
         streak_emoji, streak_label = "💤", "Start your streak today!"
 
     # ── Next milestone ──
     milestones = {
-        3:  ("🌱", "+20 XP/day bonus"),
-        7:  ("🎁", "+30 XP/day bonus"),
-        14: ("⚡", "Special badge"),
-        30: ("🌠", "Legendary achievement"),
+        2:  ("🌱", "+12 XP/day"),
+        3:  ("🔥", "+20 XP/day"),
+        7:  ("⚡", "+30 XP/day"),
+        14: ("🌟", "+40 XP/day"),
+        30: ("🏆", "+50 XP/day"),
+        60: ("🌠", "+60 XP/day — Ancient Soul!"),
     }
+
     next_milestone_text = ""
     for days, (icon, reward) in milestones.items():
         if current_streak < days:
@@ -3999,7 +4247,7 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
         f"{HEADER}\n"
         f"{calendar_grid}\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🟩 Active  ⬜ Missed  🟡 Today  🔵 Today (not yet)\n"
+        f"🟩 Active  ⬜ Missed  🟡 Today  ⬛ Out of range\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📊 <b>Your Stats</b>\n\n"
         f"🔥 Current Streak: <b>{current_streak} days</b>\n"
@@ -4026,16 +4274,129 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
         except Exception:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=MORNING_GIF,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
+async def send_delayed_feedback_buttons(
+    chat_id: int,
+    account_email: str,
+    game_name: str,
+    delay: int = 30
+):
+    """Send feedback buttons after delay — skips if user already responded"""
+    await asyncio.sleep(delay)
+
+    # Skip if user already submitted feedback
+    fb_key = f"steam_fb:{chat_id}:{account_email}"
+    if await redis_client.get(fb_key):
+        return
+
+    # Skip if user already got a reminder (prevent double prompt)
+    reminded_key = f"steam_reminded:{chat_id}:{account_email}"
+    if await redis_client.get(reminded_key):
+        return
+
+    try:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "🎮 <b>Have you tried the account yet?</b>\n\n"
+                f"Game: <b>{html.escape(game_name)}</b>\n\n"
+                "Please let us know if it worked!\n"
+                "<i>Your feedback helps the forest grow.</i> 🍃"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Working",
+                        callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Not Working",
+                        callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⏳ Not tried yet — remind me in 5 min",
+                        callback_data=f"remind_later|{account_email}|{game_name[:30]}"
+                    )
+                ]
+            ])
+        )
+    except Exception as e:
+        print(f"🔴 Failed to send delayed feedback: {e}")
+
+async def send_reminder_feedback(
+    chat_id: int,
+    account_email: str,
+    game_name: str,
+    delay: int = 300,
+    is_final: bool = False  # ← new
+):
+    await asyncio.sleep(delay)
+
+    fb_key = f"steam_fb:{chat_id}:{account_email}"
+    if await redis_client.get(fb_key):
+        return
+
+    if is_final:
+        text = (
+            "🌿 <b>Last reminder!</b>\n\n"
+            f"We won't ask again about <b>{html.escape(game_name)}</b>.\n\n"
+            "<i>Did it work? 🍃</i>"
+        )
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"),
+                InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"),
+            ],
+            [InlineKeyboardButton("🚫 Skip", callback_data=f"skip_feedback|{account_email}")]
+        ])
+    else:
+        text = (
+            "🌿 <b>Reminder!</b>\n\n"
+            f"Did you get a chance to try <b>{html.escape(game_name)}</b> yet?\n\n"
+            "<i>Your feedback helps keep the forest clean.</i> 🍃"
+        )
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"),
+                InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"),
+            ],
+            [InlineKeyboardButton("🚫 Skip Feedback", callback_data=f"skip_feedback|{account_email}")]
+        ])
+
+        # Schedule the final reminder only from the first one
+        asyncio.create_task(
+            send_reminder_feedback(
+                chat_id=chat_id,
+                account_email=account_email,
+                game_name=game_name,
+                delay=1500,  # 25 more minutes (total 30 min from claim)
+                is_final=True
+            )
+        )
+
+    try:
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=buttons
+        )
+    except Exception as e:
+        print(f"🔴 Reminder failed: {e}")
+
 # ── IMPROVED: Send animation + auto-translated caption ──
 async def send_animated_translated(
     chat_id: int,
@@ -4108,7 +4469,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
 
     profile = await get_user_profile(chat_id)
     level      = profile.get("level", 1) if profile else 1
-    title      = get_level_title(level)
+    title = profile.get("active_title") or get_level_title(level) if profile else get_level_title(level)
     level_info = f"🏷️ {title} • ⭐ Level {level}"
     if profile:
         await redis_client.delete(f"streak:{chat_id}")
@@ -4208,11 +4569,12 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
         "<i>The forest grows with you.</i> 🍃✨"
     )
     try:
-        await send_animated_translated(
+        msg = await send_animated_translated(
             chat_id=chat_id,
             animation_url=LOADING_GIF,
             caption=caption,
         )
+        await _remember(chat_id, msg.message_id)  # ← ADD
     except Exception:
         pass
 
@@ -4970,6 +5332,70 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
 # ══════════════════════════════════════════════════════════════════════════════
 # PROFILE / STATS / LEADERBOARD / HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
+async def handle_referral_history(chat_id: int):
+    data = await _sb_get(
+        "referrals",
+        **{
+            "referrer_id": f"eq.{chat_id}",
+            "select": "referred_id,created_at,awarded",
+            "order": "created_at.desc",
+            "limit": 20,
+        }
+    ) or []
+
+    profile = await get_user_profile(chat_id)
+    total_count = profile.get("referral_count", 0) if profile else 0
+    total_xp = total_count * REFERRAL_XP
+
+    if not data:
+        text = (
+            "🌲 <b>Your Referral History</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌫️ You haven't referred anyone yet.\n\n"
+            "Share your invite link and earn "
+            f"<b>+{REFERRAL_XP} XP</b> per friend! 🍃"
+        )
+    else:
+        manila = pytz.timezone("Asia/Manila")
+        lines = []
+        for i, r in enumerate(data, 1):
+            try:
+                dt = datetime.fromisoformat(
+                    r["created_at"].replace("Z", "+00:00")
+                ).astimezone(manila)
+                date_str = dt.strftime("%b %d, %Y")
+            except Exception:
+                date_str = "—"
+
+            status = "✅ Awarded" if r.get("awarded") else "⏳ Pending"
+            lines.append(f"{i}. {status} — {date_str}")
+
+        text = (
+            "🌲 <b>Your Referral History</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"👥 Total Referred: <b>{total_count}</b>\n"
+            f"✨ Total XP Earned: <b>{total_xp}</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            + "\n".join(lines) +
+            "\n\n<i>Keep inviting wanderers to grow the forest! 🍃</i>"
+        )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "🔗 Share My Link", 
+            callback_data="invite_friends"
+        )],
+        [InlineKeyboardButton("⬅️ Back", callback_data="invite_friends")],
+    ])
+
+    msg = await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=INVITE_GIF,
+        reply_markup=keyboard,
+    )
+    await _remember(chat_id, msg.message_id)
+
 async def handle_online_users(chat_id: int, query=None):
     """🟢 Public online users page — active in last 15 minutes"""
     manila = pytz.timezone("Asia/Manila")
@@ -5074,12 +5500,13 @@ async def handle_online_users(chat_id: int, query=None):
         except Exception:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         animation_url=MORNING_GIF,
         caption=text,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id) 
     
 async def handle_profile_page(chat_id: int, first_name: str, query=None):
     """Fixed version — shows achievement summary directly in profile"""
@@ -5176,11 +5603,11 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
             pass
 
     streak_txt = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Just getting started!"
-
+    title = profile.get("active_title") or get_level_title(level)
     caption = (
         f"👤 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ <b>{get_level_title(level)}</b>\n"
+        f"🏷️ <b>{title}</b>\n"
         f"⭐ Level <b>{level}</b> • {streak_txt}\n\n"
         f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
         f"{create_progress_bar(xp, xp_required_next, 12)}\n"
@@ -5218,32 +5645,74 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
-                InlineKeyboardButton("🏆 Achievements",   callback_data="show_achievements"),
+                InlineKeyboardButton("🏷️ Set Title", callback_data="show_set_title"),
             ],
             [
                 InlineKeyboardButton("📜 XP History",  callback_data="history_page_0"),
                 InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
             ],
-            [InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar")],
+
+            [
+                InlineKeyboardButton("🏆 Achievements",   callback_data="show_achievements"),
+                InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
+            ],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
         ])
 
     gif_id = profile.get("profile_gif_id") if profile else None
 
     if gif_id:
-        msg = await send_animated_translated(
-            chat_id=chat_id,
-            animation_url=gif_id,
-            caption=caption,
-            reply_markup=keyboard
-        )
+        try:
+            msg = await tg_app.bot.send_animation(
+                chat_id=chat_id,
+                animation=gif_id,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except Exception:
+            try:
+                msg = await tg_app.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=gif_id,
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception:
+                tg_photo = await get_user_telegram_photo(chat_id)
+                if tg_photo:
+                    msg = await tg_app.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=tg_photo,
+                        caption=caption,
+                        parse_mode="HTML",
+                        reply_markup=keyboard
+                    )
+                else:
+                    msg = await send_animated_translated(
+                        chat_id=chat_id,
+                        animation_url=MYID_GIF,
+                        caption=caption,
+                        reply_markup=keyboard,
+                    )
     else:
-        msg = await send_animated_translated(
-            chat_id=chat_id,
-            animation_url=MYID_GIF,
-            caption=caption,
-            reply_markup=keyboard,
-        )
+        tg_photo = await get_user_telegram_photo(chat_id)
+        if tg_photo:
+            msg = await tg_app.bot.send_photo(
+                chat_id=chat_id,
+                photo=tg_photo,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            msg = await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=MYID_GIF,
+                caption=caption,
+                reply_markup=keyboard,
+            )
 
     try:
         await loading.delete()
@@ -5340,12 +5809,13 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
         except Exception:
             pass  # fallback if edit fails
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=MIDNIGHT_GIF,
         reply_markup=markup
     )
+    await _remember(chat_id, msg.message_id)
 
 async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: int = 1, query=None):
     pages = {
@@ -5429,11 +5899,83 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
         except Exception:
             pass
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=COOKIE_TUTORIAL_GIF,
         reply_markup=keyboard
+    )
+    await _remember(chat_id, msg.message_id)
+
+async def handle_set_title(chat_id: int, first_name: str, query=None):
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return
+
+    current_level = profile.get("level", 1)
+    active_title  = profile.get("active_title")
+
+    # Build list of unlocked titles (all levels UP TO current level)
+    unlocked = {
+        lvl: data
+        for lvl, data in LEVEL_TITLE_DESCRIPTIONS.items()
+        if lvl <= current_level
+    }
+
+    current_display = active_title or LEVEL_TITLE_DESCRIPTIONS.get(current_level, ("", ""))[0]
+
+    text = (
+        "🏷️ <b>Choose Your Forest Title</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 <b>Active:</b> {current_display}\n"
+        f"⭐ You are Level <b>{current_level}</b> — "
+        f"<b>{len(unlocked)}</b> title(s) unlocked\n\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+    )
+
+    # Show each unlocked title with description
+    for lvl in sorted(unlocked.keys(), reverse=True):  # newest first
+        title_name, description = unlocked[lvl]
+        is_active = (active_title == title_name) or \
+                    (not active_title and lvl == current_level)
+        lock_icon = "✅" if is_active else f"Lv{lvl}"
+        text += f"{lock_icon} <b>{title_name}</b>\n"
+        text += f"   <i>{description}</i>\n\n"
+
+    text += "━━━━━━━━━━━━━━━━━━\n"
+    text += "<i>Tap a title below to equip it. 🍃</i>"
+
+    # Build buttons
+    buttons = []
+    for lvl in sorted(unlocked.keys(), reverse=True):
+        title_name, _ = unlocked[lvl]
+        is_active = (active_title == title_name) or \
+                    (not active_title and lvl == current_level)
+        label = f"✅ {title_name}" if is_active else f"🏷️ {title_name}"
+        buttons.append([
+            InlineKeyboardButton(label, callback_data=f"set_title|{title_name[:50]}")
+        ])
+
+    # Reset only if using a non-default title
+    default_title = LEVEL_TITLE_DESCRIPTIONS.get(current_level, ("", ""))[0]
+    if active_title and active_title != default_title:
+        buttons.append([
+            InlineKeyboardButton("🔄 Reset to Current Level Title", callback_data="reset_title")
+        ])
+
+    buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=MYID_GIF,
+        caption=text,
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 async def handle_history(chat_id: int, first_name: str, page: int = 0):
@@ -5685,11 +6227,12 @@ async def handle_wheel_leaderboard(chat_id: int):
 
     text += "\n<i>May your spins bring you great fortune, wanderer...</i> 🍃✨"
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=text,
         animation_url=WHEEL_BOARD_GIF,
     )
+    await _remember(chat_id, msg.message_id)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FEEDBACK
@@ -5916,6 +6459,19 @@ def get_freshness_badge(last_updated: str | None) -> str:
 
     except Exception:
         return "⚪ Unknown age"
+
+async def get_wheel_history(chat_id: int) -> list:
+    """Fetch last 5 wheel spins for a user"""
+    data = await _sb_get(
+        "wheel_spins",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "select": "rarity,xp_earned,got_bonus_slot,got_fresh_cookie,created_at",
+            "order": "created_at.desc",
+            "limit": 5,
+        }
+    ) or []
+    return data
 
 async def get_active_event() -> dict | None:
     cached = await redis_client.get("active_event")
@@ -6180,17 +6736,19 @@ async def handle_invite(chat_id: int, first_name: str):
             InlineKeyboardButton(
                 "🔗 Share Invite Link 🌲",
                 url=f"https://t.me/share/url?url={link}&text=🌲%20Join%20me%20in%20Clyde%27s%20Enchanted%20Clearing!%0A%0AGet%20premium%20resources%20%2B%20XP%20bonuses%20%F0%9F%8C%BF"
-            )
+            ),
+            InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}"),
         ],
-        [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_ref_link|{chat_id}")]
+        [InlineKeyboardButton("📜 My Referral History", callback_data="show_referral_history")],
     ])
 
-    await send_animated_translated(
+    msg = await send_animated_translated(
         chat_id=chat_id,
         caption=caption,
         animation_url=INVITE_GIF,
         reply_markup=keyboard,
     )
+    await _remember(chat_id, msg.message_id)
     return
 
 async def handle_toggle_maintenance(chat_id: int):
@@ -6219,7 +6777,7 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
     except Exception:
         pass
 
-    # ── fetch from Redis first, fallback to RAM ──
+    # ── 1. Collect Redis mem tracked messages ──
     try:
         message_ids = await redis_client.lrange(f"mem:{chat_id}", 0, -1)
         await redis_client.delete(f"mem:{chat_id}")
@@ -6228,30 +6786,92 @@ async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
         message_ids = forest_memory.get(chat_id, [])
         forest_memory[chat_id] = []
 
+    # ── 2. Collect reveal doc messages (netflix/prime .txt files) ──
+    for svc in ("netflix", "prime"):
+        reveal_msg_id = await redis_client.get(f"reveal_msg:{chat_id}:{svc}")
+        if reveal_msg_id:
+            message_ids.append(reveal_msg_id)
+            await redis_client.delete(f"reveal_msg:{chat_id}:{svc}")
+
+    # ── 3. Collect any stored loading/temp message IDs ──
+    for key_suffix in (
+        "loading_msg",
+        "winoffice_loading",
+        "steam_loading",
+        "inventory_loading",
+    ):
+        stored_id = await redis_client.get(f"{key_suffix}:{chat_id}")
+        if stored_id:
+            message_ids.append(stored_id)
+            await redis_client.delete(f"{key_suffix}:{chat_id}")
+
+    # ── 4. Delete all collected messages ──
     for mid in message_ids:
         try:
             await tg_app.bot.delete_message(chat_id, int(mid))
         except Exception:
             pass
 
+    # ── 5. Cancel all pending waiting/ghost states ──
+    ghost_keys = [
+        f"waiting_for_logo:{chat_id}",
+        f"winoffice_pending_cat:{chat_id}",
+        f"onboarding_step:{chat_id}",
+        f"reveal_spam:{chat_id}:netflix",
+        f"reveal_spam:{chat_id}:prime",
+        f"steam_claim_spam:{chat_id}",
+        f"pending_broadcast:{chat_id}",
+        f"steam_reminded:{chat_id}:*",   # wildcard — handled below
+    ]
+    for key in ghost_keys:
+        await redis_client.delete(key)
+
+    # ── 6. Clear wildcard steam reminder keys ──
+    try:
+        reminder_keys = await redis_client.keys(f"steam_reminded:{chat_id}:*")
+        if reminder_keys:
+            await redis_client.delete(*reminder_keys)
+
+        feedback_keys = await redis_client.keys(f"steam_fb:{chat_id}:*")
+        if feedback_keys:
+            await redis_client.delete(*feedback_keys)
+
+        claim_data_keys = await redis_client.keys(f"steam_claim_data:{chat_id}:*")
+        if claim_data_keys:
+            await redis_client.delete(*claim_data_keys)
+
+        reveal_key_keys = await redis_client.keys(f"reveal_key:{chat_id}:*")
+        if reveal_key_keys:
+            await redis_client.delete(*reveal_key_keys)
+
+        winkey_keys = await redis_client.keys(f"winkey:{chat_id}:*")
+        if winkey_keys:
+            await redis_client.delete(*winkey_keys)
+    except Exception as e:
+        print(f"⚠️ Wildcard key cleanup failed: {e}")
+
+    # ── 7. Animation sequence ──
     loading = await send_animated_translated(
         chat_id=chat_id,
         animation_url=CLEAN_GIF,
         caption="🌫️ <b>The ancient mist begins to thicken...</b>",
     )
     await asyncio.sleep(1.8)
-    await safe_edit(loading,"🍃 <b>The wind spirit awakens...</b>")
+    await safe_edit(loading, "🍃 <b>The wind spirit awakens...</b>")
     await asyncio.sleep(2.0)
-    await safe_edit(loading,"✨ <b>The forest is resetting...</b>")
+    await safe_edit(loading, "✨ <b>The forest is resetting...</b>")
     await asyncio.sleep(1.2)
     try:
         await tg_app.bot.delete_message(chat_id, loading.message_id)
     except Exception:
         pass
 
+    # ── 8. Award XP ──
     action_xp, _ = await add_xp(chat_id, first_name, "clear")
     if action_xp:
-        await send_xp_feedback(chat_id, action_xp,duration=1) 
+        await send_xp_feedback(chat_id, action_xp, duration=1)
+
+    # ── 9. Show fresh menu ──
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
 async def handle_status(chat_id: int):
@@ -6746,10 +7366,10 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
                 callback_data="toggle_notif|steam"
             ),
         ],
-        [InlineKeyboardButton(
-            f"{'🎞️ GIFs: ON' if gifs_on else '🔇 GIFs: OFF'}",
-            callback_data="toggle_notif|gifs"
-        )],
+        # [InlineKeyboardButton(
+        #     f"{'🎞️ GIFs: ON' if gifs_on else '🔇 GIFs: OFF'}",
+        #     callback_data="toggle_notif|gifs"
+        # )],
         [InlineKeyboardButton(
             "🌲 Invite Friends & Earn 25 XP",
             callback_data="invite_friends"
@@ -6870,6 +7490,88 @@ async def handle_confirm_toggle_maintenance(chat_id: int):
         parse_mode="HTML",
         reply_markup=confirm_kb,
     )
+
+async def show_wheel_history(chat_id: int, query=None):
+    """Show last 5 wheel spins"""
+    data = await get_wheel_history(chat_id)
+    
+    manila = pytz.timezone("Asia/Manila")
+    
+    RARITY_EMOJIS = {
+        "Common":    "🌿",
+        "Uncommon":  "🍃",
+        "Rare":      "🌟",
+        "Epic":      "✨",
+        "Legendary": "🌠",
+        "Secret":    "🪄",
+    }
+
+    if not data:
+        text = (
+            "🎰 <b>Your Wheel History</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌫️ You haven't spun the wheel yet!\n\n"
+            "<i>Try your luck today, wanderer.</i> 🍃"
+        )
+    else:
+        lines = []
+        for i, spin in enumerate(data, 1):
+            rarity = spin.get("rarity", "Unknown")
+            xp = spin.get("xp_earned", 0)
+            emoji = RARITY_EMOJIS.get(rarity, "🌿")
+            bonus_slot = "  +1 reveal slot" if spin.get("got_bonus_slot") else ""
+            fresh_cookie = "  +fresh cookie!" if spin.get("got_fresh_cookie") else ""
+
+            # Human-readable time ago
+            try:
+                dt = datetime.fromisoformat(
+                    spin["created_at"].replace("Z", "+00:00")
+                ).astimezone(manila)
+                diff = datetime.now(manila) - dt
+                total_mins = int(diff.total_seconds() / 60)
+
+                if total_mins < 2:
+                    time_str = "just now"
+                elif total_mins < 60:
+                    time_str = f"{total_mins} mins ago"
+                elif total_mins < 1440:
+                    time_str = f"{total_mins // 60}h ago"
+                else:
+                    time_str = f"{total_mins // 1440}d ago"
+            except Exception:
+                time_str = "unknown"
+
+            lines.append(
+                f"{i}. {emoji} <b>{rarity}</b> — +{xp} XP{bonus_slot}{fresh_cookie}\n"
+                f"   🕒 {time_str}"
+            )
+
+        text = (
+            "🎰 <b>Your Last 5 Spins</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            + "\n\n".join(lines) +
+            "\n\n━━━━━━━━━━━━━━━━━━\n"
+            "<i>Keep spinning for bigger rewards! 🍃</i>"
+        )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
+        [InlineKeyboardButton("⬅️ Back to Wheel", callback_data="show_wheel_menu")],
+    ])
+
+    if query and query.message:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    msg = await send_animated_translated(
+        chat_id=chat_id,
+        caption=text,
+        animation_url=WHEEL_WHISPERS_GIF,
+        reply_markup=keyboard,
+    )
+    await _remember(chat_id, msg.message_id)
 
 async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query, first_name: str):
     pending_cat = category
@@ -7031,6 +7733,8 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
 
     # ====================== BULK SEARCH ======================
     if len(lines) > 1:
+        ITEMS_PER_PAGE = 8
+
         loading_msg = await tg_app.bot.send_message(
             chat_id,
             f"📋 <b>Processing {len(lines)} accounts...</b>\n\n<i>Searching Supabase...</i>",
@@ -7059,36 +7763,78 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
             else:
                 not_found_results.append(f"❌ <code>{html.escape(term)}</code> — Not found")
 
-        total     = len(lines)
-        succeeded = len(found_results)
-        failed    = len(not_found_results)
-
-        summary_header = (
-            f"📊 <b>Bulk Search Results</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"✅ Found: <b>{succeeded}</b>  |  ❌ Not Found: <b>{failed}</b>  |  📋 Total: <b>{total}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
-        )
-
-        grouped_lines = []
-        if found_results:
-            grouped_lines.append("🟢 <b>Found Accounts</b>")
-            grouped_lines.extend(found_results)
-        if not_found_results:
-            if found_results:
-                grouped_lines.append("")
-            grouped_lines.append("🔴 <b>Not Found</b>")
-            grouped_lines.extend(not_found_results)
-
-        final_text = summary_header + "\n\n".join(grouped_lines)
-
-        # Delete the loading message before sending results
         try:
             await loading_msg.delete()
         except Exception:
             pass
 
-        await send_animated_translated(chat_id, final_text, animation_url=STEAM_RESULT_GIF)
+        total     = len(lines)
+        succeeded = len(found_results)
+        failed    = len(not_found_results)
+
+        # Combine all result lines
+        all_result_lines = []
+        if found_results:
+            all_result_lines.append("🟢 <b>Found Accounts</b>")
+            all_result_lines.extend(found_results)
+        if not_found_results:
+            if found_results:
+                all_result_lines.append("")
+            all_result_lines.append("🔴 <b>Not Found</b>")
+            all_result_lines.extend(not_found_results)
+
+        # Paginate
+        total_pages = max(1, (len(all_result_lines) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+        start = page * ITEMS_PER_PAGE
+        page_lines = all_result_lines[start:start + ITEMS_PER_PAGE]
+
+        summary_header = (
+            f"📊 <b>Bulk Search Results</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✅ Found: <b>{succeeded}</b>  |  ❌ Not Found: <b>{failed}</b>  |  📋 Total: <b>{total}</b>\n"
+            f"📄 Page {page + 1} of {total_pages}\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+        )
+
+        final_text = summary_header + "\n\n".join(page_lines)
+
+        # Navigation buttons
+        # Encode the search terms as a Redis key to avoid huge callback_data
+        bulk_key = f"bulk_search:{chat_id}"
+        await redis_client.setex(bulk_key, 600, json.dumps(lines))  # 10 min TTL
+
+        buttons = []
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"bulk_page|{page-1}"))
+        if start + ITEMS_PER_PAGE < len(all_result_lines):
+            nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"bulk_page|{page+1}"))
+        if nav:
+            buttons.append(nav)
+        buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")])
+
+        markup = InlineKeyboardMarkup(buttons) if buttons else None
+
+        if query and query.message:
+            try:
+                await query.message.edit_caption(
+                    caption=final_text,
+                    parse_mode="HTML",
+                    reply_markup=markup
+                )
+                return
+            except Exception:
+                try:
+                    await query.message.edit_text(
+                        text=final_text,
+                        parse_mode="HTML",
+                        reply_markup=markup
+                    )
+                    return
+                except Exception:
+                    pass
+
+        await send_animated_translated(chat_id, final_text, animation_url=STEAM_RESULT_GIF, reply_markup=markup)
         return
 
     # ====================== SINGLE SEARCH ======================
@@ -7270,6 +8016,160 @@ async def edit_translated(query, text: str, lang: str = None, **kwargs):
         lang = await get_user_language(query.message.chat_id)
     translated = await translate_text(text, lang)
     return await query.message.edit_caption(caption=translated, **kwargs)
+
+async def handle_uploadwinoffice_command(chat_id: int, raw_text: str):
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can upload keys.")
+        return
+
+    body = raw_text[len("/uploadwinoffice"):].strip()
+
+    SERVICE_MAP = {
+        "windows": ("windows", "Win Key", "🪟"),
+        "win":     ("windows", "Win Key", "🪟"),
+        "office":  ("office",  "Office Key", "📑"),
+    }
+
+    if not body:
+        await send_animated_translated(
+            chat_id,
+            "🗝️ <b>Win / Office Key Uploader</b>\n\n"
+            "<b>Basic (auto display name):</b>\n"
+            "<code>/uploadkeys2\n"
+            "windows\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+            "<b>With custom display name:</b>\n"
+            "<code>/uploadkeys2\n"
+            "windows|Windows 11 Pro\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+            "<b>With remaining count:</b>\n"
+            "<code>/uploadkeys2\n"
+            "office|Office 2021 Pro\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX|50\n"
+            "YYYYY-YYYYY-YYYYY-YYYYY|30</code>\n\n"
+            "<b>Bulk mixed blocks:</b>\n"
+            "<code>/uploadkeys2\n"
+            "windows|Windows 10 Home\n"
+            "XXXXX-XXXXX-XXXXX-XXXXX\n"
+            "YYYYY-YYYYY-YYYYY-YYYYY\n\n"
+            "office|Office 2019\n"
+            "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ|25</code>\n\n"
+            "• First line of each block = <code>service|Custom Name</code>\n"
+            "• Custom name is optional — defaults to Win Key / Office Key\n"
+            "• Key lines support <code>KEY|remaining</code> format\n"
+            "• Separate blocks with a blank line\n\n"
+            "<i>Tip: Use /checkstock to verify after uploading.</i>",
+            animation_url=CARETAKER_GIF,
+        )
+        return
+
+    imported = 0
+    skipped = 0
+    results = []
+    added_counts = {}
+
+    # Split into blocks by blank lines
+    blocks = [b.strip() for b in body.split("\n\n") if b.strip()]
+
+    for block in blocks:
+        lines = [l.strip() for l in block.split("\n") if l.strip() and not l.startswith("#")]
+        if not lines:
+            continue
+
+        # First line = service type (with optional custom display name)
+        # Format: "windows" OR "windows|Windows 11 Pro"
+        first = lines[0]
+        first_parts = first.split("|", 1)
+        service_raw = first_parts[0].strip().lower()
+        custom_name = first_parts[1].strip() if len(first_parts) > 1 else None
+
+        if service_raw not in SERVICE_MAP:
+            skipped += len(lines) - 1
+            results.append(
+                f"❌ Unknown service: <code>{html.escape(first_parts[0])}</code> "
+                f"— use <code>windows</code> or <code>office</code>"
+            )
+            continue
+
+        service_type, default_name, emoji = SERVICE_MAP[service_raw]
+
+        # Use custom name if provided, otherwise use default
+        display_name = custom_name if custom_name else default_name
+
+        key_lines = lines[1:]
+        if not key_lines:
+            results.append(f"⚠️ No keys found under <b>{display_name}</b> block")
+            continue
+
+        for line in key_lines:
+            # Parse KEY|remaining or just KEY
+            if "|" in line:
+                parts = line.split("|")
+                key_id = parts[0].strip()
+                remaining = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip().isdigit() else 999
+            else:
+                key_id = line.strip()
+                remaining = 999
+
+            if not key_id:
+                continue
+
+            payload = {
+                "key_id":       key_id,
+                "remaining":    remaining,
+                "service_type": display_name,
+                "status":       "active",
+                "display_name": default_name,
+            }
+
+            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+
+            if success:
+                imported += 1
+                added_counts[service_type] = added_counts.get(service_type, 0) + 1
+                short = key_id[:30] + "…" if len(key_id) > 30 else key_id
+                results.append(
+                    f"✅ {emoji} <b>{html.escape(display_name)}</b>\n"
+                    f"   🔑 <code>{html.escape(short)}</code>\n"
+                    f"   📦 Remaining: <b>{remaining}</b>"
+                )
+            else:
+                skipped += 1
+                results.append(
+                    f"❌ {emoji} <b>{html.escape(display_name)}</b>\n"
+                    f"   🔑 <code>{html.escape(key_id[:30])}</code>\n"
+                    f"   ⚠️ Skipped — already exists or rejected by Supabase"
+                )
+
+    # Clear cache so keys show immediately
+    await redis_client.delete("vamt_cache")
+
+    # Build summary with per-service breakdown
+    breakdown = ""
+    if added_counts:
+        breakdown = "\n".join(
+            f"{'🪟' if svc == 'windows' else '📑'} {svc.title()}: <b>+{cnt}</b>"
+            for svc, cnt in added_counts.items()
+        )
+        breakdown = f"\n<b>Breakdown:</b>\n{breakdown}\n"
+
+    summary = (
+        f"🗝️ <b>Key Upload Complete!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"✅ Imported: <b>{imported}</b>\n"
+        f"⚠️ Skipped: <b>{skipped}</b>\n"
+        f"{breakdown}\n"
+        f"<b>Results:</b>\n"
+        + "\n".join(results[:20])
+    )
+
+    if len(results) > 20:
+        summary += f"\n<i>...and {len(results) - 20} more</i>"
+
+    if imported > 0:
+        asyncio.create_task(broadcast_new_resources(added_counts))
+
+    await send_animated_translated(chat_id, summary, animation_url=CARETAKER_GIF)
 
 async def handle_uploadsteam_command(chat_id: int, raw_text: str):
     if chat_id != OWNER_ID:
@@ -7459,6 +8359,9 @@ async def handle_callback(update: Update):
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
     data      = query.data
 
+    # ── Update presence on EVERY button tap ──
+    asyncio.create_task(update_last_active(chat_id))
+
     FEEDBACK_PREFIXES = (
         "kfb_ok|",
         "kfb_bad|",
@@ -7503,10 +8406,51 @@ async def handle_callback(update: Update):
             pass
         await send_onboarding_step(chat_id, first_name, step=step)
         return
+    
+    elif data.startswith("set_title|"):
+        chosen_title = data.split("|", 1)[1].strip()
+
+        # Fetch profile here since it may not be set yet at this point
+        profile = await get_user_profile(chat_id)
+        if not profile:
+            await query.answer("🌿 Profile not found.", show_alert=True)
+            return
+
+        # Validate: title must exist in level titles AND be unlocked
+        current_level = profile.get("level", 1)
+        valid_titles = [
+            title_name
+            for lvl, (title_name, _) in LEVEL_TITLE_DESCRIPTIONS.items()
+            if lvl <= current_level
+        ]
+
+        if chosen_title not in valid_titles:
+            await query.answer("❌ You haven't unlocked this title!", show_alert=True)
+            return
+
+        await _sb_patch(
+            f"user_profiles?chat_id=eq.{chat_id}",
+            {"active_title": chosen_title}
+        )
+
+        await query.answer(f"✅ Title set!", show_alert=False)
+
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            f"🏷️ <b>Title updated!</b>\n\n"
+            f"You are now known as:\n<b>{chosen_title}</b> 🌿",
+            duration=4
+        ))
+
+        await handle_profile_page(chat_id, first_name, query)
 
     elif data == "show_online_users":
-        await redis_client.delete("online_users_cache")
-        await handle_online_users(chat_id, query)
+            await redis_client.delete("online_users_cache")
+            await handle_online_users(chat_id, query)
+            return
+    
+    elif data == "show_referral_history":
+        await handle_referral_history(chat_id)
         return
 
     elif data == "view_notion_steam_refresh":
@@ -7523,7 +8467,7 @@ async def handle_callback(update: Update):
     elif data == "show_streak_calendar":
             await show_streak_calendar(chat_id, first_name, query)
             return
-        
+    
     # ── DONATE / SUPPORT THE FOREST ──
     elif data == "donate":
         await safe_edit(
@@ -7630,8 +8574,6 @@ async def handle_callback(update: Update):
         )
         return
 
-    asyncio.create_task(update_last_active(chat_id))
-
     # ── INVENTORY ──
     if data == "check_vamt":
         try:
@@ -7675,6 +8617,25 @@ async def handle_callback(update: Update):
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
         return
+
+    elif data.startswith("bulk_page|"):
+        if chat_id != OWNER_ID:
+            return
+        try:
+            page = int(data.split("|")[1])
+            bulk_key = f"bulk_search:{chat_id}"
+            stored = await redis_client.get(bulk_key)
+            if not stored:
+                await query.answer("Search expired. Please search again.", show_alert=True)
+                return
+            lines = json.loads(stored)
+            # Pass query so it edits instead of sending new message
+            fake_text = "/searchsteam\n" + "\n".join(lines)
+            await handle_searchsteam_command(chat_id, fake_text, page=page, query=query)
+        except Exception as e:
+            print(f"Bulk page error: {e}")
+            await query.answer("Error loading page", show_alert=True)
+        return
     
     elif data.startswith("cpage_"):
         if chat_id != OWNER_ID:
@@ -7683,6 +8644,25 @@ async def handle_callback(update: Update):
         page_name = data.replace("cpage_", "")
         await show_caretaker_page(chat_id, page_name, query)
         return
+    
+    elif data == "reset_title":
+        await _sb_patch(
+            f"user_profiles?chat_id=eq.{chat_id}",
+            {"active_title": None}
+        )
+
+        default = get_level_title(profile.get("level", 1))
+
+        await query.answer("🔄 Title reset to default!", show_alert=False)
+
+        asyncio.create_task(send_temporary_message(
+            chat_id,
+            f"🔄 <b>Title reset!</b>\n\n"
+            f"Back to your default:\n<b>{default}</b> 🌿",
+            duration=4
+        ))
+
+        await handle_profile_page(chat_id, first_name, query)
     
     elif data == "run_test_achievements":
         if chat_id != OWNER_ID:
@@ -7693,6 +8673,10 @@ async def handle_callback(update: Update):
     elif data == "caretaker_home":
         if chat_id != OWNER_ID:
             return
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         await handle_caretaker(chat_id, first_name)
         return
     
@@ -7972,7 +8956,10 @@ async def handle_callback(update: Update):
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
-            [InlineKeyboardButton("🏆 Wheel Leaderboard", callback_data="wheel_leaderboard")],
+            [
+                InlineKeyboardButton("🏆 Wheel Leaderboard", callback_data="wheel_leaderboard"),
+                InlineKeyboardButton("📜 My Spin History", callback_data="show_wheel_history"),
+            ],
             [InlineKeyboardButton("ℹ️ About the Wheel", callback_data="about_wheel")],
             [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
         ])
@@ -7982,6 +8969,10 @@ async def handle_callback(update: Update):
             caption=caption,
             reply_markup=keyboard
         )
+        return
+        
+    elif data == "show_wheel_history":
+        await show_wheel_history(chat_id, query)
         return
 
     # ── ACTUAL SPIN ──
@@ -8288,6 +9279,10 @@ async def handle_callback(update: Update):
         await handle_invite(chat_id, first_name)
         return   # important
     
+    elif data == "show_set_title":
+        await handle_set_title(chat_id, first_name, query)
+        return
+    
     elif data == "show_profile_page":
         await handle_profile_page(chat_id, first_name, query)
         return
@@ -8297,12 +9292,7 @@ async def handle_callback(update: Update):
         if not can_change:
             days_left = hours_left // 24
             hours_remaining = hours_left % 24
-
-            time_text = ""
-            if days_left > 0:
-                time_text = f"{days_left}d {hours_remaining}h"
-            else:
-                time_text = f"{hours_left}h"
+            time_text = f"{days_left}d {hours_remaining}h" if days_left > 0 else f"{hours_left}h"
 
             await query.answer("🌿 You've already changed your logo this week!", show_alert=False)
             await tg_app.bot.send_message(
@@ -8311,17 +9301,19 @@ async def handle_callback(update: Update):
                 f"You can only change your profile logo <b>once per week</b>.\n\n"
                 f"⏳ Come back in <b>{time_text}</b> to update it again.\n\n"
                 f"<i>The forest remembers your emblem, wanderer. 🍃</i>",
-                parse_mode="HTML",
+                parse_mode="HTML"
             )
             return
 
         await redis_client.setex(f"waiting_for_logo:{chat_id}", 600, "1")
-        await query.answer("✅ Send your new GIF now!", show_alert=False)
+        await query.answer("✅ Send your image or GIF now!", show_alert=False)
 
         await tg_app.bot.send_message(
             chat_id,
             "🌿 <b>Upload Your New Profile Logo</b>\n\n"
-            "Send me a <b>GIF</b> (animation or .gif file) within <b>10 minutes</b>.\n"
+            "Send me any of the following within <b>10 minutes</b>:\n\n"
+            "• 🎞️ <b>GIF</b> — animated logo\n"
+            "• 🖼️ <b>PNG / JPG / WEBP</b> — static image\n\n"
             "Maximum size: <b>10 MB</b>\n\n"
             "<i>This will become your personal emblem in the forest. ✨</i>",
             parse_mode="HTML"
@@ -8418,7 +9410,7 @@ async def handle_callback(update: Update):
         if len(parts) == 3:
             _, account_email, game_name = parts
 
-            # One undo only
+            # One undo only per account per session
             undo_key = f"steam_undo:{chat_id}:{account_email}"
             if not await redis_client.set(undo_key, 1, ex=60, nx=True):
                 await query.answer(
@@ -8430,12 +9422,25 @@ async def handle_callback(update: Update):
             # Reset feedback spam guard so they can resubmit
             await redis_client.delete(f"steam_fb:{chat_id}:{account_email}")
 
+            # ── Fetch stored claim data from Redis ──
+            stored = await redis_client.get(f"steam_claim_data:{chat_id}:{account_email}")
+            claim_data = json.loads(stored) if stored else {}
+            password = claim_data.get("password", "—")
+            game_name_stored = claim_data.get("game_name", game_name)
+            steam_id = claim_data.get("steam_id", "")
+            release_type = claim_data.get("release_type", "daily")
+            type_badge = (
+                "🌟 Sunday Bonus Account"
+                if release_type == "sunday_noon"
+                else "📅 Daily Account"
+            )
+
             # Notify owner of undo
             await tg_app.bot.send_message(
                 OWNER_ID,
                 f"↩️ <b>Steam Feedback Undone</b>\n\n"
                 f"👤 {html.escape(first_name)} (<code>{chat_id}</code>)\n"
-                f"🎮 {html.escape(game_name)}\n"
+                f"🎮 {html.escape(game_name_stored)}\n"
                 f"📧 <code>{html.escape(account_email)}</code>\n\n"
                 f"<i>User undid their ❌ report — account status unchanged.</i>",
                 parse_mode="HTML"
@@ -8443,28 +9448,79 @@ async def handle_callback(update: Update):
 
             await query.answer("↩️ Undone! No changes made.", show_alert=True)
 
-            # Restore original feedback buttons
+            # ── Strip the "You reported this as" appended line from caption ──
             try:
-                feedback_kb = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton(
-                            "✅ Working",
-                            callback_data=f"stfb_ok|{account_email}|{game_name}"
-                        ),
-                        InlineKeyboardButton(
-                            "❌ Not Working",
-                            callback_data=f"stfb_bad|{account_email}|{game_name}"
-                        ),
-                    ]
-                ])
-                # Strip the "You reported this as" line from caption
                 current = query.message.caption or query.message.text or ""
                 clean_caption = current.split("\n\n━━━")[0]
                 await query.message.edit_caption(
-                    caption=clean_caption,
+                    caption=(
+                        clean_caption +
+                        "\n\n<i>↩️ Feedback cleared. New buttons coming shortly...</i>"
+                    ),
                     parse_mode="HTML",
-                    reply_markup=feedback_kb
+                    reply_markup=None
                 )
+            except Exception:
+                pass
+
+            # ── Reschedule feedback buttons after short delay ──
+            asyncio.create_task(
+                send_delayed_feedback_buttons(
+                    chat_id=chat_id,
+                    account_email=account_email,
+                    game_name=game_name_stored,
+                    delay=10
+                )
+            )
+
+    elif data.startswith("remind_later|"):
+        parts = data.split("|")
+        if len(parts) == 3:
+            _, account_email, game_name = parts
+
+            # Prevent the original 30s prompt from re-firing if it hasn't yet
+            reminded_key = f"steam_reminded:{chat_id}:{account_email}"
+            await redis_client.setex(reminded_key, 600, "1")  # 10 min guard
+
+            await query.answer(
+                "⏳ Got it! We'll remind you in 5 minutes.",
+                show_alert=False
+            )
+
+            # Edit the message to confirm
+            try:
+                await query.message.edit_text(
+                    f"⏳ <b>No problem!</b>\n\n"
+                    f"We'll check back with you about <b>{html.escape(game_name)}</b> in 5 minutes.\n\n"
+                    f"<i>Enjoy your game! 🍃</i>",
+                    parse_mode="HTML",
+                    reply_markup=None
+                )
+            except Exception:
+                pass
+
+            # Schedule 5 minute reminder
+            asyncio.create_task(
+                send_reminder_feedback(
+                    chat_id=chat_id,
+                    account_email=account_email,
+                    game_name=game_name,
+                    delay=300
+                )
+            )
+
+    elif data.startswith("skip_feedback|"):
+        parts = data.split("|")
+        if len(parts) == 2:
+            _, account_email = parts
+            
+            await query.answer(
+                "🌿 No worries! Thanks anyway.",
+                show_alert=False
+            )
+            
+            try:
+                await query.message.delete()
             except Exception:
                 pass
 
@@ -8617,10 +9673,23 @@ async def handle_callback(update: Update):
         # ── Deliver ──
         password = acc.get("password", "")
         steam_id = acc.get("steam_id", "")
+        release_type = acc.get("release_type", "daily")
         type_badge = (
             "🌟 Sunday Bonus Account"
             if release_type == "sunday_noon"
             else "📅 Daily Account"
+        )
+
+        # ── Store claim data in Redis for undo support (2 min window) ──
+        await redis_client.setex(
+            f"steam_claim_data:{chat_id}:{account_email}",
+            120,
+            json.dumps({
+                "password": password,
+                "game_name": game_name,
+                "steam_id": steam_id,
+                "release_type": release_type,
+            })
         )
 
         claims_after = claims_today + 1 if tier != "legend" else 0
@@ -8641,30 +9710,24 @@ async def handle_callback(update: Update):
             f"🏷️ {type_badge}\n\n"
             f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
             f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
-            + (f"🆔 Steam ID: <code>{steam_id}</code>\n" if steam_id else "")
-            + claims_left_text
-            + "\n\n⚠️ <b>Rules:</b>\n"
-            "• Do not change the password\n"
-            "• Do not make any purchases\n"
-            "• Do not log out other sessions\n\n"
-            "<i>Enjoy your game, wanderer! 🍃</i>"
+            f"{'🆔 Steam ID: <code>' + str(steam_id) + '</code>\n' if steam_id else ''}"
+            f"{claims_left_text}\n\n"
+            f"⚠️ <b>Important Notice:</b>\n"
+            f"• If you see a <b>Something went wrong</b> message pop up, don't worry! "
+            f"The account is fine, but too many people are trying to access it at the same time. "
+            f"Just be patient and try again later.\n\n"
+            f"🔓 <b>Security Warning:</b>\n"
+            f"• Please do not attempt to change passwords, enable Steam Guard, or alter any account settings. "
+            f"Any modifications may result in them being disabled or locked. "
+            f"Use these accounts responsibly. Enjoy!\n\n"
+            f"⏳ Feedback buttons will appear in <b>30 seconds</b> after you've had time to try it.\n\n"
+            f"<i>Enjoy your game, wanderer! 🍃</i>"
         )
 
         image_url = acc.get("image_url", "").strip() if acc.get("image_url") else ""
 
         # ── Feedback buttons ──
-        feedback_kb = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "✅ Working",
-                    callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
-                ),
-                InlineKeyboardButton(
-                    "❌ Not Working",
-                    callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
-                ),
-            ]
-        ])
+        feedback_kb = None
 
         if image_url:
             try:
@@ -8694,6 +9757,16 @@ async def handle_callback(update: Update):
             f"✨ <i>{html.escape(game_name)} successfully claimed!</i>",
             duration=3
         ))
+
+        # ✅ NEW: Send feedback prompt 30 seconds later
+        asyncio.create_task(
+            send_delayed_feedback_buttons(
+                chat_id=chat_id,
+                account_email=account_email,
+                game_name=game_name,
+                delay=30
+            )
+        )
 
         # ── Award XP for successful Steam claim ──
         if tier == "legend":
@@ -8934,8 +10007,15 @@ async def handle_callback(update: Update):
                 "• Revealing a cookie → <b>+14 XP</b>\n"
                 "• /profile or /clear → <b>+6 XP</b>\n"
                 "• First Guidance / Lore → <b>+10 XP</b>\n"
-                "• Returning Guidance / Lore → <b>+2 XP</b>\n"
-                "• Daily Login Bonus → <b>+10–30 XP</b> (streak scales)\n\n"
+                "• Returning Guidance / Lore → <b>+2 XP</b>\n\n"
+                "🌅 <b>Daily Login Streak Bonus:</b>\n"
+                "• Day 1 → <b>+10 XP</b>\n"
+                "• Day 2 → <b>+12 XP</b>\n"
+                "• Day 3-6 → <b>+20 XP</b>\n"
+                "• Day 7-13 → <b>+30 XP</b>\n"
+                "• Day 14-29 → <b>+40 XP</b>\n"
+                "• Day 30-59 → <b>+50 XP</b>\n"
+                "• Day 60+ → <b>+60 XP</b>\n\n"
                 f"<b>Cumulative XP Requirements:</b>\n\n{level_req_text}\n\n"
                 "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨",
                 InlineKeyboardMarkup([
@@ -9123,6 +10203,45 @@ async def handle_callback(update: Update):
                     "<code>/addupdate\nYour Title Here\nYour full description here...</code>"
                 ),
             )
+
+        elif data == "caretaker_manualkeys":
+            await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=CARETAKER_GIF,
+                caption=(
+                    "🗝️ <b>Manual Win / Office Key Entry</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "<b>Basic:</b>\n"
+                    "<code>/uploadwinoffice\n"
+                    "windows\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+                    "<b>With custom display name:</b>\n"
+                    "<code>/uploadwinoffice\n"
+                    "windows|Windows 11 Pro\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</code>\n\n"
+                    "<b>With remaining count:</b>\n"
+                    "<code>/uploadwinoffice\n"
+                    "office|Office 2021 Pro\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX|50\n"
+                    "YYYYY-YYYYY-YYYYY-YYYYY|30</code>\n\n"
+                    "<b>Mixed blocks (separate with blank line):</b>\n"
+                    "<code>/uploadwinoffice\n"
+                    "windows|Windows 10 LTSC\n"
+                    "XXXXX-XXXXX-XXXXX-XXXXX|50\n\n"
+                    "office|Office 2019\n"
+                    "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ|25</code>\n\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "• <code>windows</code> or <code>office</code> = service type\n"
+                    "• <code>|Custom Name</code> = optional display name\n"
+                    "• <code>KEY|50</code> = key with remaining count\n"
+                    "<i>Close this and type the command above.</i> 🍃"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Upload Keys", callback_data="cpage_uploadkeys")],
+                    [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                ])
+            )
+
         elif data == "caretaker_addevent":
             await tg_app.bot.send_message(
                 chat_id,
@@ -9234,20 +10353,17 @@ async def process_update(update_data: dict):
     # ── Improved Cold Start + Auto-delete after 5 seconds
     if update.message:
         chat_id = update.effective_chat.id
-        cold_key = "cold_start_sent"
-        if not await redis_client.get(cold_key):
-            await redis_client.setex(cold_key, 3600, "1")   # 1 hour cooldown
 
-            try:
-                msg = await tg_app.bot.send_message(
-                    chat_id=chat_id,
-                    text="Yawnnn~ 😴💤\nThe forest just woke me up!\nReady for you now, wanderer ✨🍃"
-                )
-                # Auto-delete after 5 seconds
-                await asyncio.sleep(5)
-                await tg_app.bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
-            except:
-                pass
+        # Per-user cold start — each user gets notified once per restart
+        cold_key = f"cold_start:{chat_id}"
+        global_cold_key = "bot_just_restarted"
+
+        # Only show if bot recently restarted (global flag in Redis)
+        just_restarted = await redis_client.get(global_cold_key)
+
+        if just_restarted and not await redis_client.get(cold_key):
+            await redis_client.setex(cold_key, 300, "1")  # per-user, 5 min
+            asyncio.create_task(_send_cold_start_notice(chat_id))
 
     # ── ONBOARDING GUARD ──
     if update.message and update.message.text:
@@ -9290,7 +10406,11 @@ async def process_update(update_data: dict):
         return
 
     # ── DOCUMENT HANDLER (Admin TXT key upload) ──
-    if update.message and update.message.document:
+    if update.message and (
+        update.message.document or
+        update.message.photo or
+        update.message.animation
+    ):
         await handle_document(update)
         return
 
@@ -9322,8 +10442,6 @@ async def process_update(update_data: dict):
                 reply_markup=kb_start(),
             )
             return
-
-    asyncio.create_task(update_last_active(chat_id))
 
     # ── Command dispatch ──
     if text.startswith("/start"):
@@ -9388,6 +10506,15 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/settitle"):
+        await handle_set_title(chat_id, first_name)
+
+    elif text.startswith("/referrals"):
+        await handle_referral_history(chat_id)
+
+    elif text.startswith("/uploadwinoffice"):
+        await handle_uploadwinoffice_command(chat_id, raw)
 
     elif text.startswith("/online"):
             await handle_online_users(chat_id)
@@ -9640,9 +10767,6 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/caretaker"):
         await handle_caretaker(chat_id, first_name)
-
-    elif text.startswith("/mystats"):
-        await handle_profile_page(chat_id, first_name) 
 
     elif text.startswith("/flushcache"):
         await handle_flushcache(chat_id)

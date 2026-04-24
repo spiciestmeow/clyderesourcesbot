@@ -5072,31 +5072,47 @@ async def show_paginated_cookie_list(
         "⚪": "Unknown",
     }
 
+    if user_level >= 6:
+        tier_header = (
+            "✨ <b>Freshest Cookies First</b>\n"
+            "   Higher level = freshest stock, served first 🌟\n\n"
+        )
+    else:
+        tier_header = (
+            "📦 <b>Stable & Verified Cookies</b>\n"
+            "   These are older but confirmed working 🍃\n\n"
+        )
+
+    body = tier_header
+
     for idx, item in enumerate(page_items, start=start + 1):
-        name      = str(item.get("display_name") or "").strip() or f"{title} Cookie"
+        raw_svc    = str(item.get("service_type") or service_type).strip()
+        item_label = raw_svc if raw_svc != raw_svc.lower() else raw_svc.title()
+
         badge     = get_freshness_badge(item.get("last_updated"))
-        dot       = badge[0]  # just the emoji, e.g. 🟢
+        dot       = badge[0]
         age_label = FRESHNESS_COMPACT.get(dot, "")
         remaining = item.get("remaining", 0)
 
-        body += f"{dot} <b>{name}</b>\n"
+        body += f"{dot} <b>{item_label}</b>\n"
         body += f"   {age_label}  ·  {remaining} uses left\n\n"
-
+        
         buttons.append([
             InlineKeyboardButton(
-                f"Reveal  {dot}  {name}",
+                f"Reveal  {dot}  {item_label}",
                 callback_data=f"reveal_{service_type}|{idx}|{page}"
             )
         ])
 
     # ── Footer ──
-    priority_note = (
-        "✨ Showing freshest first" if user_level >= 6
-        else "📦 Older but verified cookies"
-    )
+    if user_level >= 6:
+        priority_note = f"✨ Freshest first  •  Lv{user_level} → {max_items} slots"
+    else:
+        priority_note = f"📦 Stable & verified  •  Lv{user_level} → {max_items} slots"
+
     footer = (
         f"──────────────────────\n"
-        f"{priority_note}  •  Lv{user_level} → {max_items} slots"
+        f"{priority_note}"
     )
 
     # ── Navigation ──
