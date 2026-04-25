@@ -1564,14 +1564,13 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
         plan   = _extract_netflix_plan(content)
         region = _extract_netflix_region(content)
         
-        # Also try extracting region from filename (e.g. "4_SK_github...")
         if not region:
             fname_region = re.search(r'[_\-]([A-Z]{2})[_\-]', filename)
             if fname_region:
                 region = fname_region.group(1).upper()
         
         service_type = f"Netflix {plan} {region}".strip() if region else f"Netflix {plan}"
-        display_name = service_type  # ← use full name instead of generic "Netflix Cookie"
+        display_name = "Netflix Cookie"  # ← keep this as the enum-safe value
         return service_type, display_name
 
     if (
@@ -1582,7 +1581,7 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     ):
         region = _extract_prime_region(content)
         service_type = f"Prime Paid {region}".strip() if region else "Prime Video"
-        display_name = service_type  # ← same for prime
+        display_name = "PrimeVideo Cookie"  # ← keep this too
         return service_type, display_name
 
     if "office" in filename_lower or "office" in content_lower:
@@ -2301,8 +2300,7 @@ async def handle_document(update: Update):
         f"✅ <b>Import Complete!</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📄 <b>File:</b> <code>{filename}</code>\n"
-        f"🔍 <b>Detected as:</b> {detected_display}\n"
-        f"📋 <b>Name:</b> {detected_display}\n\n"
+        f"🔍 <b>Detected as:</b> {detected_display}\n\n"
         f"🌱 <b>Imported:</b> {imported}\n"
         f"📦 <b>Skipped:</b> {skipped}\n\n"
         f"🧹 Cache refreshed!"
