@@ -4832,7 +4832,7 @@ async def show_steam_accounts(
     ).astimezone(pytz.utc).isoformat()
     now_iso = now.astimezone(pytz.utc).isoformat()
 
-    # ── Lv1-6: Website only ──
+    # ── Lv1-6: Website only — NOW WITH PROGRESS BAR ──
     if tier == "public":
         hours, mins = get_time_until_drop()
         if is_public_drop_time():
@@ -4842,22 +4842,75 @@ async def show_steam_accounts(
         else:
             drop_note = f"⏰ Next drop in <b>{hours}h {mins}m</b>"
 
+        # ── Progress bar toward Level 7 ──
+        xp_current = get_cumulative_xp_for_level(level)        # XP floor of current level
+        xp_next_level = get_cumulative_xp_for_level(level + 1) # XP needed for next level
+        xp_lv7 = get_cumulative_xp_for_level(7)               # XP needed for Lv7
+
+        profile = await get_user_profile(chat_id)
+        current_xp = profile.get("xp", 0) if profile else 0
+
+        # Levels remaining until Lv7
+        levels_left = 7 - level
+
+        # Progress within current level
+        level_progress_bar = create_progress_bar(
+            current_xp - xp_current,
+            xp_next_level - xp_current,
+            length=10
+        )
+
+        # Overall progress toward Lv7
+        xp_to_lv7 = max(0, xp_lv7 - current_xp)
+        overall_bar = create_daily_progress_bar(
+            current_xp,
+            xp_lv7,
+            length=10
+        )
+
+        # Motivational message based on level
+        if level == 6:
+            motivation = "🔥 <b>You're SO close!</b> Just one more level!"
+        elif level == 5:
+            motivation = "⚡ <b>Almost there!</b> Two more levels to go."
+        elif level >= 3:
+            motivation = "🌱 <b>Keep exploring!</b> Every action earns XP."
+        else:
+            motivation = "🌿 <b>Your journey has just begun!</b> Explore daily."
+
+        caption = (
+            "🎮 <b>Steam Accounts</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🌍 Steam accounts are posted on the website.\n\n"
+            f"🕗 <b>Daily drop:</b> 8:00 PM Manila time\n"
+            f"🌟 <b>Sunday bonus:</b> 12:00 PM Manila time\n\n"
+            f"{drop_note}\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "🔒 <b>Bot Access requires Level 7</b>\n\n"
+            f"You are currently <b>Level {level}</b> — "
+            f"<b>{levels_left}</b> level(s) to go!\n\n"
+            f"📊 <b>Progress to Level 7:</b>\n"
+            f"{overall_bar}\n"
+            f"✨ <b>{current_xp:,}</b> / <b>{xp_lv7:,}</b> XP "
+            f"(<b>{xp_to_lv7:,}</b> XP needed)\n\n"
+            f"📈 <b>Current Level Progress (Lv{level} → Lv{level+1}):</b>\n"
+            f"{level_progress_bar}\n\n"
+            f"{motivation}\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "<i>💡 Tap ❓ below to learn how to earn XP faster!</i>"
+        )
+
+        buttons = [
+            [InlineKeyboardButton("🌐 Visit Website", url="https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed")],
+            [InlineKeyboardButton("❓ Why can't I access this yet?", callback_data="steam_access_why")],
+            [InlineKeyboardButton("📋 My Claims", callback_data="my_steam_claims")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+        ]
+
         await query.message.edit_caption(
-            caption=(
-                "🎮 <b>Steam Accounts</b>\n"
-                "━━━━━━━━━━━━━━━━━━\n\n"
-                "🌍 Steam accounts are posted on the website.\n\n"
-                f"🕗 <b>Daily drop:</b> 8:00 PM Manila time\n"
-                f"🌟 <b>Sunday bonus:</b> 12:00 PM Manila time\n\n"
-                f"{drop_note}\n\n"
-                "💡 <i>Reach Level 7 for Early Preview access inside the bot!</i>"
-            ),
+            caption=caption,
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🌐 Visit Website", url="https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed")],
-                [InlineKeyboardButton("📋 My Claims", callback_data="my_steam_claims")],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-            ])
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
         return
 
@@ -9658,6 +9711,66 @@ async def handle_callback(update: Update):
             "Come back tomorrow 🍃",
             show_alert=True
         )
+        return
+
+    elif data == "steam_access_why":
+        profile = await get_user_profile(chat_id)
+        level = profile.get("level", 1) if profile else 1
+        current_xp = profile.get("xp", 0) if profile else 0
+        xp_lv7 = get_cumulative_xp_for_level(7)
+        xp_to_lv7 = max(0, xp_lv7 - current_xp)
+
+        # How many XP actions until Lv7
+        reveals_needed = max(1, xp_to_lv7 // 14)
+        views_needed = max(1, xp_to_lv7 // 8)
+        days_needed = max(1, xp_to_lv7 // 30)  # assuming avg 30 XP/day
+
+        text = (
+            "❓ <b>Why can't I access Steam accounts in the bot yet?</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Steam bot access is unlocked at <b>Level 7</b> as an early preview reward "
+            "for dedicated wanderers who have explored the clearing regularly.\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "⚡ <b>How to reach Level 7 faster:</b>\n\n"
+            f"🍿 Reveal Netflix cookies → <b>+14 XP each</b>\n"
+            f"   (~{reveals_needed} reveals to go)\n\n"
+            f"🌿 View any inventory list → <b>+8 XP each</b>\n"
+            f"   (~{views_needed} views to go)\n\n"
+            f"🔥 Log in daily for streak bonuses → up to <b>+60 XP/day</b>\n"
+            f"   (~{days_needed} days if consistent)\n\n"
+            f"🌟 Spin the Wheel of Whispers → up to <b>+100 XP</b>\n\n"
+            f"🌲 Refer a friend → <b>+25 XP each</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"📍 You currently have <b>{current_xp:,} XP</b> "
+            f"and need <b>{xp_to_lv7:,} more XP</b> to reach Level 7.\n\n"
+            "<i>The forest rewards patience and curiosity. "
+            "Keep exploring, wanderer! 🍃✨</i>"
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🍿 Get Netflix Cookies", callback_data="vamt_filter_netflix")],
+            [InlineKeyboardButton("🌟 Spin the Wheel", callback_data="show_wheel_menu")],
+            [InlineKeyboardButton("⬅️ Back to Steam", callback_data="vamt_filter_steam")],
+        ])
+
+        try:
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            msg = await send_animated_translated(
+                chat_id=chat_id,
+                caption=text,
+                animation_url=GUIDANCE_GIF,
+                reply_markup=keyboard
+            )
+            await _remember(chat_id, msg.message_id)
         return
     
     # Add these new elif blocks anywhere in handle_callback:
