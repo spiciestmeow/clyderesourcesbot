@@ -1397,11 +1397,166 @@ async def handle_uploadkeys_command(chat_id: int):
     )
     await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
 
+def _extract_netflix_plan(content: str) -> str:
+    # Matches "– Plan: Basic" OR "– Plan: Premium" OR ANY value after Plan:
+    match = re.search(r'[-–]\s*Plan\s*:\s*(.+)', content, re.IGNORECASE)
+    if match:
+        raw = match.group(1).strip()
+        # Remove any trailing garbage like "(billed monthly)" etc.
+        raw = re.split(r'[|\n\r(]', raw)[0].strip()
+        # Title case it cleanly
+        return raw.title()
+    return "Premium"  # fallback if no Plan line found
+
+
+def _extract_netflix_region(content: str) -> str:
+    # Priority 1: "– Country: CL"
+    match = re.search(r'[-–]\s*Country\s*:\s*([A-Za-z]{2,})', content, re.IGNORECASE)
+    if match:
+        val = match.group(1).strip()
+        # If it's a 2-letter code return as-is uppercased
+        if len(val) == 2:
+            return val.upper()
+        # If it's a full country name, convert to code
+        name_to_code = {
+            "unitedstates": "US", "usa": "US",
+            "unitedkingdom": "GB", "uk": "GB",
+            "brazil": "BR", "brasil": "BR",
+            "philippines": "PH",
+            "india": "IN",
+            "canada": "CA",
+            "australia": "AU",
+            "germany": "DE", "deutschland": "DE",
+            "france": "FR",
+            "mexico": "MX",
+            "southafrica": "ZA",
+            "netherlands": "NL",
+            "spain": "ES", "espana": "ES",
+            "italy": "IT",
+            "japan": "JP",
+            "korea": "KR",
+            "singapore": "SG",
+            "malaysia": "MY",
+            "indonesia": "ID",
+            "thailand": "TH",
+            "turkey": "TR",
+            "argentina": "AR",
+            "colombia": "CO",
+            "chile": "CL",
+            "peru": "PE",
+            "poland": "PL",
+            "sweden": "SE",
+            "norway": "NO",
+            "denmark": "DK",
+            "finland": "FI",
+            "portugal": "PT",
+            "belgium": "BE",
+            "switzerland": "CH",
+            "austria": "AT",
+            "newzealand": "NZ",
+            "hongkong": "HK",
+            "taiwan": "TW",
+            "nigeria": "NG",
+            "egypt": "EG",
+            "saudiarabia": "SA",
+            "uae": "AE",
+            "israel": "IL",
+            "czechrepublic": "CZ",
+            "hungary": "HU",
+            "romania": "RO",
+        }
+        code = name_to_code.get(val.lower().replace(" ", ""))
+        if code:
+            return code
+
+    # Priority 2: "– Region: Latin America" or "– Region: US" or "– Region: CL"
+    match = re.search(r'[-–]\s*Region\s*:\s*(.+)', content, re.IGNORECASE)
+    if match:
+        val = match.group(1).strip()
+        val_clean = re.split(r'[|\n\r(]', val)[0].strip()
+
+        # If it's a 2-letter code
+        if len(val_clean) == 2 and val_clean.isalpha():
+            return val_clean.upper()
+
+        # If it's a region name, map to shortcode
+        region_name_map = {
+            "latin america": "LATAM",
+            "latinamerica": "LATAM",
+            "latam": "LATAM",
+            "north america": "NA",
+            "northamerica": "NA",
+            "europe": "EU",
+            "southeast asia": "SEA",
+            "southeastasia": "SEA",
+            "middle east": "ME",
+            "middleeast": "ME",
+            "south asia": "SA",
+            "southasia": "SA",
+            "east asia": "EA",
+            "eastasia": "EA",
+            "africa": "AF",
+            "oceania": "OC",
+        }
+        code = region_name_map.get(val_clean.lower())
+        if code:
+            return code
+
+        # Otherwise just use first word cleaned up
+        first_word = val_clean.split()[0].strip()
+        if first_word.isalpha() and len(first_word) <= 10:
+            return first_word.upper()
+
+    # Priority 3: Fallback — locale string like "hora+de+verano+de+Chile" → CL
+    # or "en-US", "es-CL", "pt-BR" style
+    locale_match = re.search(r'\b[a-z]{2}-([A-Z]{2})\b', content)
+    if locale_match:
+        known = {
+            "US","GB","BR","PH","IN","CA","AU","DE","FR","MX","ZA","NL",
+            "ES","IT","JP","KR","SG","MY","ID","TH","TR","AR","CO","CL",
+            "PE","PL","SE","NO","DK","FI","PT","BE","CH","AT","NZ","HK",
+            "TW","NG","EG","SA","AE","IL","CZ","HU","RO",
+        }
+        code = locale_match.group(1).upper()
+        if code in known:
+            return code
+
+    return ""
+
+def _extract_prime_region(content: str) -> str:
+    # Priority 1: "– Country: ZA" or "– Region: ZA"
+    for label in ("Country", "Region"):
+        match = re.search(
+            rf'[-–]\s*{label}\s*:\s*([A-Za-z]{{2,}})',
+            content, re.IGNORECASE
+        )
+        if match:
+            val = match.group(1).strip()
+            if len(val) == 2:
+                return val.upper()
+
+    # Priority 2: ubid cookie name → region
+    ubid_match = re.search(r'ubid-([a-z]+)', content.lower())
+    if ubid_match:
+        suffix = ubid_match.group(1)
+        suffix_map = {
+            "main": "US", "acbde": "DE", "acbfr": "FR", "acbuk": "GB",
+            "acbca": "CA", "acbin": "IN", "acbau": "AU", "acbmx": "MX",
+            "acbbr": "BR", "acbpl": "PL", "acbnl": "NL", "acbes": "ES",
+            "acbit": "IT", "acbjp": "JP", "acbsg": "SG", "acbae": "AE",
+            "acbza": "ZA",
+        }
+        if suffix in suffix_map:
+            return suffix_map[suffix]
+
+    # Priority 3: locale string fallback
+    locale_match = re.search(r'\b[a-z]{2}-([A-Z]{2})\b', content)
+    if locale_match:
+        return locale_match.group(1).upper()
+
+    return ""
+
 def detect_service_type(content: str, filename: str) -> tuple[str, str]:
-    """
-    Auto-detects service_type and display_name enum from file content/filename.
-    Returns (service_type, display_name_enum)
-    """
     content_lower = content.lower()
     filename_lower = filename.lower()
 
@@ -1411,16 +1566,21 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
         "netflix.com" in content_lower or
         "netflix" in filename_lower
     ):
-        return "netflix", "Netflix Cookie"
+        plan   = _extract_netflix_plan(content)
+        region = _extract_netflix_region(content)
+        service_type = f"Netflix {plan} {region}".strip() if region else f"Netflix {plan}"
+        return service_type, "Netflix Cookie"
 
     # ── PrimeVideo ──
     if (
         "primevideo" in content_lower or
-        "amazon" in content_lower or
+        "amazon.com" in content_lower or
         "prime" in filename_lower or
-        "prime" in content_lower
+        "ubid-" in content_lower
     ):
-        return "prime", "PrimeVideo Cookie"
+        region = _extract_prime_region(content)
+        service_type = f"Prime Paid {region}".strip() if region else "Prime Video"
+        return service_type, "PrimeVideo Cookie"
 
     # ── Office ──
     if (
@@ -1438,7 +1598,6 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     ):
         return "windows", "Win Key"
 
-    # ── Fallback ──
     return "unknown", "Netflix Cookie"
 
 async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, list[str], dict]:
@@ -1475,11 +1634,17 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             # These always start with a domain like .netflix.com or .amazon.com
             COOKIE_DOMAINS = (
                 ".netflix.com",
+                "www.netflix.com",
                 ".amazon.com",
+                "www.amazon.com",
                 ".primevideo.com",
+                "www.primevideo.com",
                 ".hotstar.com",
+                "www.hotstar.com",
                 ".disneyplus.com",
+                "www.disneyplus.com",
                 ".hulu.com",
+                "www.hulu.com",
             )
             cookie_lines = [
                 line for line in content.splitlines()
