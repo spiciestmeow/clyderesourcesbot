@@ -1617,20 +1617,14 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             COOKIE_DOMAINS = (
                 ".netflix.com",
                 "www.netflix.com",
-                ".amazon.com",
-                "www.amazon.com",
                 ".primevideo.com",
                 "www.primevideo.com",
-                ".hotstar.com",
-                "www.hotstar.com",
-                ".disneyplus.com",
-                "www.disneyplus.com",
-                ".hulu.com",
-                "www.hulu.com",
+                ".www.primevideo.com",
                 "www.crunchyroll.com",
                 ".sso.crunchyroll.com",
                 ".crunchyroll.com",
                 "static.crunchyroll.com",
+                ".www.crunchyroll.com",
             )
             cookie_lines = [
                 line for line in content.splitlines()
