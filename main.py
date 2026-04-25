@@ -433,25 +433,40 @@ def safe_handler(context: str = ""):
                 return await func(*args, **kwargs)
             except Exception as e:
                 print(f"🔴 [{context or func.__name__}]: {e}")
-                # Find chat_id from args
+                import traceback
+                traceback.print_exc()
+
                 chat_id = None
+                query = None
+
                 for arg in args:
                     if hasattr(arg, 'effective_chat') and arg.effective_chat:
                         chat_id = arg.effective_chat.id
-                        break
+                    if hasattr(arg, 'callback_query') and arg.callback_query:
+                        query = arg.callback_query
                     if isinstance(arg, int):
                         chat_id = arg
-                        break
+
                 if chat_id:
                     try:
+                        # Answer the query first to stop the loading spinner
+                        if query:
+                            try:
+                                await query.answer()
+                            except Exception:
+                                pass
+
+                        # Always send a FRESH message — never edit
                         await tg_app.bot.send_message(
                             chat_id,
-                            "🌫️ <b>Something went wrong in the forest...</b>\n\n"
-                            "Please try again or use /clear to reset. 🍃",
+                            "🌫️ <b>Something went wrong in the forest...</b>"
                             parse_mode="HTML"
                         )
-                    except Exception:
-                        pass
+                    except Exception as send_err:
+                        print(f"🔴 Could not send error message to {chat_id}: {send_err}")
+                else:
+                    print(f"🔴 safe_handler: could not find chat_id in args")
+
         return wrapper
     return decorator
 
@@ -7062,108 +7077,105 @@ async def handle_toggle_maintenance(chat_id: int):
         parse_mode="HTML",
     )
 
-
 async def handle_clear(chat_id: int, user_msg_id: int, first_name: str):
     try:
         await tg_app.bot.delete_message(chat_id, user_msg_id)
     except Exception:
         pass
 
-    # ── 1. Collect Redis mem tracked messages ──
-    try:
-        message_ids = await redis_client.lrange(f"mem:{chat_id}", 0, -1)
-        await redis_client.delete(f"mem:{chat_id}")
-    except Exception as e:
-        print(f"⚠️ Redis clear failed: {e}")
-        message_ids = forest_memory.get(chat_id, [])
-        forest_memory[chat_id] = []
-
-    # ── 2. Collect reveal doc messages (netflix/prime .txt files) ──
-    for svc in ("netflix", "prime"):
-        reveal_msg_id = await redis_client.get(f"reveal_msg:{chat_id}:{svc}")
-        if reveal_msg_id:
-            message_ids.append(reveal_msg_id)
-            await redis_client.delete(f"reveal_msg:{chat_id}:{svc}")
-
-    # ── 3. Collect any stored loading/temp message IDs ──
-    for key_suffix in (
-        "loading_msg",
-        "winoffice_loading",
-        "steam_loading",
-        "inventory_loading",
-    ):
-        stored_id = await redis_client.get(f"{key_suffix}:{chat_id}")
-        if stored_id:
-            message_ids.append(stored_id)
-            await redis_client.delete(f"{key_suffix}:{chat_id}")
-
-    # ── 4. Delete all collected messages ──
-    for mid in message_ids:
-        try:
-            await tg_app.bot.delete_message(chat_id, int(mid))
-        except Exception:
-            pass
-
-    # ── 5. Cancel all pending waiting/ghost states ──
-    ghost_keys = [
-        f"waiting_for_logo:{chat_id}",
-        f"winoffice_pending_cat:{chat_id}",
-        f"onboarding_step:{chat_id}",
-        f"reveal_spam:{chat_id}:netflix",
-        f"reveal_spam:{chat_id}:prime",
-        f"steam_claim_spam:{chat_id}",
-        f"pending_broadcast:{chat_id}",
-        f"steam_reminded:{chat_id}:*",   # wildcard — handled below
-    ]
-    for key in ghost_keys:
-        await redis_client.delete(key)
-
-    # ── 6. Clear wildcard steam reminder keys ──
-    try:
-        reminder_keys = await redis_client.keys(f"steam_reminded:{chat_id}:*")
-        if reminder_keys:
-            await redis_client.delete(*reminder_keys)
-
-        feedback_keys = await redis_client.keys(f"steam_fb:{chat_id}:*")
-        if feedback_keys:
-            await redis_client.delete(*feedback_keys)
-
-        claim_data_keys = await redis_client.keys(f"steam_claim_data:{chat_id}:*")
-        if claim_data_keys:
-            await redis_client.delete(*claim_data_keys)
-
-        reveal_key_keys = await redis_client.keys(f"reveal_key:{chat_id}:*")
-        if reveal_key_keys:
-            await redis_client.delete(*reveal_key_keys)
-
-        winkey_keys = await redis_client.keys(f"winkey:{chat_id}:*")
-        if winkey_keys:
-            await redis_client.delete(*winkey_keys)
-    except Exception as e:
-        print(f"⚠️ Wildcard key cleanup failed: {e}")
-
-    # ── 7. Animation sequence ──
+    # ── 1. Show animation IMMEDIATELY ──
     loading = await send_animated_translated(
         chat_id=chat_id,
         animation_url=CLEAN_GIF,
         caption="🌫️ <b>The ancient mist begins to thicken...</b>",
     )
+
+    # ── 2. Do ALL cleanup in background while animation plays ──
+    async def _do_cleanup():
+        # Collect Redis mem tracked messages
+        try:
+            message_ids = await redis_client.lrange(f"mem:{chat_id}", 0, -1)
+            await redis_client.delete(f"mem:{chat_id}")
+        except Exception as e:
+            print(f"⚠️ Redis clear failed: {e}")
+            message_ids = forest_memory.get(chat_id, [])
+            forest_memory[chat_id] = []
+
+        # Collect reveal doc messages
+        for svc in ("netflix", "prime"):
+            reveal_msg_id = await redis_client.get(f"reveal_msg:{chat_id}:{svc}")
+            if reveal_msg_id:
+                message_ids.append(reveal_msg_id)
+                await redis_client.delete(f"reveal_msg:{chat_id}:{svc}")
+
+        # Collect stored loading/temp message IDs
+        for key_suffix in (
+            "loading_msg",
+            "winoffice_loading",
+            "steam_loading",
+            "inventory_loading",
+        ):
+            stored_id = await redis_client.get(f"{key_suffix}:{chat_id}")
+            if stored_id:
+                message_ids.append(stored_id)
+                await redis_client.delete(f"{key_suffix}:{chat_id}")
+
+        # Delete all collected messages
+        for mid in message_ids:
+            try:
+                await tg_app.bot.delete_message(chat_id, int(mid))
+            except Exception:
+                pass
+
+        # Cancel all pending waiting/ghost states
+        ghost_keys = [
+            f"waiting_for_logo:{chat_id}",
+            f"winoffice_pending_cat:{chat_id}",
+            f"onboarding_step:{chat_id}",
+            f"reveal_spam:{chat_id}:netflix",
+            f"reveal_spam:{chat_id}:prime",
+            f"steam_claim_spam:{chat_id}",
+            f"pending_broadcast:{chat_id}",
+        ]
+        for key in ghost_keys:
+            await redis_client.delete(key)
+
+        # Clear wildcard keys
+        try:
+            for pattern in (
+                f"steam_reminded:{chat_id}:*",
+                f"steam_fb:{chat_id}:*",
+                f"steam_claim_data:{chat_id}:*",
+                f"reveal_key:{chat_id}:*",
+                f"winkey:{chat_id}:*",
+            ):
+                keys = await redis_client.keys(pattern)
+                if keys:
+                    await redis_client.delete(*keys)
+        except Exception as e:
+            print(f"⚠️ Wildcard key cleanup failed: {e}")
+
+    # Run cleanup in background — don't await it
+    asyncio.create_task(_do_cleanup())
+
+    # ── 3. Animation sequence plays smoothly ──
     await asyncio.sleep(1.8)
     await safe_edit(loading, "🍃 <b>The wind spirit awakens...</b>")
     await asyncio.sleep(2.0)
     await safe_edit(loading, "✨ <b>The forest is resetting...</b>")
     await asyncio.sleep(1.2)
+
     try:
         await tg_app.bot.delete_message(chat_id, loading.message_id)
     except Exception:
         pass
 
-    # ── 8. Award XP ──
+    # ── 4. Award XP ──
     action_xp, _ = await add_xp(chat_id, first_name, "clear")
     if action_xp:
         await send_xp_feedback(chat_id, action_xp, duration=1)
 
-    # ── 9. Show fresh menu ──
+    # ── 5. Show fresh menu ──
     await send_full_menu(chat_id, first_name, is_first_time=False)
 
 async def handle_status(chat_id: int):
