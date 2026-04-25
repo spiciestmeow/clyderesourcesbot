@@ -1524,14 +1524,13 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
         return service_type, display_name
 
     if (
-        "primevideo" in content_lower or
-        "amazon.com" in content_lower or
+        "primevideo.com" in content_lower or
         "prime" in filename_lower or
         "ubid-" in content_lower
     ):
         region = _extract_prime_region(content)
-        service_type = f"Prime Paid {region}".strip() if region else "Prime Video"
-        display_name = "PrimeVideo Cookie"  # ← keep this too
+        service_type = f"Prime Video {region}".strip() if region else "Prime Video"
+        display_name = "PrimeVideo Cookie"
         return service_type, display_name
 
     if "office" in filename_lower or "office" in content_lower:
