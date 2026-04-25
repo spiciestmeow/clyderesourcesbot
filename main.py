@@ -596,10 +596,11 @@ NETFLIX_ITEMS_PER_PAGE = 8
 
 DISPLAY_NAME_MAP = {
     "netflix": "Netflix Cookie",
-    "prime":   "PrimeVideo Cookie",
-    "office":  "Office Key",
+    "prime": "PrimeVideo Cookie",
+    "crunchyroll": "Crunchyroll Cookie", 
+    "office": "Office Key",
     "windows": "Win Key",
-    "win":     "Win Key",
+    "win": "Win Key",
 }
 
 # ──────────────────────────────────────────────
@@ -1404,6 +1405,28 @@ async def handle_uploadkeys_command(chat_id: int):
     )
     await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
 
+def _extract_crunchyroll_region(content: str) -> str:
+    # Match Country/Region label
+    for label in ("Country", "Region"):
+        match = re.search(
+            rf'(?:[-–•]\s*)?{label}\s*[:\-]\s*(.+)',
+            content, re.IGNORECASE
+        )
+        if match:
+            raw = match.group(1).strip()
+            raw = re.split(r'[|\n\r(]', raw)[0].strip()
+            if raw:
+                if len(raw) == 2 and raw.isalpha():
+                    return raw.upper()
+                return raw.title()
+
+    # Fallback: locale string like en-US
+    locale_match = re.search(r'\b[a-z]{2}-([A-Z]{2})\b', content)
+    if locale_match:
+        return locale_match.group(1).upper()
+
+    return ""
+
 def _extract_netflix_plan(content: str) -> str:
     # Match any "Plan: <value>" regardless of what the value is
     match = re.search(
@@ -1514,6 +1537,15 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     filename_lower = filename.lower()
 
     if (
+        "crunchyroll.com" in content_lower or
+        "crunchyroll" in filename_lower
+    ):
+        region = _extract_crunchyroll_region(content)
+        service_type = f"Crunchyroll {region}".strip() if region else "Crunchyroll"
+        display_name = "Crunchyroll Cookie"
+        return service_type, display_name
+
+    if (
         "netflixid" in content_lower or
         "netflix.com" in content_lower or
         "netflix" in filename_lower
@@ -1564,6 +1596,7 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
     is_cookie_file = (
         "NetflixId" in content or
         "SecureNetflixId" in content or
+        "crunchyroll.com" in content.lower() or
         "hacked by" in content.lower() or
         "stealer" in content.lower() or
         ("# copy the cookies from here" in content.lower()) or
@@ -1594,6 +1627,10 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 "www.disneyplus.com",
                 ".hulu.com",
                 "www.hulu.com",
+                "www.crunchyroll.com",
+                ".sso.crunchyroll.com"
+                ".crunchyroll.com"
+                "static.crunchyroll.com"
             )
             cookie_lines = [
                 line for line in content.splitlines()
@@ -3534,19 +3571,24 @@ def kb_patrons():
 def kb_inventory():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🪟 Windows Keys",  callback_data="vamt_filter_win"),
-            InlineKeyboardButton("📑 Office Keys",   callback_data="vamt_filter_office"),
+            InlineKeyboardButton("🪟 Windows Keys", callback_data="vamt_filter_win"),
+            InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office"),
         ],
-        [InlineKeyboardButton("🍿 Netflix Premium Cookies",      callback_data="vamt_filter_netflix")],
-        [InlineKeyboardButton("🎥 PrimeVideo Premium Cookies",   callback_data="vamt_filter_prime")],
-        [InlineKeyboardButton("🎮 Steam Accounts",               callback_data="vamt_filter_steam")],
-        [InlineKeyboardButton("⬅️ Back to Clearing",             callback_data="main_menu")],
+        [
+            InlineKeyboardButton("🍿 Netflix Cookies", callback_data="vamt_filter_netflix"),
+            InlineKeyboardButton("🎥 PrimeVideo Cookies", callback_data="vamt_filter_prime"),
+        ],
+        [
+            InlineKeyboardButton("🍜 Crunchyroll Cookies", callback_data="vamt_filter_crunchyroll"),
+            InlineKeyboardButton("🎮 Steam Accounts", callback_data="vamt_filter_steam"),
+        ],
+        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
 
 def kb_back_inventory():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Back to Scroll Selection", callback_data="check_vamt")],
-        [InlineKeyboardButton("🏠 Main Menu",                callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ])
 
 def kb_back():
@@ -9973,7 +10015,7 @@ async def handle_callback(update: Update):
 
 
         # Cookie types
-        if category in ("netflix", "prime"):
+        if category in ("netflix", "prime", "crunchyroll"): 
             # Always delete current message first — it might be a document (.txt file)
             # which cannot have its caption edited, causing the GIF list to disappear
             try:
