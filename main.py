@@ -1045,7 +1045,8 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str, ignore_d
                     f"{SUPABASE_URL}/rest/v1/{path}",
                     headers=_supabase_headers({
                         "Content-Type": "application/json",
-                        "Prefer": f"resolution={resolution},return=minimal",
+                        # ✅ Use return=representation to detect actual inserts
+                        "Prefer": f"resolution={resolution},return=representation",
                     }),
                     params={"on_conflict": on_conflict},
                     json=data,
@@ -1058,7 +1059,15 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str, ignore_d
             if r.status_code not in (200, 201):
                 return False, r.status_code
 
-            return True, r.status_code
+            # ✅ Check if any rows were actually returned (inserted)
+            try:
+                body = r.json()
+                rows_inserted = len(body) if isinstance(body, list) else (1 if body else 0)
+                # If rows returned = actual insert; if empty = duplicate was ignored
+                actual_status = 201 if rows_inserted > 0 else 200
+                return True, actual_status
+            except Exception:
+                return True, r.status_code
 
         except Exception as e:
             print(f"🔴 SB UPSERT {path} EXCEPTION: {e}")
