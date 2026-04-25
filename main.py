@@ -1628,9 +1628,9 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 ".hulu.com",
                 "www.hulu.com",
                 "www.crunchyroll.com",
-                ".sso.crunchyroll.com"
-                ".crunchyroll.com"
-                "static.crunchyroll.com"
+                ".sso.crunchyroll.com",
+                ".crunchyroll.com",
+                "static.crunchyroll.com",
             )
             cookie_lines = [
                 line for line in content.splitlines()
@@ -2308,7 +2308,8 @@ async def handle_document(update: Update):
         f"✅ <b>Import Complete!</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📄 <b>File:</b> <code>{filename}</code>\n"
-        f"🔍 <b>Detected as:</b> {detected_display}\n\n"
+        f"🔍 <b>Detected as:</b> {detected_display}\n"
+        f"🏷️ <b>Name:</b> {detected_service}\n\n"
         f"🌱 <b>Imported:</b> {imported}\n"
         f"⚠️ <b>Duplicates:</b> {duplicates}\n"
         f"📦 <b>Skipped/Failed:</b> {skipped}\n\n"
