@@ -459,7 +459,7 @@ def safe_handler(context: str = ""):
                         # Always send a FRESH message — never edit
                         await tg_app.bot.send_message(
                             chat_id,
-                            "🌫️ <b>Something went wrong in the forest...</b>"
+                            "🌫️ <b>Something went wrong in the forest...</b>",
                             parse_mode="HTML"
                         )
                     except Exception as send_err:
