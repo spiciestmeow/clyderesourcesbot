@@ -1398,26 +1398,22 @@ async def handle_uploadkeys_command(chat_id: int):
     await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
 
 def _extract_netflix_plan(content: str) -> str:
-    # Matches "– Plan: Basic" OR "– Plan: Premium" OR ANY value after Plan:
-    match = re.search(r'[-–]\s*Plan\s*:\s*(.+)', content, re.IGNORECASE)
+    # Match with or without leading dash
+    match = re.search(r'(?:[-–]\s*)?Plan\s*:\s*(.+)', content, re.IGNORECASE)
     if match:
         raw = match.group(1).strip()
-        # Remove any trailing garbage like "(billed monthly)" etc.
         raw = re.split(r'[|\n\r(]', raw)[0].strip()
-        # Title case it cleanly
         return raw.title()
-    return "Premium"  # fallback if no Plan line found
+    return "Premium"
 
 
 def _extract_netflix_region(content: str) -> str:
-    # Priority 1: "– Country: CL"
-    match = re.search(r'[-–]\s*Country\s*:\s*([A-Za-z]{2,})', content, re.IGNORECASE)
+    # Priority 1: "Country: SK" or "– Country: SK" (with or without dash)
+    match = re.search(r'(?:[-–]\s*)?Country\s*:\s*([A-Za-z]{2,})', content, re.IGNORECASE)
     if match:
         val = match.group(1).strip()
-        # If it's a 2-letter code return as-is uppercased
         if len(val) == 2:
             return val.upper()
-        # If it's a full country name, convert to code
         name_to_code = {
             "unitedstates": "US", "usa": "US",
             "unitedkingdom": "GB", "uk": "GB",
@@ -1470,7 +1466,7 @@ def _extract_netflix_region(content: str) -> str:
             return code
 
     # Priority 2: "– Region: Latin America" or "– Region: US" or "– Region: CL"
-    match = re.search(r'[-–]\s*Region\s*:\s*(.+)', content, re.IGNORECASE)
+    match = re.search(r'(?:[-–]\s*)?Region\s*:\s*(.+)', content, re.IGNORECASE)
     if match:
         val = match.group(1).strip()
         val_clean = re.split(r'[|\n\r(]', val)[0].strip()
@@ -1560,7 +1556,6 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     content_lower = content.lower()
     filename_lower = filename.lower()
 
-    # ── Netflix ──
     if (
         "netflixid" in content_lower or
         "netflix.com" in content_lower or
@@ -1568,10 +1563,17 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     ):
         plan   = _extract_netflix_plan(content)
         region = _extract_netflix_region(content)
+        
+        # Also try extracting region from filename (e.g. "4_SK_github...")
+        if not region:
+            fname_region = re.search(r'[_\-]([A-Z]{2})[_\-]', filename)
+            if fname_region:
+                region = fname_region.group(1).upper()
+        
         service_type = f"Netflix {plan} {region}".strip() if region else f"Netflix {plan}"
-        return service_type, "Netflix Cookie"
+        display_name = service_type  # ← use full name instead of generic "Netflix Cookie"
+        return service_type, display_name
 
-    # ── PrimeVideo ──
     if (
         "primevideo" in content_lower or
         "amazon.com" in content_lower or
@@ -1580,22 +1582,13 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
     ):
         region = _extract_prime_region(content)
         service_type = f"Prime Paid {region}".strip() if region else "Prime Video"
-        return service_type, "PrimeVideo Cookie"
+        display_name = service_type  # ← same for prime
+        return service_type, display_name
 
-    # ── Office ──
-    if (
-        "office" in filename_lower or
-        "microsoft office" in content_lower or
-        "office" in content_lower
-    ):
+    if "office" in filename_lower or "office" in content_lower:
         return "office", "Office Key"
 
-    # ── Windows ──
-    if (
-        "windows" in filename_lower or
-        "win" in filename_lower or
-        "windows" in content_lower
-    ):
+    if "windows" in filename_lower or "win" in filename_lower or "windows" in content_lower:
         return "windows", "Win Key"
 
     return "unknown", "Netflix Cookie"
@@ -2308,7 +2301,8 @@ async def handle_document(update: Update):
         f"✅ <b>Import Complete!</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📄 <b>File:</b> <code>{filename}</code>\n"
-        f"🔍 <b>Detected as:</b> {detected_display}\n\n"
+        f"🔍 <b>Detected as:</b> {detected_display}\n"
+        f"📋 <b>Name:</b> {detected_display}\n\n"
         f"🌱 <b>Imported:</b> {imported}\n"
         f"📦 <b>Skipped:</b> {skipped}\n\n"
         f"🧹 Cache refreshed!"
