@@ -2538,7 +2538,7 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "all_slots_bonus,windows_views_bonus,netflix_reveals_bonus,"
                 "prime_reveals_bonus,daily_reveals_bonus,"
                 "active_title,"
-                "crunchyroll_views,crunchyroll_reveals,crunchyroll_reveals_bonus,"
+                "crunchyroll_views,crunchyroll_reveals,crunchyroll_reveals_bonus"
             ),
         },
     )
@@ -5333,7 +5333,7 @@ async def show_paginated_cookie_list(
     )
 
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
-    emoji = "🍿" if service_type == "netflix" else "🎥"
+    emoji = {"netflix": "🍿", "prime": "🎥", "crunchyroll": "🍜"}.get(service_type, "🎥")
     loading = None
 
     try:
@@ -5449,8 +5449,8 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         freshness    = get_freshness_badge(item.get("last_updated"))
         dot          = freshness[0]
         age_text     = freshness[2:].strip() if len(freshness) > 1 else "Unknown"
-        service_name = "Netflix" if service_type == "netflix" else "Prime Video"
-        accent       = "🔴" if service_type == "netflix" else "🔵"
+        service_name = {"netflix": "Netflix", "prime": "Prime Video", "crunchyroll": "Crunchyroll"}.get(service_type, "Prime Video")
+        accent       = {"netflix": "🔴", "prime": "🔵", "crunchyroll": "🟠"}.get(service_type, "🔵")
 
         region_flag = get_region_flag(raw_service_type)
 
@@ -10277,7 +10277,7 @@ async def handle_callback(update: Update):
                 await _remember(chat_id, msg.message_id)
 
     # ── COOKIE PAGINATION ──
-    elif "_page_" in data and data.split("_page_")[0] in ("netflix", "prime"):
+    elif "_page_" in data and data.split("_page_")[0] in ("netflix", "prime", "crunchyroll"):
         try:
             service_type = data.split("_page_")[0]
             new_page     = int(data.split("_page_")[1])
@@ -10304,26 +10304,39 @@ async def handle_callback(update: Update):
             await show_achievements_page(chat_id, query, page=0)
 
     # ── REVEAL COOKIE ──
-    elif data.startswith("reveal_netflix|") or data.startswith("reveal_prime|"):
+    elif data.startswith("reveal_netflix|") or data.startswith("reveal_prime|") or data.startswith("reveal_crunchyroll|"):
         try:
-            parts        = data.split("|")
-            service_type = "netflix" if parts[0] == "reveal_netflix" else "prime"
-            idx          = int(parts[1])
-            page         = int(parts[2]) if len(parts) > 2 else 0
+            parts = data.split("|")
+            if parts[0] == "reveal_netflix":
+                service_type = "netflix"
+            elif parts[0] == "reveal_prime":
+                service_type = "prime"
+            else:
+                service_type = "crunchyroll"
+            idx  = int(parts[1])
+            page = int(parts[2]) if len(parts) > 2 else 0
         except Exception:
             await query.answer("Invalid selection", show_alert=True)
             return
         await reveal_cookie(service_type, chat_id, first_name, query, idx, page)
 
     # ── BACK TO COOKIE LIST (with cleanup) ──
-    elif data.startswith("back_to_netflix_list") or data.startswith("back_to_prime_list"):
-        service_type = "netflix" if data.startswith("back_to_netflix_list") else "prime"
+    elif (data.startswith("back_to_netflix_list") or 
+          data.startswith("back_to_prime_list") or 
+          data.startswith("back_to_crunchyroll_list")):
+        
+        if data.startswith("back_to_netflix_list"):
+            service_type = "netflix"
+        elif data.startswith("back_to_prime_list"):
+            service_type = "prime"
+        else:
+            service_type = "crunchyroll"
+
         try:
             page = int(data.split("|")[1]) if "|" in data else 0
         except Exception:
             page = 0
 
-        # NEW — fetch from Redis, delete from Telegram, clean up key
         stored_msg_id = await redis_client.get(f"reveal_msg:{chat_id}:{service_type}")
         if stored_msg_id:
             try:
@@ -10332,11 +10345,11 @@ async def handle_callback(update: Update):
                 pass
             await redis_client.delete(f"reveal_msg:{chat_id}:{service_type}")
 
-        # Show fresh list
+        emoji_map = {"netflix": "🍿", "prime": "🎥", "crunchyroll": "🍜"}
         loading = await send_animated_translated(
             chat_id=chat_id,
             animation_url=INVENTORY_GIF,
-            caption=f"{'🍿' if service_type == 'netflix' else '🎥'} <i>Loading {service_type.title()} Cookies...</i>",
+            caption=f"{emoji_map[service_type]} <i>Loading {service_type.title()} Cookies...</i>",
         )
         class FakeQuery:
             message = loading
