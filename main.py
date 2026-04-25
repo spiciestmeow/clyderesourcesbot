@@ -2775,12 +2775,23 @@ def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> 
     return f"[{bar}] {int(pct * 100)}%"
 
 def create_daily_progress_bar(used: int, max_allowed: int, length: int = 10) -> str:
-    """Visual bar for daily limits (Netflix, Prime, Windows, Office)"""
+    """Depleting bar: starts full green, drains to yellow then red as limit is hit."""
     if max_allowed <= 0:
         return "🟩" * length
-    pct = min(used / max_allowed, 1.0)
-    filled = int(pct * length)
-    return "🟩" * filled + "⬜" * (length - filled)
+
+    remaining = max(0, max_allowed - used)
+    pct_remaining = remaining / max_allowed
+    filled = round(pct_remaining * length)
+    empty = length - filled
+
+    if pct_remaining > 0.5:
+        fill_emoji = "🟩"   # plenty left — green
+    elif pct_remaining > 0.25:
+        fill_emoji = "🟨"   # getting low — yellow
+    else:
+        fill_emoji = "🟥"   # almost empty — red
+
+    return fill_emoji * filled + "⬜" * empty
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ANTI-ABUSE  (Redis-backed)
@@ -7918,8 +7929,15 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
         filtered.sort(key=lambda x: (str(x.get("service_type", "")), str(x.get("key_id", ""))))
         display_items = filtered[:max_items]
 
-        report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-        report += f"🌿 You have <b>{views_left}</b> views left today (Level {user_level})\n\n"
+        windows_bonus = (profile.get("windows_views_bonus") or 0) if profile else 0
+        all_bonus = (profile.get("all_slots_bonus") or 0) if profile else 0
+        max_views = get_max_daily_views(user_level, internal_cat) + windows_bonus + all_bonus
+        used_views = max_views - views_left
+        view_bar = create_daily_progress_bar(used_views, max_views, length=8)
+
+        report = f"{cat_emoji} <b>{cat_label} Activation Keys</b>  •  Lv{user_level}\n"
+        report += f"{view_bar}  <b>{views_left}</b> views left\n\n"
+
         report += f"📋 <b>{len(display_items)} key(s) available for your level</b>\n\n"
 
         for item in display_items:
