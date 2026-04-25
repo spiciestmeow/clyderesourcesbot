@@ -299,6 +299,7 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
             "all_slots_bonus":       "ALL daily slots",
             "netflix_reveals_bonus": "Netflix reveals/day",
             "prime_reveals_bonus":   "Prime reveals/day",
+            "crunchyroll_reveals_bonus": "Crunchyroll reveals/day",
             "windows_views_bonus":   "Windows/Office views/day",
             "daily_reveals_bonus":   "cookie reveals/day",
         }
@@ -624,17 +625,19 @@ NEW_USER_WELCOME_BONUS_IF_REFERRED = 40
 # COOLDOWN CONFIG
 # ──────────────────────────────────────────────
 COOLDOWN_SECONDS = {
-    "view_windows":  10,
-    "view_office":   10,
-    "view_netflix":  10,
-    "view_prime":    10,
+    "view_windows": 10,
+    "view_office": 10,
+    "view_netflix": 10,
+    "view_prime": 10,
+    "view_crunchyroll": 10,
     "reveal_netflix": 18,
-    "reveal_prime":   18,
-    "profile":       12,
-    "clear":         20,
-    "guidance":      30,
-    "lore":          30,
-    "general":        5,
+    "reveal_prime": 18,
+    "reveal_crunchyroll": 18,
+    "profile": 12,
+    "clear": 20,
+    "guidance": 30,
+    "lore": 30,
+    "general": 5,
     "steam_claim": 86400,
 }
 
@@ -2534,7 +2537,8 @@ async def get_user_profile(chat_id: int) -> dict | None:
                 "profile_gif_id,profile_gif_changes,"
                 "all_slots_bonus,windows_views_bonus,netflix_reveals_bonus,"
                 "prime_reveals_bonus,daily_reveals_bonus,"
-                "active_title" 
+                "active_title,"
+                "crunchyroll_views,crunchyroll_reveals,crunchyroll_reveals_bonus,"
             ),
         },
     )
@@ -2653,6 +2657,10 @@ def get_max_items(category: str, level: int, event: dict | None = None) -> int:
             
         # Normal tiers
         tiers = {1: 5, 2: 7, 3: 9, 4: 11, 5: 14, 6: 17, 7: 21, 8: 25, 9: 35}
+        return tiers.get(level, 999)
+
+    if category == "crunchyroll":
+        tiers = {1: 4, 2: 5, 3: 6, 4: 7, 5: 9, 6: 11, 7: 13, 8: 16, 9: 20}
         return tiers.get(level, 999)
 
     return 0
@@ -2776,9 +2784,11 @@ async def try_consume_reveal_cap(chat_id: int, service_type: str) -> tuple[bool,
         profile = await get_user_profile(chat_id)
         user_level = profile.get("level", 1) if profile else 1
         all_bonus = profile.get("all_slots_bonus", 0)
-        daily_reveals_bonus = profile.get("daily_reveals_bonus", 0)  # Wheel of Fate + Wheel Master
+        daily_reveals_bonus = profile.get("daily_reveals_bonus", 0)
         if service_type == "netflix":
             service_bonus = profile.get("netflix_reveals_bonus", 0)
+        elif service_type == "crunchyroll":
+            service_bonus = profile.get("crunchyroll_reveals_bonus", 0)
         else:
             service_bonus = profile.get("prime_reveals_bonus", 0)
         max_reveals = get_max_daily_reveals(user_level, service_type) + service_bonus + all_bonus + daily_reveals_bonus
@@ -2819,14 +2829,14 @@ async def get_remaining_reveals_and_views(chat_id: int) -> dict:
     try:
         profile = await get_user_profile(chat_id)
         if not profile:
-            return {"netflix": 0, "prime": 0, "windows": 0, "office": 0}
+            return {"netflix": 0, "prime": 0, "windows": 0, "office": 0, "crunchyroll": 0}
         
         level = profile.get("level", 1)
         remaining = {}
 
         all_bonus = profile.get("all_slots_bonus", 0)
         daily_reveals_bonus = profile.get("daily_reveals_bonus", 0)
-        for svc in ["netflix", "prime"]:
+        for svc in ["netflix", "prime", "crunchyroll"]:
             try:
                 key = f"daily_reveals:{chat_id}:{svc}"
                 used = int(await redis_client.get(key) or 0)
@@ -2856,7 +2866,7 @@ async def get_remaining_reveals_and_views(chat_id: int) -> dict:
 
     except Exception as e:
         print(f"🔴 Critical error in get_remaining_reveals_and_views: {e}")
-        return {"netflix": 0, "prime": 0, "windows": 0, "office": 0}
+        return {"netflix": 0, "prime": 0, "windows": 0, "office": 0, "crunchyroll": 0}
 
 async def try_consume_view_cap(chat_id: int, category: str) -> tuple[bool, int]:
     """
@@ -3135,17 +3145,19 @@ MILESTONE_LABELS = {
 # XP ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
 _XP_TABLE = {
-    "guidance":      10, 
-    "lore":          10, 
-    "view_windows":   8,
-    "view_office":    8,
-    "view_netflix":   8,
-    "view_prime":     8,
+    "guidance": 10, 
+    "lore": 10, 
+    "view_windows": 8,
+    "view_office": 8,
+    "view_netflix": 8,
+    "view_crunchyroll": 8,
+    "view_prime": 8,
     "reveal_netflix": 14,
-    "reveal_prime":   14,
-    "profile":        6,
-    "clear":          6,
-    "daily_bonus":    0,
+    "reveal_prime": 14,
+    "reveal_crunchyroll": 14,
+    "profile": 6,
+    "clear": 6,
+    "daily_bonus": 0,
     "wheel_spin": 0,
     "onboarding_complete": 15,
     "onboarding_skip": 0,
@@ -3153,16 +3165,18 @@ _XP_TABLE = {
 }
 
 _STAT_FIELD = {
-    "view_windows":   "windows_views",
-    "view_office":    "office_views",
-    "view_netflix":   "netflix_views",
-    "view_prime":     "prime_views",
+    "view_windows": "windows_views",
+    "view_office": "office_views",
+    "view_netflix": "netflix_views",
+    "view_prime": "prime_views",
+    "view_crunchyroll": "crunchyroll_views",
     "reveal_netflix": "netflix_reveals",
-    "reveal_prime":   "prime_reveals",
-    "clear":          "times_cleared",
-    "guidance":       "guidance_reads",
-    "lore":           "lore_reads",
-    "profile":        "profile_views",
+    "reveal_crunchyroll": "crunchyroll_reveals",
+    "reveal_prime": "prime_reveals",
+    "clear": "times_cleared",
+    "guidance": "guidance_reads",
+    "lore": "lore_reads",
+    "profile": "profile_views",
     "steam_claim": "steam_claims_count",
 }
 
@@ -5313,6 +5327,7 @@ async def show_paginated_cookie_list(
 
     profile    = await get_user_profile(chat_id)
     first_name = profile.get("first_name", "Wanderer") if profile else "Wanderer"
+
     asyncio.create_task(
         check_and_award_achievements(chat_id, first_name, action=f"view_{service_type}")
     )
@@ -5420,7 +5435,12 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         raw_service_type = str(item.get("service_type") or "").strip()
         title_name = raw_service_type if raw_service_type else display_name
 
-        action_name = "reveal_netflix" if service_type == "netflix" else "reveal_prime"
+        action_map = {
+            "netflix": "reveal_netflix",
+            "prime": "reveal_prime",
+            "crunchyroll": "reveal_crunchyroll",
+        }
+        action_name = action_map.get(service_type, "reveal_netflix")
 
         # Plan detail from service_type now, not display_name
         plan_detail = raw_service_type.replace("Netflix", "").replace("PrimeVideo", "").strip()
@@ -5763,6 +5783,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
     _dr_b = profile.get("daily_reveals_bonus", 0)
     _nf_max = get_max_daily_reveals(level_for_calc, "netflix") + profile.get("netflix_reveals_bonus", 0) + _all_b + _dr_b
     _pr_max = get_max_daily_reveals(level_for_calc, "prime") + profile.get("prime_reveals_bonus", 0) + _all_b + _dr_b
+    _cr_max = get_max_daily_reveals(level_for_calc, "crunchyroll") + profile.get("crunchyroll_reveals_bonus", 0) + _all_b + _dr_b
     _win_max = get_max_daily_views(level_for_calc, "windows") + profile.get("windows_views_bonus", 0) + _all_b
     _off_max = get_max_daily_views(level_for_calc, "office") + profile.get("windows_views_bonus", 0) + _all_b
 
@@ -5773,6 +5794,8 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"╰{create_daily_progress_bar(_nf_max - rem['netflix'], _nf_max)}\n\n"
         f"╭🎥 Prime Reveals: <b>{rem['prime']}</b> left\n"
         f"╰{create_daily_progress_bar(_pr_max - rem['prime'], _pr_max)}\n\n"
+        f"╭🍜 Crunchyroll Reveals: <b>{rem['crunchyroll']}</b> left\n"
+        f"╰{create_daily_progress_bar(_cr_max - rem['crunchyroll'], _cr_max)}\n\n"
         f"╭🪟 Windows Keys: <b>{rem['windows']}</b> left\n"
         f"╰{create_daily_progress_bar(_win_max - rem['windows'], _win_max)}\n\n"
         f"╭📑 Office Keys: <b>{rem['office']}</b> left\n"
@@ -5832,6 +5855,8 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
         f"• Netflix Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
         f"• PrimeVideo Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
         f"• PrimeVideo Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
+        f"• Crunchyroll Viewed: <b>{profile.get('crunchyroll_views', 0)}</b>\n"
+        f"• Crunchyroll Revealed: <b>{profile.get('crunchyroll_reveals', 0)}</b>\n"
         f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n\n"
         "🎰 <b>Wheel of Whispers</b>\n\n"
         f"• Total Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
@@ -9991,6 +10016,7 @@ async def handle_callback(update: Update):
         action_map = {
             "win": "view_windows", "windows": "view_windows",
             "office": "view_office", "netflix": "view_netflix", "prime": "view_prime",
+            "crunchyroll": "view_crunchyroll",
         }
 
         # Only award XP immediately for netflix/prime/steam — win/office handles it later
