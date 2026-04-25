@@ -5770,7 +5770,7 @@ async def handle_online_users(chat_id: int, query=None):
     )
     await _remember(chat_id, msg.message_id) 
     
-async def handle_profile_page(chat_id: int, first_name: str, query=None):
+async def handle_profile_page(chat_id: int, first_name: str, query=None, page: int = 0):
     """Fixed version — shows achievement summary directly in profile"""
     profile = await get_user_profile(chat_id)
     if not profile:
@@ -5869,62 +5869,75 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None):
 
     streak_txt = f"🔥 {streak}-day streak!" if streak >= 2 else "🌱 Just getting started!"
     title = profile.get("active_title") or get_level_title(level)
-    caption = (
-        f"👤 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ <b>{title}</b>\n"
-        f"⭐ Level <b>{level}</b> • {streak_txt}\n\n"
-        f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
-        f"{create_progress_bar(xp, xp_required_next, 12)}\n"
-        f"📈 To next level: <b>{max(0, xp_required_next - xp):,} XP</b>\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"{ach_summary}"
-        f"{daily_section}"
-        "📊 <b>Activity</b>\n\n"
-        f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
-        f"• Profile Logo Changes: <b>{profile.get('profile_gif_changes', 0)}</b>\n"
-        f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n"
-        f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n"
-        f"• Profile Views: <b>{profile.get('profile_views', 0)}</b>\n"
-        f"• Guidance Read: <b>{profile.get('guidance_reads', 0)}</b>\n"
-        f"• Lore Read: <b>{profile.get('lore_reads', 0)}</b>\n"
-        f"• Times Cleared: <b>{profile.get('times_cleared', 0)}</b>\n\n"
-        "🎮 <b>Resource Usage</b>\n\n"
-        f"• Windows Keys Viewed: <b>{profile.get('windows_views', 0)}</b>\n"
-        f"• Office Keys Viewed: <b>{profile.get('office_views', 0)}</b>\n"
-        f"• Netflix Viewed: <b>{profile.get('netflix_views', 0)}</b>\n"
-        f"• Netflix Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
-        f"• PrimeVideo Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
-        f"• PrimeVideo Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
-        f"• Crunchyroll Viewed: <b>{profile.get('crunchyroll_views', 0)}</b>\n"
-        f"• Crunchyroll Revealed: <b>{profile.get('crunchyroll_reveals', 0)}</b>\n"
-        f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n\n"
-        "🎰 <b>Wheel of Whispers</b>\n\n"
-        f"• Total Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
-        f"• Legendary Spins: <b>{profile.get('legendary_spins', 0)}</b>\n"
-        f"• Wheel XP Earned: <b>{profile.get('wheel_xp_earned', 0):,}</b>\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"🌱 Joined: <b>{joined_date}</b>\n"
-        f"🌲 Last Active: <b>{last_active}</b>\n\n"
-        "<i>The trees remember every step of your journey.</i> 🍃"
-    )
+
+    pages = {
+        0: (  # Page 1: XP + Achievements + Daily Limits
+            f"👤 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🏷️ <b>{title}</b>\n"
+            f"⭐ Level <b>{level}</b> • {streak_txt}\n\n"
+            f"✨ <b>XP:</b> {xp:,} / {xp_required_next:,}\n"
+            f"{create_progress_bar(xp, xp_required_next, 12)}\n"
+            f"📈 To next level: <b>{max(0, xp_required_next - xp):,} XP</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            f"{ach_summary}"
+            f"{daily_section}"
+            f"🌱 Joined: <b>{joined_date}</b>\n"
+            f"🌲 Last Active: <b>{last_active}</b>"
+        ),
+        1: (  # Page 2: Activity + Resource Usage + Wheel
+            f"👤 <b>{html.escape(first_name)}'s Forest Profile</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "📊 <b>Activity</b>\n\n"
+            f"• Total XP Earned: <b>{profile.get('total_xp_earned', xp):,}</b>\n"
+            f"• Profile Logo Changes: <b>{profile.get('profile_gif_changes', 0)}</b>\n"
+            f"• Days Active: <b>{profile.get('days_active', 0)}</b>\n"
+            f"• Friends Referred: <b>{profile.get('referral_count', 0)}</b>\n"
+            f"• Profile Views: <b>{profile.get('profile_views', 0)}</b>\n"
+            f"• Guidance Read: <b>{profile.get('guidance_reads', 0)}</b>\n"
+            f"• Lore Read: <b>{profile.get('lore_reads', 0)}</b>\n"
+            f"• Times Cleared: <b>{profile.get('times_cleared', 0)}</b>\n\n"
+            "🎮 <b>Resource Usage</b>\n\n"
+            f"• Windows Keys Viewed: <b>{profile.get('windows_views', 0)}</b>\n"
+            f"• Office Keys Viewed: <b>{profile.get('office_views', 0)}</b>\n"
+            f"• Netflix Viewed: <b>{profile.get('netflix_views', 0)}</b>\n"
+            f"• Netflix Revealed: <b>{profile.get('netflix_reveals', 0)}</b>\n"
+            f"• PrimeVideo Viewed: <b>{profile.get('prime_views', 0)}</b>\n"
+            f"• PrimeVideo Revealed: <b>{profile.get('prime_reveals', 0)}</b>\n"
+            f"• Crunchyroll Viewed: <b>{profile.get('crunchyroll_views', 0)}</b>\n"
+            f"• Crunchyroll Revealed: <b>{profile.get('crunchyroll_reveals', 0)}</b>\n"
+            f"• Steam Claimed: <b>{profile.get('steam_claims_count', 0)}</b>\n\n"
+            "🎰 <b>Wheel of Whispers</b>\n\n"
+            f"• Total Spins: <b>{profile.get('total_wheel_spins', 0)}</b>\n"
+            f"• Legendary Spins: <b>{profile.get('legendary_spins', 0)}</b>\n"
+            f"• Wheel XP Earned: <b>{profile.get('wheel_xp_earned', 0):,}</b>\n\n"
+            "<i>The trees remember every step of your journey.</i> 🍃"
+        ),
+    }
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("↼ Prev", callback_data=f"profile_page_{page-1}"))
+    nav_row.append(InlineKeyboardButton(f"📄 {page+1}/2", callback_data="noop"))
+    if page < 1:
+        nav_row.append(InlineKeyboardButton("Next ⇀", callback_data=f"profile_page_{page+1}"))
 
     keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
-                InlineKeyboardButton("🏷️ Set Title", callback_data="show_set_title"),
-            ],
-            [
-                InlineKeyboardButton("📜 XP History",  callback_data="history_page_0"),
-                InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
-            ],
-
-            [
-                InlineKeyboardButton("🏆 Achievements",   callback_data="show_achievements"),
-                InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
-            ],
-            [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
-        ])
+        [
+            InlineKeyboardButton("🖼️ Change Profile", callback_data="change_profile_logo"),
+            InlineKeyboardButton("🏷️ Set Title", callback_data="show_set_title"),
+        ],
+        [
+            InlineKeyboardButton("📜 XP History", callback_data="history_page_0"),
+            InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard_from_profile"),
+        ],
+        [
+            InlineKeyboardButton("🏆 Achievements", callback_data="show_achievements"),
+            InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
+        ],
+        nav_row,
+        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+    ])
 
     gif_id = profile.get("profile_gif_id") if profile else None
 
@@ -8691,6 +8704,14 @@ async def handle_callback(update: Update):
         except Exception:
             pass
         await send_onboarding_step(chat_id, first_name, step=step)
+        return
+
+    elif data.startswith("profile_page_"):
+        try:
+            page = int(data.split("_")[2])
+            await handle_profile_page(chat_id, first_name, query, page=page)
+        except Exception as e:
+            print(f"Profile page error: {e}")
         return
     
     elif data.startswith("set_title|"):
