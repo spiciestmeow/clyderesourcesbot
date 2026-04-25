@@ -1620,11 +1620,12 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 ".primevideo.com",
                 "www.primevideo.com",
                 ".www.primevideo.com",
+                ".www.crunchyroll.com",
                 "www.crunchyroll.com",
                 ".sso.crunchyroll.com",
+                "sso.crunchyroll.com",
                 ".crunchyroll.com",
                 "static.crunchyroll.com",
-                ".www.crunchyroll.com",
             )
             cookie_lines = [
                 line for line in content.splitlines()
@@ -5126,10 +5127,12 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 async def show_paginated_cookie_list(
     service_type: str, chat_id: int, query, page: int = 0
 ):
-    is_netflix = service_type == "netflix"
-    title = "Netflix" if is_netflix else "Prime Video"
-    emoji = "🎬" if is_netflix else "📦"
-    accent = "🔴" if is_netflix else "🔵"
+    if service_type == "netflix":
+        title, emoji, accent = "Netflix", "🎬", "🔴"
+    elif service_type == "crunchyroll":
+        title, emoji, accent = "Crunchyroll", "🍜", "🟠"
+    else:
+        title, emoji, accent = "Prime Video", "📦", "🔵"
 
     # Loading states
     await query.message.edit_caption(
