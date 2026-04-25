@@ -426,6 +426,35 @@ STEAM_DAILY_LIMITS = {
     10: 999,
 }
 
+def safe_handler(context: str = ""):
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                print(f"🔴 [{context or func.__name__}]: {e}")
+                # Find chat_id from args
+                chat_id = None
+                for arg in args:
+                    if hasattr(arg, 'effective_chat') and arg.effective_chat:
+                        chat_id = arg.effective_chat.id
+                        break
+                    if isinstance(arg, int):
+                        chat_id = arg
+                        break
+                if chat_id:
+                    try:
+                        await tg_app.bot.send_message(
+                            chat_id,
+                            "🌫️ <b>Something went wrong in the forest...</b>\n\n"
+                            "Please try again or use /clear to reset. 🍃",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+        return wrapper
+    return decorator
+
 def get_early_access_hour(level: int) -> int | None:
     """Returns the hour (Manila time) when this level gets early access. None = no early access."""
     if level >= 10:
@@ -3359,7 +3388,7 @@ async def add_xp(chat_id: int, first_name: str, action: str = "general", xp_over
         }
         # Inside the new-user else: block, just before the upsert
         print("🔵 NEW USER PAYLOAD KEYS:", list(payload.keys()))
-        ok = await _sb_upsert("user_profiles", payload, on_conflict="chat_id")
+        ok = await _sb_upsert("user_profiles", payload, on_conflict="chat_id", ignore_duplicates=True)
         print(f"🔵 NEW USER UPSERT for {chat_id}: ok={ok}")
 
         # ── MILESTONE CHECK for new users ──
@@ -5332,6 +5361,7 @@ async def show_paginated_cookie_list(
         check_and_award_achievements(chat_id, first_name, action=f"view_{service_type}")
     )
 
+@safe_handler("reveal_cookie")
 async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query, idx: int, page: int):
     emoji = {"netflix": "🍿", "prime": "🎥", "crunchyroll": "🍜"}.get(service_type, "🎥")
     loading = None
@@ -8577,6 +8607,7 @@ async def restore_bot_commands(chat_id: int):
     except Exception as e:
         print(f"🔴 Could not restore commands for {chat_id}: {e}")
 
+@safe_handler("callback")
 async def handle_callback(update: Update):
     query     = update.callback_query
     if not query or not query.data:
@@ -10587,6 +10618,7 @@ async def handle_callback(update: Update):
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN UPDATE PROCESSOR
 # ══════════════════════════════════════════════════════════════════════════════
+@safe_handler("process_update")
 async def process_update(update_data: dict):
     update = Update.de_json(update_data, tg_app.bot)
 
