@@ -1033,19 +1033,19 @@ async def send_to_notion(title: str, properties: dict, emoji: str = "🌿"):
     except Exception as e:
         print(f"❌ Notion exception: {e}")
         return False
-        
-async def _sb_upsert(path: str, payload: dict | list, on_conflict: str) -> bool:
-    """Upsert with FULL error logging when it fails"""
+
+async def _sb_upsert(path: str, payload: dict | list, on_conflict: str, ignore_duplicates: bool = False) -> bool:
     async with db_sem:
         try:
             data = [payload] if isinstance(payload, dict) else payload
+            resolution = "ignore-duplicates" if ignore_duplicates else "merge-duplicates"
 
             r = await asyncio.wait_for(
                 http.post(
                     f"{SUPABASE_URL}/rest/v1/{path}",
                     headers=_supabase_headers({
                         "Content-Type": "application/json",
-                        "Prefer": "resolution=merge-duplicates,return=minimal",
+                        "Prefer": f"resolution={resolution},return=minimal",
                     }),
                     params={"on_conflict": on_conflict},
                     json=data,
@@ -1541,9 +1541,10 @@ def detect_service_type(content: str, filename: str) -> tuple[str, str]:
 
     return "unknown", "Netflix Cookie"
 
-async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, list[str], dict]:
+async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> tuple[int, int, int, list[str], dict]:
     imported = 0
     skipped = 0
+    duplicates = 0
     errors = []
     added_counts = Counter()
 
@@ -1609,19 +1610,18 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             "display_name": detected_display,
         }
 
-        success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
-        if success:
+        ok, inserted = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
+
+        if ok and inserted:
             imported += 1
             added_counts[detected_service] += 1
+        elif ok and not inserted:
+            duplicates += 1
         else:
             skipped += 1
-            errors.append(
-                f"❌ Cookie file skipped\n"
-                f"   File: {filename}\n"
-                f"   Service: {detected_service}\n"
-                f"   Reason: Supabase upsert rejected"
-            )
-        return imported, skipped, errors, dict(added_counts)
+            errors.append(f"❌ Rejected by Supabase: {key_id[:30]}")
+
+        return imported, skipped, duplicates, errors, dict(added_counts)
 
     # ══════════════════════════════════════
     # FORMAT 2 — JSON format
@@ -1644,7 +1644,9 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                     "status":       "active",
                     "display_name": detected_display,
                 }
-                success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+
+                success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
+
                 if success:
                     imported += 1
                     added_counts[item.get("service_type", detected_service)] += 1
@@ -1694,7 +1696,9 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 "status":       "active",
                 "display_name": detected_display,
             }
-            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+
+            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
+
             if success:
                 imported += 1
                 added_counts[detected_service] += 1
@@ -1741,7 +1745,9 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                     "status":       "active",
                     "display_name": disp,
                 }
-                success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+
+                success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
+
                 if success:
                     imported += 1
                     added_counts[svc] += 1
@@ -1793,7 +1799,8 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
                 "display_name": disp,
             }
 
-            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
+
             if success:
                 imported += 1
                 added_counts[svc] += 1
@@ -2135,6 +2142,7 @@ async def handle_document(update: Update):
     if is_zip:
         total_imported = 0
         total_skipped = 0
+        total_duplicates = 0
         all_errors = []
         processed_files = []
         total_added = Counter()
@@ -2160,6 +2168,7 @@ async def handle_document(update: Update):
                         total_added.update(file_added)
                         total_imported += imported
                         total_skipped += skipped
+                        total_duplicates += duplicates
                         all_errors.extend(errors)
                         icon = "✅" if imported > 0 else "⚠️"
                         processed_files.append(f"{icon} <code>{basename}</code> → +{imported} imported")
@@ -2186,10 +2195,11 @@ async def handle_document(update: Update):
             f"━━━━━━━━━━━━━━━━━━\n\n"
             f"📦 <b>Files processed:</b> {len(txt_files)}\n"
             f"🌱 <b>Total Imported:</b> {total_imported}\n"
+            f"⚠️ <b>Total Duplicates:</b> {total_duplicates}\n"
             f"📦 <b>Total Skipped:</b> {total_skipped}\n\n"
-            f"<b>Per-file results:</b>\n{files_summary}\n\n"
-            f"🧹 Cache refreshed!"
+            + (f"🧹 Cache refreshed!" if cache_cleared else f"📌 Cache unchanged — nothing new was added.")
         )
+
         if len(processed_files) > 20:
             result += f"\n<i>...and {len(processed_files) - 20} more files</i>"
 
@@ -2226,7 +2236,12 @@ async def handle_document(update: Update):
         return
 
     detected_service, detected_display = detect_service_type(content, filename)
-    imported, skipped, errors, added_counts = await parse_and_import_keys(content, filename)
+    imported, skipped, duplicates, errors, added_counts = await parse_and_import_keys(content, filename)
+
+    cache_cleared = False
+    if imported > 0:
+        await redis_client.delete("vamt_cache")
+        cache_cleared = True
 
     await redis_client.delete("vamt_cache")     
 
@@ -2251,8 +2266,9 @@ async def handle_document(update: Update):
         f"📄 <b>File:</b> <code>{filename}</code>\n"
         f"🔍 <b>Detected as:</b> {detected_display}\n\n"
         f"🌱 <b>Imported:</b> {imported}\n"
-        f"📦 <b>Skipped:</b> {skipped}\n\n"
-        f"🧹 Cache refreshed!"
+        f"⚠️ <b>Duplicates:</b> {duplicates}\n"
+        f"📦 <b>Skipped/Failed:</b> {skipped}\n\n"
+        + (f"🧹 Cache refreshed!" if cache_cleared else f"📌 Cache unchanged — nothing new was added.")
     )
 
     if skipped > 0 and errors:
@@ -8260,7 +8276,7 @@ async def handle_uploadwinoffice_command(chat_id: int, raw_text: str):
                 "display_name": default_name,
             }
 
-            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id")
+            success = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
 
             if success:
                 imported += 1
