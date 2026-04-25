@@ -10887,9 +10887,7 @@ async def process_update(update_data: dict):
                 chat_id=chat_id,
                 animation_url=HELLO_GIF,
                 caption=(
-                    "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
-                    "The ancient trees watch you with quiet curiosity.\n\n"
-                    "To step into the Enchanted Clearing..."
+                    "🌿 The forest spirits invite you to enter the Enchanted Forest first, kind wanderer."
                 ),
                 reply_markup=kb_start(),
             )
