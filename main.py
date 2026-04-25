@@ -1034,7 +1034,7 @@ async def send_to_notion(title: str, properties: dict, emoji: str = "🌿"):
         print(f"❌ Notion exception: {e}")
         return False
 
-async def _sb_upsert(path: str, payload: dict | list, on_conflict: str, ignore_duplicates: bool = False) -> bool:
+async def _sb_upsert(path: str, payload: dict | list, on_conflict: str, ignore_duplicates: bool = False) -> tuple[bool, int]:
     async with db_sem:
         try:
             data = [payload] if isinstance(payload, dict) else payload
@@ -1056,15 +1056,13 @@ async def _sb_upsert(path: str, payload: dict | list, on_conflict: str, ignore_d
             print(f"🟢 SB UPSERT {path}: status={r.status_code}")
 
             if r.status_code not in (200, 201):
-                error_body = r.text if r.text else "No body"
-                print(f"🔴 SB UPSERT ERROR {r.status_code}: {error_body}")
-                return False
+                return False, r.status_code
 
-            return True
+            return True, r.status_code
 
         except Exception as e:
             print(f"🔴 SB UPSERT {path} EXCEPTION: {e}")
-            return False
+            return False, 0
 
 async def _sb_patch(path: str, payload: dict) -> bool:
     async with db_sem:
@@ -1610,16 +1608,16 @@ async def parse_and_import_keys(content: str, filename: str = "unknown.txt") -> 
             "display_name": detected_display,
         }
 
-        ok, inserted = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
+        ok, status_code = await _sb_upsert("vamt_keys", payload, on_conflict="key_id", ignore_duplicates=True)
 
-        if ok and inserted:
+        if ok and status_code == 201:
             imported += 1
             added_counts[detected_service] += 1
-        elif ok and not inserted:
+        elif ok and status_code == 200:
             duplicates += 1
         else:
             skipped += 1
-            errors.append(f"❌ Rejected by Supabase: {key_id[:30]}")
+            errors.append(f"❌ Rejected by Supabase: {cookie_block[:30]}")
 
         return imported, skipped, duplicates, errors, dict(added_counts)
 
