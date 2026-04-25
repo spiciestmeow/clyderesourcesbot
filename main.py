@@ -5939,6 +5939,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None, page: i
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
 
+    caption = pages.get(page, pages[0]) 
     gif_id = profile.get("profile_gif_id") if profile else None
 
     if gif_id:
