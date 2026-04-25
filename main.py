@@ -1398,154 +1398,104 @@ async def handle_uploadkeys_command(chat_id: int):
     await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
 
 def _extract_netflix_plan(content: str) -> str:
-    # Match with or without leading dash
-    match = re.search(r'(?:[-–]\s*)?Plan\s*:\s*(.+)', content, re.IGNORECASE)
+    # Match any "Plan: <value>" regardless of what the value is
+    match = re.search(
+        r'(?:[-–•]\s*)?Plan\s*[:\-]\s*(.+)',
+        content, re.IGNORECASE
+    )
     if match:
         raw = match.group(1).strip()
         raw = re.split(r'[|\n\r(]', raw)[0].strip()
-        return raw.title()
+        if raw:
+            return raw.title()
     return "Premium"
 
-
 def _extract_netflix_region(content: str) -> str:
-    # Priority 1: "Country: SK" or "– Country: SK" (with or without dash)
-    match = re.search(r'(?:[-–]\s*)?Country\s*:\s*([A-Za-z]{2,})', content, re.IGNORECASE)
-    if match:
-        val = match.group(1).strip()
-        if len(val) == 2:
-            return val.upper()
-        name_to_code = {
-            "unitedstates": "US", "usa": "US",
-            "unitedkingdom": "GB", "uk": "GB",
-            "brazil": "BR", "brasil": "BR",
-            "philippines": "PH",
-            "india": "IN",
-            "canada": "CA",
-            "australia": "AU",
-            "germany": "DE", "deutschland": "DE",
-            "france": "FR",
-            "mexico": "MX",
-            "southafrica": "ZA",
-            "netherlands": "NL",
-            "spain": "ES", "espana": "ES",
-            "italy": "IT",
-            "japan": "JP",
-            "korea": "KR",
-            "singapore": "SG",
-            "malaysia": "MY",
-            "indonesia": "ID",
-            "thailand": "TH",
-            "turkey": "TR",
-            "argentina": "AR",
-            "colombia": "CO",
-            "chile": "CL",
-            "peru": "PE",
-            "poland": "PL",
-            "sweden": "SE",
-            "norway": "NO",
-            "denmark": "DK",
-            "finland": "FI",
-            "portugal": "PT",
-            "belgium": "BE",
-            "switzerland": "CH",
-            "austria": "AT",
-            "newzealand": "NZ",
-            "hongkong": "HK",
-            "taiwan": "TW",
-            "nigeria": "NG",
-            "egypt": "EG",
-            "saudiarabia": "SA",
-            "uae": "AE",
-            "israel": "IL",
-            "czechrepublic": "CZ",
-            "hungary": "HU",
-            "romania": "RO",
-        }
-        code = name_to_code.get(val.lower().replace(" ", ""))
-        if code:
-            return code
+    # Match any "Country: <value>" or "Region: <value>" regardless of what the value is
+    for label in ("Country", "Region"):
+        match = re.search(
+            rf'(?:[-–•]\s*)?{label}\s*[:\-]\s*(.+)',
+            content, re.IGNORECASE
+        )
+        if match:
+            raw = match.group(1).strip()
+            raw = re.split(r'[|\n\r(]', raw)[0].strip()
+            if raw:
+                # If it's a 2-letter code, return as-is uppercased
+                if len(raw) == 2 and raw.isalpha():
+                    return raw.upper()
+                # Otherwise return the full value cleaned up
+                return raw.title()
 
-    # Priority 2: "– Region: Latin America" or "– Region: US" or "– Region: CL"
-    match = re.search(r'(?:[-–]\s*)?Region\s*:\s*(.+)', content, re.IGNORECASE)
-    if match:
-        val = match.group(1).strip()
-        val_clean = re.split(r'[|\n\r(]', val)[0].strip()
-
-        # If it's a 2-letter code
-        if len(val_clean) == 2 and val_clean.isalpha():
-            return val_clean.upper()
-
-        # If it's a region name, map to shortcode
-        region_name_map = {
-            "latin america": "LATAM",
-            "latinamerica": "LATAM",
-            "latam": "LATAM",
-            "north america": "NA",
-            "northamerica": "NA",
-            "europe": "EU",
-            "southeast asia": "SEA",
-            "southeastasia": "SEA",
-            "middle east": "ME",
-            "middleeast": "ME",
-            "south asia": "SA",
-            "southasia": "SA",
-            "east asia": "EA",
-            "eastasia": "EA",
-            "africa": "AF",
-            "oceania": "OC",
-        }
-        code = region_name_map.get(val_clean.lower())
-        if code:
-            return code
-
-        # Otherwise just use first word cleaned up
-        first_word = val_clean.split()[0].strip()
-        if first_word.isalpha() and len(first_word) <= 10:
-            return first_word.upper()
-
-    # Priority 3: Fallback — locale string like "hora+de+verano+de+Chile" → CL
-    # or "en-US", "es-CL", "pt-BR" style
+    # Fallback: locale string like en-US, es-CL, pt-BR
     locale_match = re.search(r'\b[a-z]{2}-([A-Z]{2})\b', content)
     if locale_match:
         known = {
             "US","GB","BR","PH","IN","CA","AU","DE","FR","MX","ZA","NL",
             "ES","IT","JP","KR","SG","MY","ID","TH","TR","AR","CO","CL",
             "PE","PL","SE","NO","DK","FI","PT","BE","CH","AT","NZ","HK",
-            "TW","NG","EG","SA","AE","IL","CZ","HU","RO",
+            "TW","NG","EG","SA","AE","IL","CZ","HU","RO","SK","UA","VN",
         }
         code = locale_match.group(1).upper()
         if code in known:
             return code
 
+    # Fallback: preferredLocale cookie value
+    locale_cookie = re.search(r'preferredLocale\s+([a-z]{2,3}[-_][A-Z]{2})', content)
+    if locale_cookie:
+        parts = re.split(r'[-_]', locale_cookie.group(1))
+        if len(parts) == 2:
+            return parts[1].upper()
+
     return ""
 
 def _extract_prime_region(content: str) -> str:
-    # Priority 1: "– Country: ZA" or "– Region: ZA"
+    # Match any "Country: <value>" or "Region: <value>"
     for label in ("Country", "Region"):
         match = re.search(
-            rf'[-–]\s*{label}\s*:\s*([A-Za-z]{{2,}})',
+            rf'(?:[-–•]\s*)?{label}\s*[:\-]\s*(.+)',
             content, re.IGNORECASE
         )
         if match:
-            val = match.group(1).strip()
-            if len(val) == 2:
-                return val.upper()
+            raw = match.group(1).strip()
+            raw = re.split(r'[|\n\r(]', raw)[0].strip()
+            if raw:
+                if len(raw) == 2 and raw.isalpha():
+                    return raw.upper()
+                return raw.title()
 
-    # Priority 2: ubid cookie name → region
+    # Fallback: ubid cookie name
     ubid_match = re.search(r'ubid-([a-z]+)', content.lower())
     if ubid_match:
         suffix = ubid_match.group(1)
         suffix_map = {
-            "main": "US", "acbde": "DE", "acbfr": "FR", "acbuk": "GB",
-            "acbca": "CA", "acbin": "IN", "acbau": "AU", "acbmx": "MX",
-            "acbbr": "BR", "acbpl": "PL", "acbnl": "NL", "acbes": "ES",
-            "acbit": "IT", "acbjp": "JP", "acbsg": "SG", "acbae": "AE",
-            "acbza": "ZA",
+            "main":   "US", "acbde":  "DE", "acbfr":  "FR",
+            "acbuk":  "GB", "acbca":  "CA", "acbin":  "IN",
+            "acbau":  "AU", "acbmx":  "MX", "acbbr":  "BR",
+            "acbpl":  "PL", "acbnl":  "NL", "acbes":  "ES",
+            "acbit":  "IT", "acbjp":  "JP", "acbsg":  "SG",
+            "acbae":  "AE", "acbza":  "ZA", "acbtr":  "TR",
+            "acbsa":  "SA", "acbeg":  "EG",
         }
         if suffix in suffix_map:
             return suffix_map[suffix]
 
-    # Priority 3: locale string fallback
+    # Fallback: Amazon domain
+    domain_match = re.search(
+        r'amazon\.(co\.uk|co\.jp|com\.au|com\.br|com\.mx|com\.tr|de|fr|it|es|pl|nl|ca|in|sg|ae|sa)',
+        content.lower()
+    )
+    if domain_match:
+        domain_map = {
+            "co.uk": "GB", "co.jp": "JP", "com.au": "AU",
+            "com.br": "BR", "com.mx": "MX", "com.tr": "TR",
+            "de": "DE", "fr": "FR", "it": "IT", "es": "ES",
+            "pl": "PL", "nl": "NL", "ca": "CA", "in": "IN",
+            "sg": "SG", "ae": "AE", "sa": "SA",
+        }
+        return domain_map.get(domain_match.group(1), "")
+
+    # Fallback: locale string
     locale_match = re.search(r'\b[a-z]{2}-([A-Z]{2})\b', content)
     if locale_match:
         return locale_match.group(1).upper()
