@@ -608,7 +608,8 @@ async def claim_steam_account(
     ) or []
 
     if existing_claim:
-        return False  # already claimed — don't insert duplicate
+        print(f"ℹ️ User {chat_id} tried to claim already-owned account: {account_email}")
+        return False  # already claimed by this user
 
     success = await _sb_post("steam_claims", {
         "chat_id": chat_id,
@@ -9961,17 +9962,34 @@ async def handle_callback(update: Update):
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
 
-        # === ORIGINAL CLAIM LOGIC (kept untouched) ===
-        success = await claim_steam_account(chat_id, first_name, account_email, "Steam Account")
+        # === FIX: Get the REAL game name from the database ===
+        acc_data = await _sb_get(
+            "steamCredentials",
+            **{
+                "email": f"eq.{account_email}",
+                "select": "game_name",
+            }
+        ) or []
+        real_game_name = acc_data[0].get("game_name", "Steam Account") if acc_data else "Steam Account"
+
+        # Try to claim with the correct game name
+        success = await claim_steam_account(
+            chat_id, first_name, account_email, real_game_name
+        )
 
         if success:
-            # === NEW: Start cooldown ONLY when they actually claim ===
+            # Successful first claim
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
+
+            # Full cleanup so you can search again immediately
             await redis_client.delete(f"steam_search_result:{chat_id}")
+            await redis_client.delete(f"steam_searching:{chat_id}")
+            await redis_client.delete(f"steam_search_attempts:{chat_id}")
 
             hours_left = cooldown_seconds // 3600
             mins_left = (cooldown_seconds % 3600) // 60
+
             await tg_app.bot.send_message(
                 chat_id,
                 f"✅ <b>Claim successful!</b>\n\n"
@@ -9979,6 +9997,13 @@ async def handle_callback(update: Update):
                 f"(Level {level} cooldown)",
                 parse_mode="HTML"
             )
+
+        else:
+            # === Already claimed by YOU ===
+            await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
+            # Show your claims page so you can see the record
+            await show_my_steam_claims(chat_id, first_name, query, page=0)
+            return
 
         await redis_client.delete(f"steam_search_attempts:{chat_id}")
         await redis_client.delete(f"steam_search_result:{chat_id}")
