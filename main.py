@@ -7754,6 +7754,26 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
             f"🌿 Level {level} cooldown: <b>{cooldown_hours}h</b>"
         )
         search_buttons = []
+
+    elif attempts_left <= 0:
+        # Attempts exhausted — activate cooldown now so the timer shows correctly
+        await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_hours * 3600, "1")
+        await redis_client.delete(f"steam_search_attempts:{chat_id}")
+        new_ttl = await redis_client.ttl(f"steam_search_cd:{chat_id}")
+        hours = new_ttl // 3600
+        mins = (new_ttl % 3600) // 60
+        total_cd_seconds = cooldown_hours * 3600
+        elapsed = total_cd_seconds - new_ttl
+        cd_bar = create_daily_progress_bar(elapsed, total_cd_seconds, length=10)
+        pct_done = round((elapsed / total_cd_seconds) * 100) if total_cd_seconds > 0 else 0
+        status_text = (
+            f"🚫 <b>No Search Attempts Remaining</b>\n"
+            f"Cooldown: <b>{hours}h {mins}m</b>\n"
+            f"{cd_bar} {pct_done}% done\n\n"
+            f"🌿 Level {level} cooldown: <b>{cooldown_hours}h</b>"
+        )
+        search_buttons = []
+
     else:
         attempts_bar = create_daily_progress_bar(3 - attempts_left, 3, length=10)
         status_text = (
@@ -7882,6 +7902,22 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     attempts_key = f"steam_search_attempts:{chat_id}"
     current_attempts = int(await redis_client.get(attempts_key) or 0)
     attempts_left = 3 - current_attempts
+
+    # ── GUARD: already at max attempts — don't increment further ──
+    if current_attempts >= 3:
+        await redis_client.delete(f"steam_searching:{chat_id}")
+        await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_hours * 3600, "1")
+        await redis_client.delete(attempts_key)
+        await tg_app.bot.send_message(
+            chat_id,
+            f"🚫 <b>No search attempts remaining.</b>\n\n"
+            f"Please wait for your cooldown to expire before searching again. 🍃",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            ])
+        )
+        return
 
     # Fetch ALL available accounts (paginated to avoid limit)
     all_accounts = []
@@ -10010,6 +10046,16 @@ async def handle_callback(update: Update):
             return
 
     elif data == "search_different_game":
+        # Guard: re-check attempts before allowing the search prompt
+        current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+        if current_attempts >= 3:
+            await query.answer("🚫 No search attempts remaining!", show_alert=True)
+            await handle_steam_landing(chat_id, first_name, query)
+            return
+
+        attempts_left = 3 - current_attempts
+        await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
+        
         # User actively chose to search again within the window — free, no attempt charged
         # Deleting the result key signals _expire_result to exit without charging
         await redis_client.delete(f"steam_search_result:{chat_id}")
