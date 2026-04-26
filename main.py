@@ -9955,45 +9955,46 @@ async def handle_callback(update: Update):
             return
 
     elif data == "search_different_game":
-        # Consume 1 attempt when user abandons the current result
+        # Consume 1 attempt when user taps "Search Different Game"
         attempts_key = f"steam_search_attempts:{chat_id}"
-        current_attempts = int(await redis_client.get(attempts_key) or 0)
-        await redis_client.setex(attempts_key, 300, current_attempts + 1)   # 5 min TTL
+        current = int(await redis_client.get(attempts_key) or 0)
+        await redis_client.setex(attempts_key, 300, current + 1)
 
-        await query.answer("✅ 1 attempt used • Search reset", show_alert=False)
+        # Clear any cached result so next search is fresh
+        await redis_client.delete(f"steam_search_result:{chat_id}")
+        await redis_client.delete(f"steam_searching:{chat_id}")
 
-        # Return to fresh search page
+        await query.answer("✅ 1 attempt used • New search ready", show_alert=False)
         await handle_steam_landing(chat_id, first_name, query)
         return
 
     elif data.startswith("claim_steam|"):
         _, account_email = data.split("|")
         
-        # Verify the search result is still valid (5 minutes)
+        # Verify the search result is still valid
         cached = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached or account_email not in cached:
-            await query.answer("⏳ This result has expired (5 minutes). Search again.", show_alert=True)
+            await query.answer("⏳ This result has expired. Search again.", show_alert=True)
             return
 
         profile = await get_user_profile(chat_id)
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
 
-        # Get real game name so it shows correctly in My Claims
+        # Get real game name
         acc_data = await _sb_get(
-            "steamCredentials",
-            **{"email": f"eq.{account_email}", "select": "game_name"}
+            "steamCredentials", **{"email": f"eq.{account_email}", "select": "game_name"}
         ) or []
         real_game_name = acc_data[0].get("game_name", "Steam Account") if acc_data else "Steam Account"
 
         success = await claim_steam_account(chat_id, first_name, account_email, real_game_name)
 
         if success:
-            # Successful first claim
+            # === FIRST TIME CLAIM ===
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
 
-            # Full cleanup
+            # Cleanup search state
             await redis_client.delete(f"steam_search_result:{chat_id}")
             await redis_client.delete(f"steam_searching:{chat_id}")
             await redis_client.delete(f"steam_search_attempts:{chat_id}")
@@ -10009,7 +10010,7 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
-            # ── SCHEDULE FEEDBACK BUTTONS (this was missing) ──
+            # Testing timers
             asyncio.create_task(
                 send_delayed_feedback_buttons(
                     chat_id=chat_id,
@@ -10018,21 +10019,21 @@ async def handle_callback(update: Update):
                     delay=5
                 )
             )
-
-            # 5-minute reminder in case user ignores the buttons
             asyncio.create_task(
                 send_reminder_feedback(
                     chat_id=chat_id,
                     account_email=account_email,
                     game_name=real_game_name,
-                    delay=7
+                    delay=30
                 )
             )
 
         else:
-            # Already claimed by this user
+            # === ALREADY CLAIMED ===
             await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
-            await show_my_steam_claims(chat_id, first_name, query, page=0)
+            
+            # Do NOT auto-redirect to My Claims anymore
+            # User can tap "My Claims" button manually if they want
             return
 
         await redis_client.delete(f"steam_search_attempts:{chat_id}")
