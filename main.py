@@ -8111,12 +8111,16 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
             f"Try again later 🍃"
         )
         if query:
-            await query.message.edit_text(msg, parse_mode="HTML")
+            # FIXED: Use edit_caption (safe for photo messages)
+            try:
+                await query.message.edit_caption(caption=msg, parse_mode="HTML")
+            except Exception:
+                await query.message.edit_text(text=msg, parse_mode="HTML")  # fallback
         else:
             await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
         return
 
-    # Show guide + prompt
+    # Show guide
     guide = (
         "🎮 <b>Steam Account Search</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -8130,7 +8134,11 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
     )
 
     if query:
-        await query.message.edit_text(guide, parse_mode="HTML")
+        # FIXED: Use edit_caption (safe for photo messages)
+        try:
+            await query.message.edit_caption(caption=guide, parse_mode="HTML")
+        except Exception:
+            await query.message.edit_text(text=guide, parse_mode="HTML")  # fallback
     else:
         await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
 
@@ -8344,16 +8352,17 @@ async def show_steam_search_results(chat_id: int, results: list, first_name: str
         game_name = acc.get("game_name") or "Steam Account"
         email = acc.get("email")
         text += f"🎮 <b>{html.escape(game_name)}</b>\n\n"
-        buttons.append([
-            InlineKeyboardButton("✅ Claim This Account", callback_data=f"claim_steam|{email}")
-        ])
+        buttons.append([InlineKeyboardButton("✅ Claim This Account", callback_data=f"claim_steam|{email}")])
 
     buttons.append([InlineKeyboardButton("🔎 Search Different Game", callback_data="vamt_filter_steam")])
 
     final_text = text + "⏳ Result expires in <b>5 minutes</b>."
 
     if query and query.message:
-        await query.message.edit_text(final_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        try:
+            await query.message.edit_caption(caption=final_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        except Exception:
+            await query.message.edit_text(text=final_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
     else:
         await tg_app.bot.send_message(chat_id, final_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
 
