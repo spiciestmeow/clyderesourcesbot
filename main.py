@@ -431,13 +431,6 @@ async def translate_text(text: str, target_lang: str) -> str:
 # STEAM AUTOMATED DISTRIBUTION SYSTEM
 # ══════════════════════════════════════════════════════════════════════════════
 
-STEAM_DAILY_LIMITS = {
-    7:  1,
-    8:  1,
-    9:  2,
-    10: 999,
-}
-
 def safe_handler(context: str = ""):
     def decorator(func):
         async def wrapper(*args, **kwargs):
@@ -760,7 +753,6 @@ async def lifespan(app: FastAPI):
     await load_achievements_cache()
     print("✅ Achievement system loaded")
 
-    asyncio.create_task(steam_daily_release_scheduler())
     asyncio.create_task(low_stock_monitor())
 
     global BOT_USERNAME
@@ -4827,344 +4819,6 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
     except Exception:
         pass
 
-#STEAM CLAIM
-async def show_steam_accounts(
-    chat_id: int, first_name: str, level: int, query, page: int = 0
-):
-    tier = get_steam_tier(level)
-    ITEMS_PER_PAGE = 5
-
-    manila = pytz.timezone("Asia/Manila")
-    now = datetime.now(manila)
-    today_start = now.replace(
-        hour=0, minute=0, second=0, microsecond=0
-    ).astimezone(pytz.utc).isoformat()
-    today_end = now.replace(
-        hour=23, minute=59, second=59, microsecond=0
-    ).astimezone(pytz.utc).isoformat()
-    now_iso = now.astimezone(pytz.utc).isoformat()
-
-    # ── Lv1-6: Website only — NOW WITH PROGRESS BAR ──
-    if tier == "public":
-        hours, mins = get_time_until_drop()
-        if is_public_drop_time():
-            drop_note = "✅ Today's account is now live on the website!"
-        elif is_sunday_noon_manila():
-            drop_note = "✅ Sunday bonus account is now live on the website!"
-        else:
-            drop_note = f"⏰ Next drop in <b>{hours}h {mins}m</b>"
-
-        # ── Progress bar toward Level 7 ──
-        xp_current = get_cumulative_xp_for_level(level)        # XP floor of current level
-        xp_next_level = get_cumulative_xp_for_level(level + 1) # XP needed for next level
-        xp_lv7 = get_cumulative_xp_for_level(7)               # XP needed for Lv7
-
-        profile = await get_user_profile(chat_id)
-        current_xp = profile.get("xp", 0) if profile else 0
-
-        # Levels remaining until Lv7
-        levels_left = 7 - level
-
-        # Progress within current level
-        level_progress_bar = create_progress_bar(
-            current_xp - xp_current,
-            xp_next_level - xp_current,
-            length=10
-        )
-
-        # Overall progress toward Lv7
-        xp_to_lv7 = max(0, xp_lv7 - current_xp)
-        overall_bar = create_daily_progress_bar(
-            current_xp,
-            xp_lv7,
-            length=10
-        )
-
-        # Motivational message based on level
-        if level == 6:
-            motivation = "🔥 <b>You're SO close!</b> Just one more level!"
-        elif level == 5:
-            motivation = "⚡ <b>Almost there!</b> Two more levels to go."
-        elif level >= 3:
-            motivation = "🌱 <b>Keep exploring!</b> Every action earns XP."
-        else:
-            motivation = "🌿 <b>Your journey has just begun!</b> Explore daily."
-
-        caption = (
-            "🎮 <b>Steam Accounts</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "🌍 Steam accounts are posted on the website.\n\n"
-            f"🕗 <b>Daily drop:</b> 8:00 PM Manila time\n"
-            f"🌟 <b>Sunday bonus:</b> 12:00 PM Manila time\n\n"
-            f"{drop_note}\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "🔒 <b>Bot Access requires Level 7</b>\n\n"
-            f"You are currently <b>Level {level}</b> — "
-            f"<b>{levels_left}</b> level(s) to go!\n\n"
-            f"📊 <b>Progress to Level 7:</b>\n"
-            f"{overall_bar}\n"
-            f"✨ <b>{current_xp:,}</b> / <b>{xp_lv7:,}</b> XP "
-            f"(<b>{xp_to_lv7:,}</b> XP needed)\n\n"
-            f"📈 <b>Current Level Progress (Lv{level} → Lv{level+1}):</b>\n"
-            f"{level_progress_bar}\n\n"
-            f"{motivation}\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "<i>💡 Tap ❓ below to learn how to earn XP faster!</i>"
-        )
-
-        buttons = [
-            [InlineKeyboardButton("🌐 Visit Website", url="https://clydehub.notion.site/Clyde-s-Resource-Hub-ae102294d90682dbaeed81459b131eed")],
-            [InlineKeyboardButton("❓ Why can't I access this yet?", callback_data="steam_access_why")],
-            [InlineKeyboardButton("📋 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-        ]
-
-        await query.message.edit_caption(
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        return
-
-    # ── Check early access time ──
-    if not is_early_access_time(level):
-        hours, mins = get_time_until_early_access(level)
-
-        tier_badges = {
-            7: "⭐ Level 7 Early Access — opens at 4:00 PM",
-            8: "⭐ Level 8 Early Access — opens at 12:00 PM",
-            9: "🌟 Level 9 Early Access — opens at 8:00 AM",
-        }
-
-        await query.message.edit_caption(
-            caption=(
-                "🎮 <b>Steam Accounts</b>\n"
-                "━━━━━━━━━━━━━━━━━━\n\n"
-                f"🏷️ {tier_badges.get(level, 'Early Access')}\n\n"
-                f"⏰ Your early access opens in <b>{hours}h {mins}m</b>\n\n"
-                "━━━━━━━━━━━━━━━━━━\n"
-                "🌍 <b>Public drop:</b> 8:00 PM (website)\n"
-                + (f"🌟 <b>Sunday bonus:</b> 12:00 PM (website)\n" if is_sunday_manila() else "")
-                + "\n<i>Higher levels get earlier access. Keep leveling up!</i> 🍃"
-            ),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-            ])
-        )
-        return
-
-    # ── FETCH ACCOUNTS based on level ──
-    accounts = []
-
-    if level >= 10:
-        # ✅ CORRECT - only games with release_at set AND already past release time
-        accounts = await _sb_get(
-            "steamCredentials",
-            **{
-                "select": "*",
-                "status": "eq.Available",
-                "release_at": "not.is.null",   # scheduled only, no future block
-                "order": "release_at.asc",
-                "limit": 200,
-            }
-        ) or []
-
-        # Extra safety filter in Python — exclude any NULL that slipped through
-        accounts = [
-            a for a in accounts
-            if a.get("release_at") is not None
-        ]
-
-    elif level == 9:
-        # Lv9: TODAY's daily (early, no 8PM restriction)
-        daily_accounts = await _sb_get(
-            "steamCredentials",
-            **{
-                "select": "*",
-                "status": "eq.Available",
-                "release_at": f"gte.{today_start}",
-                "order": "release_at.asc",
-                "limit": 5,
-            }
-        ) or []
-        accounts += [
-            a for a in daily_accounts
-            if a.get("release_at")
-            and a["release_at"] <= today_end
-            and a.get("release_type") != "sunday_noon"
-        ]
-
-        # Lv9 Sunday bonus: today's sunday_noon (early, no noon restriction)
-        if is_sunday_manila():
-            sunday_accounts = await _sb_get(
-                "steamCredentials",
-                **{
-                    "select": "*",
-                    "status": "eq.Available",
-                    "release_type": "eq.sunday_noon",
-                    "release_at": f"gte.{today_start}",  # from today
-                    "order": "release_at.asc",
-                    "limit": 1,
-                }
-            ) or []
-            # ✅ KEY FIX: only today's sunday game, not future
-            accounts += [
-                a for a in sunday_accounts
-                if a.get("release_at") and a["release_at"] <= today_end
-            ]
-
-    else:
-        # Lv7-8: TODAY's daily only (early access, no 8PM restriction)
-        daily_accounts = await _sb_get(
-            "steamCredentials",
-            **{
-                "select": "*",
-                "status": "eq.Available",
-                "release_at": f"gte.{today_start}",
-                "order": "release_at.asc",
-                "limit": 5,
-            }
-        ) or []
-        accounts += [
-            a for a in daily_accounts
-            if a.get("release_at")
-            and a["release_at"] <= today_end
-            and a.get("release_type") != "sunday_noon"
-        ]
-
-    if not accounts:
-        # Show helpful message based on why no accounts showing
-        if level in (7, 8):
-            no_account_msg = (
-                "🎮 <b>Steam Accounts</b>\n\n"
-                "🌫️ No account scheduled for today yet.\n\n"
-                f"⏰ Check back after your early access time:\n"
-                f"{'4:00 PM' if level == 7 else '12:00 PM'} Manila time 🍃"
-            )
-        elif level == 9:
-            no_account_msg = (
-                "🎮 <b>Steam Accounts</b>\n\n"
-                "🌫️ No account scheduled for today yet.\n\n"
-                "⏰ Check back after 08:00 AM Manila time 🍃"
-                + ("\n🌟 Sunday bonus also coming at 08:00 AM!" if is_sunday_manila() else "")
-            )
-        else:
-            no_account_msg = (
-                "🎮 <b>Steam Accounts</b>\n\n"
-                "🌫️ No accounts available right now.\n\n"
-                "🌿 Check back later! 🍃"
-            )
-
-        await query.message.edit_caption(
-            caption=no_account_msg,
-            parse_mode="HTML",
-            reply_markup=kb_back_inventory(),
-        )
-        return
-
-    # ── Daily claim limits ──
-    daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 999) if level < 10 else 999
-    claims_today = await get_steam_claims_today(chat_id) if level < 10 else 0
-    claims_left = max(0, daily_limit - claims_today) if level < 10 else 999
-
-    # ── Pagination ──
-    start = page * ITEMS_PER_PAGE
-    page_accounts = accounts[start:start + ITEMS_PER_PAGE]
-    total_pages = max(1, (len(accounts) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
-
-    tier_label = {
-        7: "⭐ Level 7 — Early Access (4 PM)",
-        8: "⭐ Level 8 — Early Access (12 PM)",
-        9: "🌟 Level 9 — Early Access (8 AM) + Sunday Bonus",
-        10: "👑 Legend Tier",
-    }.get(min(level, 10), "⭐ Early Access")
-
-    sunday_line = ""
-    if level == 9 and is_sunday_manila():
-        sunday_line = "\n🎉 <b>Sunday — You get both accounts today!</b>"
-
-    report = (
-        f"🎮 <b>Steam Accounts</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏷️ {tier_label}{sunday_line}\n"
-        f"📦 <b>{len(accounts)}</b> account(s) available\n"
-    )
-
-    if level < 10:
-        status_emoji = "✅" if claims_left > 0 else "❌"
-        report += (
-            f"🎯 Claimed today: <b>{claims_today}</b> / <b>{daily_limit}</b>\n"
-            f"{status_emoji} Claims left: <b>{claims_left}</b>\n"
-        )
-
-    report += f"\n📄 Page {page + 1} of {total_pages}\n\n"
-
-    buttons = []
-    for acc in page_accounts:
-        game = html.escape(acc.get("game_name") or "Unknown Game")
-        email = acc.get("email", "")
-        release_type = acc.get("release_type", "daily")
-
-        # Dynamic date from release_at
-        release_date_str = ""
-        if acc.get("release_at"):
-            try:
-                release_dt = datetime.fromisoformat(acc["release_at"].replace("Z", "+00:00")).astimezone(manila)
-                release_date_str = release_dt.strftime("%b %d")
-            except Exception:
-                release_date_str = ""
-
-        type_badge = f"🌟 {release_date_str}" if release_type == "sunday_noon" else f"📅 {release_date_str}"
-
-        report += (
-            f"🎮 <b>{game}</b> {type_badge}\n"
-            f"└ 📧 <tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
-        )
-
-        if claims_left > 0 or level >= 10:
-            buttons.append([
-                InlineKeyboardButton(
-                    f"🔓 Claim {game[:25]}",
-                    callback_data=f"claim_steam|{email}|{page}"
-                )
-            ])
-        else:
-            buttons.append([
-                InlineKeyboardButton(
-                    f"🔒 {game[:30]} — Limit Reached",
-                    callback_data="steam_claimed_limit"
-                )
-            ])
-
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"steam_page_{page-1}"))
-    if start + ITEMS_PER_PAGE < len(accounts):
-        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"steam_page_{page+1}"))
-    if nav:
-        buttons.append(nav)
-    buttons.append([InlineKeyboardButton("📋 My Claims", callback_data="my_steam_claims")])
-    buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
-
-    report += (
-        "━━━━━━━━━━━━━━━━━━\n"
-        "⚠️ Do not change password or add purchases.\n"
-        "<i>Shared accounts — be respectful.</i> 🍃"
-    )
-
-    try:
-        await query.message.edit_caption(
-            caption=report,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
-    except Exception as e:
-        if "not modified" in str(e).lower():
-            pass
-        else:
-            raise
-
 async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: int = 0):
     """📜 My Claims — Shows all Steam accounts the user has ever claimed"""
     ITEMS_PER_PAGE = 8
@@ -5198,8 +4852,6 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 
     total = len(claims)
     claims_today = await get_steam_claims_today(chat_id)
-    level = (await get_user_profile(chat_id) or {}).get("level", 1)
-    daily_limit = STEAM_DAILY_LIMITS.get(min(level, 10), 1)
 
     total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
     start = page * ITEMS_PER_PAGE
@@ -5210,7 +4862,7 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         "📜 <b>Your Claimed Treasures</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"🌿 You have claimed <b>{total}</b> account(s) so far",
-        f"🎯 Today: <b>{claims_today}</b> / <b>{daily_limit}</b> claimed",
+        f"🎯 Today: <b>{claims_today}</b>claimed",
         f"📄 Page {page + 1} of {total_pages}\n\n"
     ]
 
@@ -8088,7 +7740,6 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
 # NEW USER STEAM SEARCH SYSTEM (regular users only)
 # ──────────────────────────────────────────────
 async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
-    """New search system for normal users"""
     profile = await get_user_profile(chat_id)
     if not profile:
         return
@@ -8111,36 +7762,131 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
             f"Try again later 🍃"
         )
         if query:
-            # FIXED: Use edit_caption (safe for photo messages)
             try:
                 await query.message.edit_caption(caption=msg, parse_mode="HTML")
             except Exception:
-                await query.message.edit_text(text=msg, parse_mode="HTML")  # fallback
+                await query.message.edit_text(text=msg, parse_mode="HTML")
         else:
             await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
         return
 
-    # Show guide
+    # ── Set waiting flag so process_update knows to intercept next message ──
+    await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
+
+    attempts_left = 2 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+
     guide = (
         "🎮 <b>Steam Account Search</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "No more lists. Just search for any game you want.\n\n"
-        "• You have <b>2 search attempts</b>\n"
-        "• Found → Claim instantly\n"
-        "• 2 failed searches → cooldown starts\n"
-        "• Result expires in <b>5 minutes</b>\n\n"
+        f"• You have <b>{attempts_left} search attempt(s)</b> remaining\n"
+        "• Found → Claim button appears (expires in 5 min)\n"
+        "• 2 failed searches → cooldown starts\n\n"
         f"🔥 Lv{level} cooldown = <b>{cooldown_hours} hours</b>\n\n"
         "<b>Reply with the game name you want.</b> 🍃"
     )
 
     if query:
-        # FIXED: Use edit_caption (safe for photo messages)
         try:
             await query.message.edit_caption(caption=guide, parse_mode="HTML")
         except Exception:
-            await query.message.edit_text(text=guide, parse_mode="HTML")  # fallback
+            await query.message.edit_text(text=guide, parse_mode="HTML")
     else:
         await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+
+async def handle_steam_game_search(chat_id: int, first_name: str, game_query: str):
+    """Called when user types a game name while steam_searching flag is active"""
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return
+
+    level = profile.get("level", 1)
+    cooldown_hours = get_steam_cooldown_hours(level)
+    cooldown_seconds = cooldown_hours * 3600
+
+    attempts_key = f"steam_search_attempts:{chat_id}"
+    attempt_num = int(await redis_client.get(attempts_key) or 0) + 1
+    await redis_client.setex(attempts_key, cooldown_seconds, attempt_num)
+
+    # Search steamCredentials by game_name (case-insensitive partial match)
+    all_accounts = await _sb_get(
+        "steamCredentials",
+        **{"select": "*", "status": "eq.Available", "limit": 200}
+    ) or []
+
+    query_lower = game_query.lower().strip()
+    matches = [
+        acc for acc in all_accounts
+        if query_lower in (acc.get("game_name") or "").lower()
+    ]
+
+    if matches:
+        # Found — store result and show claim button
+        acc = matches[0]
+        account_email = acc.get("email", "")
+        game_name = acc.get("game_name", "Steam Account")
+
+        # Store result with 5-minute expiry
+        await redis_client.setex(
+            f"steam_search_result:{chat_id}",
+            300,
+            json.dumps({"email": account_email, "game_name": game_name})
+        )
+
+        # Reset attempt counter on success (don't penalize for finding)
+        await redis_client.delete(attempts_key)
+        await redis_client.delete(f"steam_searching:{chat_id}")
+
+        text = (
+            f"✅ <b>Found a match!</b>\n\n"
+            f"🎮 <b>{html.escape(game_name)}</b>\n\n"
+            f"⏳ This result expires in <b>5 minutes</b>.\n"
+            f"Tap below to claim it. 🍃"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                f"✅ Claim {game_name[:30]}",
+                callback_data=f"claim_steam|{account_email}"
+            )],
+            [InlineKeyboardButton("🔎 Search Different Game", callback_data="vamt_filter_steam")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+        ])
+        await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
+
+    else:
+        # Not found
+        attempts_remaining = 2 - attempt_num
+
+        if attempts_remaining <= 0:
+            # 2 failed searches — start cooldown
+            await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
+            await redis_client.delete(attempts_key)
+            await redis_client.delete(f"steam_searching:{chat_id}")
+
+            hours = cooldown_hours
+            text = (
+                f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
+                f"You've used both search attempts.\n\n"
+                f"⏳ Cooldown started: <b>{hours} hours</b> (Level {level})\n\n"
+                f"<i>Try again after your cooldown. 🍃</i>"
+            )
+            await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
+        else:
+            # 1 attempt left
+            text = (
+                f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
+                f"⚠️ You have <b>{attempts_remaining} search attempt</b> left.\n\n"
+                f"Try a different game name or spelling. 🍃"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔎 Search Again", callback_data="vamt_filter_steam")],
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            ])
+            # Keep searching flag active for next attempt
+            await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
+            await tg_app.bot.send_message(
+                chat_id, text, parse_mode="HTML", reply_markup=keyboard
+            )   
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
@@ -8832,7 +8578,6 @@ async def handle_callback(update: Update):
         "stfb_undo|",
         "owner_restore|",
         "owner_keep|",
-        "steam_claimed_limit",
     )
     if not data.startswith(FEEDBACK_PREFIXES):
         await query.answer()
@@ -9797,85 +9542,6 @@ async def handle_callback(update: Update):
         await handle_leaderboard(chat_id)
         return
 
-    elif data == "steam_claimed_limit":
-        daily_limit = STEAM_DAILY_LIMITS.get(min(profile.get("level", 1), 10), 1)
-        await query.answer(
-            f"❌ You've already claimed your {daily_limit} account(s) for today!\n"
-            "Come back tomorrow 🍃",
-            show_alert=True
-        )
-        return
-
-    elif data == "steam_access_why":
-        profile = await get_user_profile(chat_id)
-        level = profile.get("level", 1) if profile else 1
-        current_xp = profile.get("xp", 0) if profile else 0
-        xp_lv7 = get_cumulative_xp_for_level(7)
-        xp_to_lv7 = max(0, xp_lv7 - current_xp)
-
-        # How many XP actions until Lv7
-        reveals_needed = max(1, xp_to_lv7 // 14)
-        views_needed = max(1, xp_to_lv7 // 8)
-        days_needed = max(1, xp_to_lv7 // 30)  # assuming avg 30 XP/day
-
-        text = (
-            "❓ <b>Why can't I access Steam accounts in the bot yet?</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "Steam bot access is unlocked at <b>Level 7</b> as an early preview reward "
-            "for dedicated wanderers who have explored the clearing regularly.\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "⚡ <b>How to reach Level 7 faster:</b>\n\n"
-            f"🍿 Reveal Netflix cookies → <b>+14 XP each</b>\n"
-            f"   (~{reveals_needed} reveals to go)\n\n"
-            f"🌿 View any inventory list → <b>+8 XP each</b>\n"
-            f"   (~{views_needed} views to go)\n\n"
-            f"🔥 Log in daily for streak bonuses → up to <b>+60 XP/day</b>\n"
-            f"   (~{days_needed} days if consistent)\n\n"
-            f"🌟 Spin the Wheel of Whispers → up to <b>+100 XP</b>\n\n"
-            f"🌲 Refer a friend → <b>+25 XP each</b>\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"📍 You currently have <b>{current_xp:,} XP</b> "
-            f"and need <b>{xp_to_lv7:,} more XP</b> to reach Level 7.\n\n"
-            "<i>The forest rewards patience and curiosity. "
-            "Keep exploring, wanderer! 🍃✨</i>"
-        )
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🍿 Get Netflix Cookies", callback_data="vamt_filter_netflix")],
-            [InlineKeyboardButton("🌟 Spin the Wheel", callback_data="show_wheel_menu")],
-            [InlineKeyboardButton("⬅️ Back to Steam", callback_data="vamt_filter_steam")],
-        ])
-
-        try:
-            await query.message.edit_caption(
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        except Exception:
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-            msg = await send_animated_translated(
-                chat_id=chat_id,
-                caption=text,
-                animation_url=GUIDANCE_GIF,
-                reply_markup=keyboard
-            )
-            await _remember(chat_id, msg.message_id)
-        return
-    
-    # Add these new elif blocks anywhere in handle_callback:
-    elif data.startswith("steam_page_"):
-        try:
-            page = int(data.split("_")[2])
-            level = profile.get("level", 1)
-            await show_steam_accounts(chat_id, first_name, level, query, page=page)
-        except Exception as e:
-            print(f"Steam page error: {e}")
-        return
-    
     # ── MY STEAM CLAIMS ──
     elif data == "my_steam_claims":
         await show_my_steam_claims(chat_id, first_name, query, page=0)
@@ -10920,6 +10586,12 @@ async def process_update(update_data: dict):
                 ),
                 reply_markup=kb_start(),
             )
+            return
+        
+    # ── STEAM GAME SEARCH INTERCEPT ──
+    if not text.startswith("/"):
+        if await redis_client.get(f"steam_searching:{chat_id}"):
+            await handle_steam_game_search(chat_id, first_name, raw)
             return
 
     # ── Command dispatch ──
