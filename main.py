@@ -7913,6 +7913,32 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         account_email = acc.get("email", "")
         game_name = acc.get("game_name", "Steam Account")
 
+        # ── CHECK IF USER ALREADY CLAIMED THIS ACCOUNT ──
+        existing = await _sb_get(
+            "steam_claims",
+            **{
+                "chat_id": f"eq.{chat_id}",
+                "account_email": f"eq.{account_email}",
+                "select": "id",
+            }
+        ) or []
+
+        if existing:
+            await redis_client.delete(f"steam_searching:{chat_id}")
+            await tg_app.bot.send_message(
+                chat_id,
+                f"🌿 <b>You already claimed this account before!</b>\n\n"
+                f"🎮 <b>{html.escape(game_name)}</b>\n\n"
+                f"🔍 <b>No attempt used</b> — search for a different game. 🍃",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔍 Search Different Game", callback_data="steam_do_search")],
+                    [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
+            return
+
         # Store result with 3 minute expiry
         await redis_client.setex(
             f"steam_search_result:{chat_id}",
