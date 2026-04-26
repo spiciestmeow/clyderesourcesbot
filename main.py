@@ -7781,7 +7781,7 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
         f"{status_text}\n\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "• Search for any game you want\n"
-        "• Found results expire in <b>3 minutes</b>\n"
+        "• Found results expire in <b>10 minutes</b>\n"
         "• 3 failed/expired searches → cooldown starts\n\n"
         "<i>The forest holds many games, wanderer. 🍃</i>"
     )
@@ -7848,7 +7848,7 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
         f"{status_text}\n\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "• Search for any game you want\n"
-        "• Found results expire in <b>3 minutes</b>\n"
+        "• Found results expire in <b>10 minutes</b>\n"
         "• 3 failed/expired searches → cooldown starts\n\n"
         "<i>The forest holds many games, wanderer. 🍃</i>"
     )
@@ -7877,80 +7877,105 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     current_attempts = int(await redis_client.get(attempts_key) or 0)
     attempts_left = 3 - current_attempts
 
-    # Search steamCredentials
-    all_accounts = await _sb_get(
-        "steamCredentials",
-        **{"select": "*", "status": "eq.Available", "limit": 200}
-    ) or []
+    # Fetch ALL available accounts (paginated to avoid limit)
+    all_accounts = []
+    offset = 0
+    while True:
+        batch = await _sb_get(
+            "steamCredentials",
+            **{"select": "*", "status": "eq.Available", "limit": 500, "offset": offset}
+        ) or []
+        all_accounts.extend(batch)
+        if len(batch) < 500:
+            break
+        offset += 500
 
     query_lower = game_query.lower().strip()
-    # In handle_steam_game_search, replace the match logic:
-    matches = [
-        acc for acc in all_accounts
-        if query_lower in (acc.get("game_name") or "").lower()
-    ]
+    query_words = query_lower.split()
+
+    def match_score(acc):
+        name = (acc.get("game_name") or "").lower()
+        if not name:
+            return 0
+        # Exact match
+        if query_lower == name:
+            return 100
+        # Starts with query
+        if name.startswith(query_lower):
+            return 90
+        # Query is substring of name
+        if query_lower in name:
+            return 80
+        # All words match somewhere in name
+        if all(w in name for w in query_words):
+            return 70
+        # Any word matches
+        matched = sum(1 for w in query_words if w in name)
+        return matched * 10 if matched else 0
+
+    scored = [(acc, match_score(acc)) for acc in all_accounts]
+    scored = [(acc, s) for acc, s in scored if s > 0]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    matches = [acc for acc, _ in scored]
 
     if matches:
-        acc = matches[0]
-        account_email = acc.get("email", "")
-        game_name = acc.get("game_name", "Steam Account")
+        # ── CHECK: filter out already-claimed accounts by this user ──
+        unclaimed = []
+        for acc in matches[:8]:  # show up to 8 results
+            account_email = acc.get("email", "")
+            existing = await _sb_get(
+                "steam_claims",
+                **{
+                    "chat_id": f"eq.{chat_id}",
+                    "account_email": f"eq.{account_email}",
+                    "select": "id",
+                }
+            ) or []
+            if not existing:
+                unclaimed.append(acc)
 
-        # ── CHECK IF USER ALREADY CLAIMED THIS ACCOUNT ──
-        existing = await _sb_get(
-            "steam_claims",
-            **{
-                "chat_id": f"eq.{chat_id}",
-                "account_email": f"eq.{account_email}",
-                "select": "id",
-            }
-        ) or []
-
-        if existing:
+        if not unclaimed:
             await redis_client.delete(f"steam_searching:{chat_id}")
             await tg_app.bot.send_message(
                 chat_id,
-                f"🌿 <b>You already claimed this account before!</b>\n\n"
-                f"🎮 <b>{html.escape(game_name)}</b>\n\n"
-                f"🔍 <b>No attempt used</b> — search for a different game. 🍃",
+                f"🌿 <b>You've already claimed all matching accounts for \"{html.escape(game_query)}\"!</b>\n\n"
+                f"Try searching for a different game. 🍃",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔍 Search Different Game", callback_data="steam_do_search")],
-                    [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
                     [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
                 ])
             )
             return
 
-        # Store result with 3 minute expiry
+        # Store all results temporarily
+        result_data = [{"email": acc.get("email"), "game_name": acc.get("game_name", "Steam Account")} for acc in unclaimed]
         await redis_client.setex(
             f"steam_search_result:{chat_id}",
-            600,  # was 180 (3 min) → now 600 (10 min)
-            json.dumps({"email": account_email, "game_name": game_name})
+            600,
+            json.dumps(result_data[0])  # keep first as "active" result for claim flow
         )
         await redis_client.delete(f"steam_searching:{chat_id}")
 
-        # Schedule expiry — count as failed attempt if not claimed within 3 min
+        # Schedule expiry for attempt tracking (uses first result)
+        first_email = unclaimed[0].get("email", "")
+        first_game = unclaimed[0].get("game_name", "Steam Account")
+
         async def _expire_result():
-            await asyncio.sleep(610)  # was 185 → now 610 (just after 10 min)
+            await asyncio.sleep(610)
             still_there = await redis_client.get(f"steam_search_result:{chat_id}")
             if not still_there:
-                # User already acted (claimed or searched different game) — do nothing
                 return
-
-            # User ignored it for 3 minutes — NOW charge the attempt
             await redis_client.delete(f"steam_search_result:{chat_id}")
             new_count = int(await redis_client.get(attempts_key) or 0) + 1
             await redis_client.setex(attempts_key, cooldown_seconds, new_count)
-
             if new_count >= 3:
                 await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
                 await redis_client.delete(attempts_key)
-                await redis_client.delete(f"steam_searching:{chat_id}")
                 try:
                     await tg_app.bot.send_message(
                         chat_id,
-                        f"⏳ <b>Result expired and attempts used up.</b>\n\n"
-                        f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
+                        f"⏳ <b>Result expired and attempts used up.</b>\n\nCooldown started: <b>{cooldown_hours} hours</b> 🍃",
                         parse_mode="HTML"
                     )
                 except Exception:
@@ -7961,7 +7986,6 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                     await tg_app.bot.send_message(
                         chat_id,
                         f"⏳ <b>Claim window expired!</b>\n\n"
-                        f"You didn't claim <b>{html.escape(game_name)}</b> in time.\n\n"
                         f"🔍 <b>{remaining} search attempt(s) remaining.</b>\n\n"
                         f"<i>Tap below to search again. 🍃</i>",
                         parse_mode="HTML",
@@ -7975,24 +7999,41 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
 
         asyncio.create_task(_expire_result())
 
-        text = (
-            f"✅ <b>Found a match!</b>\n\n"
-            f"🎮 <b>{html.escape(game_name)}</b>\n\n"
-            f"⏳ You have <b>10 minutes</b> to claim it.\n"
-            f"If you don't want it, tap below to search again — no attempt used. 🍃"
+        # Build result message with buttons for each match
+        if len(unclaimed) == 1:
+            text = (
+                f"✅ <b>Found a match!</b>\n\n"
+                f"🎮 <b>{html.escape(first_game)}</b>\n\n"
+                f"⏳ You have <b>10 minutes</b> to claim it. 🍃"
+            )
+            buttons = [
+                [InlineKeyboardButton(f"✅ Claim {first_game[:30]}", callback_data=f"claim_steam|{first_email}")],
+                [InlineKeyboardButton("🔍 Search Different Game", callback_data="search_different_game")],
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            ]
+        else:
+            text = (
+                f"✅ <b>Found {len(unclaimed)} match(es) for \"{html.escape(game_query)}\"!</b>\n\n"
+                f"⏳ Results expire in <b>10 minutes</b>. Pick one:\n\n"
+            )
+            for i, acc in enumerate(unclaimed, 1):
+                text += f"{i}. 🎮 <b>{html.escape(acc.get('game_name', 'Unknown'))}</b>\n"
+
+            buttons = []
+            for acc in unclaimed:
+                game_label = acc.get("game_name", "Unknown")[:30]
+                email = acc.get("email", "")
+                buttons.append([InlineKeyboardButton(
+                    f"✅ Claim — {game_label}",
+                    callback_data=f"claim_steam|{email}"
+                )])
+            buttons.append([InlineKeyboardButton("🔍 Search Different Game", callback_data="search_different_game")])
+            buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+
+        await tg_app.bot.send_message(
+            chat_id, text, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                f"✅ Claim {game_name[:30]}",
-                callback_data=f"claim_steam|{account_email}"
-            )],
-            [InlineKeyboardButton(
-                "🔍 Search Different Game",
-                callback_data="search_different_game"
-            )],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-        ])
-        await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
 
     else:
         # Failed search — count attempt
@@ -9935,7 +9976,7 @@ async def handle_callback(update: Update):
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 f"🎯 <b>{attempts_left} attempt(s) remaining</b>\n\n"
                 "• Type the game name below\n"
-                "• Found results expire in <b>3 minutes</b>\n"
+                "• Found results expire in <b>10 minutes</b>\n"
                 "• Expired without claiming = attempt used\n\n"
                 "<b>Reply with the game name now.</b> 🍃"
             )
