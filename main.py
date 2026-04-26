@@ -9,7 +9,6 @@ import html
 import httpx
 import pytz
 import redis.asyncio as aioredis
-from telegram import MessageEntity
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -4713,7 +4712,7 @@ async def send_full_menu(chat_id: int, first_name: str, is_first_time: bool = Fa
         await redis_client.delete(f"streak:{chat_id}")
     streak = await calculate_streak(chat_id) if profile else 0
     if streak >= 2:
-        streak_txt = f"🔥 <b>{streak}-day streak!</b> The forest fire burns bright!"
+        streak_txt = f'<tg-emoji emoji-id="4956499161319998529">🔥</tg-emoji> <b>{streak}-day streak!</b> The forest fire burns bright!'
     else:
         streak_txt = "🌱 <b>First steps in the forest!</b>"
 
@@ -5258,20 +5257,10 @@ async def show_paginated_cookie_list(
         title, emoji, accent = "Prime Video", "📦", "🔵"
 
     # Loading states
-    loading_text = f"  Loading {title} cookies..."
-
     await query.message.edit_caption(
-        caption=loading_text,
-        caption_entities=[
-            MessageEntity(
-                type="custom_emoji",
-                offset=0,
-                length=2,
-                custom_emoji_id="5318911503938634641"
-            )
-        ]
+        caption=f"<i>Loading {title} cookies...</i>",
+        parse_mode="HTML",
     )
-
     await asyncio.sleep(1.0)
 
     profile    = await get_user_profile(chat_id)
@@ -10898,7 +10887,9 @@ async def process_update(update_data: dict):
                 chat_id=chat_id,
                 animation_url=HELLO_GIF,
                 caption=(
-                    "🌿 The forest spirits invite you to enter the Enchanted Forest first, kind wanderer."
+                    "<b>🌲 You stand at the edge of a mysterious forest.</b>\n\n"
+                    "The ancient trees watch you with quiet curiosity.\n\n"
+                    "To step into the Enchanted Clearing..."
                 ),
                 reply_markup=kb_start(),
             )
