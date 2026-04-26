@@ -8053,6 +8053,20 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         if attempts_left <= 0:
             await redis_client.delete(f"steam_searching:{chat_id}")
             await tg_app.bot.send_message(...)
+
+
+        if attempts_left <= 0:
+            await redis_client.delete(f"steam_searching:{chat_id}")
+            await tg_app.bot.send_message(
+                chat_id,
+                f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
+                f"🚫 <b>No search attempts remaining.</b>\n\n"
+                f"Please wait for your cooldown to expire before searching again. 🍃",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                ])
+           )
         else:
             # Don't re-set steam_searching here — only set it when user clicks button
             await tg_app.bot.send_message(
