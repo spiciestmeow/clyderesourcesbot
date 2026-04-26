@@ -4534,9 +4534,9 @@ async def send_delayed_feedback_buttons(
     chat_id: int,
     account_email: str,
     game_name: str,
-    delay: int = 30
+    delay: int = 7200
 ):
-    """Send feedback buttons after delay — skips if user already responded"""
+    """Send feedback buttons after 2 hours"""
     await asyncio.sleep(delay)
 
     # Skip if user already submitted feedback
@@ -4544,7 +4544,6 @@ async def send_delayed_feedback_buttons(
     if await redis_client.get(fb_key):
         return
 
-    # Skip if user already got a reminder (prevent double prompt)
     reminded_key = f"steam_reminded:{chat_id}:{account_email}"
     if await redis_client.get(reminded_key):
         return
@@ -4553,10 +4552,9 @@ async def send_delayed_feedback_buttons(
         await tg_app.bot.send_message(
             chat_id=chat_id,
             text=(
-                "🎮 <b>Have you tried the account yet?</b>\n\n"
-                f"Game: <b>{html.escape(game_name)}</b>\n\n"
-                "Please let us know if it worked!\n"
-                "<i>Your feedback helps the forest grow.</i> 🍃"
+                f"🎮 <b>Did {html.escape(game_name)} work?</b>\n\n"
+                f"You claimed this account 2 hours ago.\n"
+                f"Let us know so we can keep the forest clean! 🍃"
             ),
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
@@ -4572,21 +4570,21 @@ async def send_delayed_feedback_buttons(
                 ],
                 [
                     InlineKeyboardButton(
-                        "⏳ Not tried yet — remind me in 5 min",
+                        "⏳ Remind me tomorrow",
                         callback_data=f"remind_later|{account_email}|{game_name[:30]}"
                     )
                 ]
             ])
         )
     except Exception as e:
-        print(f"🔴 Failed to send delayed feedback: {e}")
+        print(f"🔴 Failed to send feedback prompt: {e}")
 
 async def send_reminder_feedback(
     chat_id: int,
     account_email: str,
     game_name: str,
-    delay: int = 300,
-    is_final: bool = False  # ← new
+    delay: int = 86400,  # 24 hours
+    is_final: bool = True
 ):
     await asyncio.sleep(delay)
 
@@ -4594,53 +4592,36 @@ async def send_reminder_feedback(
     if await redis_client.get(fb_key):
         return
 
-    if is_final:
-        text = (
-            "🌿 <b>Last reminder!</b>\n\n"
-            f"We won't ask again about <b>{html.escape(game_name)}</b>.\n\n"
-            "<i>Did it work? 🍃</i>"
-        )
-        buttons = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"),
-                InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"),
-            ],
-            [InlineKeyboardButton("🚫 Skip", callback_data=f"skip_feedback|{account_email}")]
-        ])
-    else:
-        text = (
-            "🌿 <b>Reminder!</b>\n\n"
-            f"Did you get a chance to try <b>{html.escape(game_name)}</b> yet?\n\n"
-            "<i>Your feedback helps keep the forest clean.</i> 🍃"
-        )
-        buttons = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"),
-                InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"),
-            ],
-            [InlineKeyboardButton("🚫 Skip Feedback", callback_data=f"skip_feedback|{account_email}")]
-        ])
-
-        # Schedule the final reminder only from the first one
-        asyncio.create_task(
-            send_reminder_feedback(
-                chat_id=chat_id,
-                account_email=account_email,
-                game_name=game_name,
-                delay=1500,  # 25 more minutes (total 30 min from claim)
-                is_final=True
-            )
-        )
-
     try:
         await tg_app.bot.send_message(
             chat_id=chat_id,
-            text=text,
+            text=(
+                f"🌿 <b>Last reminder!</b>\n\n"
+                f"Did <b>{html.escape(game_name)}</b> work?\n\n"
+                f"We won't ask again after this. 🍃"
+            ),
             parse_mode="HTML",
-            reply_markup=buttons
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Working",
+                        callback_data=f"stfb_ok|{account_email}|{game_name[:30]}"
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Not Working",
+                        callback_data=f"stfb_bad|{account_email}|{game_name[:30]}"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🚫 Skip",
+                        callback_data=f"skip_feedback|{account_email}"
+                    )
+                ]
+            ])
         )
     except Exception as e:
-        print(f"🔴 Reminder failed: {e}")
+        print(f"🔴 Final reminder failed: {e}")
 
 # ── IMPROVED: Send animation + auto-translated caption ──
 async def send_animated_translated(
@@ -7942,66 +7923,72 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         # Store result with 3 minute expiry
         await redis_client.setex(
             f"steam_search_result:{chat_id}",
-            180,
+            600,  # was 180 (3 min) → now 600 (10 min)
             json.dumps({"email": account_email, "game_name": game_name})
         )
         await redis_client.delete(f"steam_searching:{chat_id}")
 
         # Schedule expiry — count as failed attempt if not claimed within 3 min
         async def _expire_result():
-            await asyncio.sleep(185)  # slightly after 3 min
+            await asyncio.sleep(610)  # was 185 → now 610 (just after 10 min)
             still_there = await redis_client.get(f"steam_search_result:{chat_id}")
-            if still_there:
-                # They didn't claim — count as failed attempt
-                await redis_client.delete(f"steam_search_result:{chat_id}")
-                new_count = int(await redis_client.get(attempts_key) or 0) + 1
-                await redis_client.setex(attempts_key, cooldown_seconds, new_count)
+            if not still_there:
+                # User already acted (claimed or searched different game) — do nothing
+                return
 
-                if new_count >= 3:
-                    await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
-                    await redis_client.delete(attempts_key)
-                    await redis_client.delete(f"steam_searching:{chat_id}")
-                    try:
-                        await tg_app.bot.send_message(
-                            chat_id,
-                            f"⏳ <b>Result expired and attempts used up.</b>\n\n"
-                            f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
-                            parse_mode="HTML"
-                        )
-                    except Exception:
-                        pass
-                else:
-                    remaining = 3 - new_count
-                    try:
-                        await tg_app.bot.send_message(
-                            chat_id,
-                            f"⏳ <b>Claim window expired!</b>\n\n"
-                            f"You didn't claim <b>{html.escape(game_name)}</b> in time.\n\n"
-                            f"🔍 <b>{remaining} search attempt(s) remaining.</b>\n\n"
-                            f"<i>Tap below to search again. 🍃</i>",
-                            parse_mode="HTML",
-                            reply_markup=InlineKeyboardMarkup([
-                                [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-                                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-                            ])
-                        )
-                    except Exception:
-                        pass
+            # User ignored it for 3 minutes — NOW charge the attempt
+            await redis_client.delete(f"steam_search_result:{chat_id}")
+            new_count = int(await redis_client.get(attempts_key) or 0) + 1
+            await redis_client.setex(attempts_key, cooldown_seconds, new_count)
+
+            if new_count >= 3:
+                await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
+                await redis_client.delete(attempts_key)
+                await redis_client.delete(f"steam_searching:{chat_id}")
+                try:
+                    await tg_app.bot.send_message(
+                        chat_id,
+                        f"⏳ <b>Result expired and attempts used up.</b>\n\n"
+                        f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+            else:
+                remaining = 3 - new_count
+                try:
+                    await tg_app.bot.send_message(
+                        chat_id,
+                        f"⏳ <b>Claim window expired!</b>\n\n"
+                        f"You didn't claim <b>{html.escape(game_name)}</b> in time.\n\n"
+                        f"🔍 <b>{remaining} search attempt(s) remaining.</b>\n\n"
+                        f"<i>Tap below to search again. 🍃</i>",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
+                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                        ])
+                    )
+                except Exception:
+                    pass
 
         asyncio.create_task(_expire_result())
 
         text = (
             f"✅ <b>Found a match!</b>\n\n"
             f"🎮 <b>{html.escape(game_name)}</b>\n\n"
-            f"⏳ Claim within <b>3 minutes</b> or it expires.\n"
-            f"<i>Tap below to claim it. 🍃</i>"
+            f"⏳ You have <b>10 minutes</b> to claim it.\n"
+            f"If you don't want it, tap below to search again — no attempt used. 🍃"
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(
                 f"✅ Claim {game_name[:30]}",
                 callback_data=f"claim_steam|{account_email}"
             )],
-            [InlineKeyboardButton("🔍 Search Different Game", callback_data="steam_do_search")],
+            [InlineKeyboardButton(
+                "🔍 Search Different Game",
+                callback_data="search_different_game"
+            )],
             [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
         ])
         await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
@@ -9783,11 +9770,6 @@ async def handle_callback(update: Update):
             game_name_stored = claim_data.get("game_name", game_name)
             steam_id = claim_data.get("steam_id", "")
             release_type = claim_data.get("release_type", "daily")
-            type_badge = (
-                "🌟 Sunday Bonus Account"
-                if release_type == "sunday_noon"
-                else "📅 Daily Account"
-            )
 
             # Notify owner of undo
             await tg_app.bot.send_message(
@@ -9835,20 +9817,15 @@ async def handle_callback(update: Update):
         if len(parts) == 3:
             _, account_email, game_name = parts
 
-            # Prevent the original 30s prompt from re-firing if it hasn't yet
             reminded_key = f"steam_reminded:{chat_id}:{account_email}"
-            await redis_client.setex(reminded_key, 600, "1")  # 10 min guard
+            await redis_client.setex(reminded_key, 90000, "1")  # slightly over 24h
 
-            await query.answer(
-                "⏳ Got it! We'll remind you in 5 minutes.",
-                show_alert=False
-            )
+            await query.answer("⏳ We'll remind you tomorrow!", show_alert=False)
 
-            # Edit the message to confirm
             try:
                 await query.message.edit_text(
-                    f"⏳ <b>No problem!</b>\n\n"
-                    f"We'll check back with you about <b>{html.escape(game_name)}</b> in 5 minutes.\n\n"
+                    f"⏳ <b>Got it!</b>\n\n"
+                    f"We'll check back tomorrow about <b>{html.escape(game_name)}</b>.\n\n"
                     f"<i>Enjoy your game! 🍃</i>",
                     parse_mode="HTML",
                     reply_markup=None
@@ -9856,13 +9833,14 @@ async def handle_callback(update: Update):
             except Exception:
                 pass
 
-            # Schedule 5 minute reminder
+            # Schedule 24 hour final reminder
             asyncio.create_task(
                 send_reminder_feedback(
                     chat_id=chat_id,
                     account_email=account_email,
                     game_name=game_name,
-                    delay=300
+                    delay=86400,  # 24 hours
+                    is_final=True
                 )
             )
 
@@ -9981,16 +9959,12 @@ async def handle_callback(update: Update):
             return
 
     elif data == "search_different_game":
-        # Consume 1 attempt when user taps "Search Different Game"
-        attempts_key = f"steam_search_attempts:{chat_id}"
-        current = int(await redis_client.get(attempts_key) or 0)
-        await redis_client.setex(attempts_key, 300, current + 1)
-
-        # Clear any cached result so next search is fresh
+        # User actively chose to search again within the window — free, no attempt charged
+        # Deleting the result key signals _expire_result to exit without charging
         await redis_client.delete(f"steam_search_result:{chat_id}")
         await redis_client.delete(f"steam_searching:{chat_id}")
 
-        await query.answer("✅ 1 attempt used • New search ready", show_alert=False)
+        await query.answer("🔍 Ready for a new search", show_alert=False)
         await handle_steam_landing(chat_id, first_name, query)
         return
 
@@ -10036,24 +10010,6 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
-            # Testing timers
-            asyncio.create_task(
-                send_delayed_feedback_buttons(
-                    chat_id=chat_id,
-                    account_email=account_email,
-                    game_name=real_game_name,
-                    delay=5
-                )
-            )
-            asyncio.create_task(
-                send_reminder_feedback(
-                    chat_id=chat_id,
-                    account_email=account_email,
-                    game_name=real_game_name,
-                    delay=30
-                )
-            )
-
         else:
             # === ALREADY CLAIMED ===
             await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
@@ -10087,12 +10043,6 @@ async def handle_callback(update: Update):
         release_type = acc.get("release_type", "daily")
         image_url = (acc.get("image_url") or "").strip()
 
-        type_badge = (
-            "🌟 Sunday Bonus Account"
-            if release_type == "sunday_noon"
-            else "📅 Daily Account"
-        )
-
         # Store claim data for undo/feedback
         await redis_client.setex(
             f"steam_claim_data:{chat_id}:{account_email}",
@@ -10108,15 +10058,13 @@ async def handle_callback(update: Update):
         caption = (
             f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"🏷️ {type_badge}\n\n"
             f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
             f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
             f"{'🆔 Steam ID: <code>' + str(steam_id) + '</code>\n' if steam_id else ''}\n\n"
             f"⚠️ <b>Important Notice:</b>\n"
-            f"• If you see a <b>Something went wrong</b> message, don't worry! The account is fine.\n"
-            f"🔓 <b>Security Warning:</b>\n"
-            f"• Do not change password or enable Steam Guard.\n\n"
-            f"⏳ Feedback buttons will appear in <b>30 seconds</b>.\n\n"
+            f"<i>Steam may show a warning on first login — this is normal, just proceed.</i>\n"
+            f"• Do not change password or email.\n\n"
+            f"🕐 We'll check back in <b>2 hours</b> to see if it worked. 🍃\n\n"
             f"<i>Enjoy your game, wanderer! 🍃</i>"
         )
 
@@ -10140,13 +10088,13 @@ async def handle_callback(update: Update):
             duration=3
         ))
 
-        # Send feedback buttons after 30 seconds
+        # Send feedback buttons after 2 hrs
         asyncio.create_task(
             send_delayed_feedback_buttons(
                 chat_id=chat_id,
                 account_email=account_email,
                 game_name=game_name,
-                delay=30
+                delay=7200  # 2 hours
             )
         )
 
