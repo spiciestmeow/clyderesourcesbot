@@ -7884,6 +7884,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     ) or []
 
     query_lower = game_query.lower().strip()
+    # In handle_steam_game_search, replace the match logic:
     matches = [
         acc for acc in all_accounts
         if query_lower in (acc.get("game_name") or "").lower()
@@ -7998,22 +7999,15 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         new_count = current_attempts + 1
         await redis_client.setex(attempts_key, cooldown_seconds, new_count)
         attempts_left = 3 - new_count
+        
+        # ← ADD THIS: clear searching state so typing doesn't retrigger
+        await redis_client.delete(f"steam_searching:{chat_id}")
 
         if attempts_left <= 0:
-            await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
-            await redis_client.delete(attempts_key)
             await redis_client.delete(f"steam_searching:{chat_id}")
-
-            await tg_app.bot.send_message(
-                chat_id,
-                f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
-                f"You've used all 3 search attempts.\n\n"
-                f"⏳ Cooldown started: <b>{cooldown_hours} hours</b> (Level {level})\n\n"
-                f"<i>Try again after your cooldown. 🍃</i>",
-                parse_mode="HTML"
-            )
+            await tg_app.bot.send_message(...)
         else:
-            await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
+            # Don't re-set steam_searching here — only set it when user clicks button
             await tg_app.bot.send_message(
                 chat_id,
                 f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
@@ -10793,6 +10787,7 @@ async def process_update(update_data: dict):
 
     if await redis_client.get(f"steam_searching:{chat_id}"):
         if not is_real_command:
+            await redis_client.delete(f"steam_searching:{chat_id}")  # clear immediately
             await handle_steam_game_search(chat_id, first_name, raw)
             return
 
