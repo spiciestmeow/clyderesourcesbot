@@ -7744,16 +7744,22 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
     if active_cd > 0:
         hours = active_cd // 3600
         mins = (active_cd % 3600) // 60
+        total_cd_seconds = cooldown_hours * 3600
+        elapsed = total_cd_seconds - active_cd
+        cd_bar = create_daily_progress_bar(elapsed, total_cd_seconds, length=10)
+        pct_done = round((elapsed / total_cd_seconds) * 100) if total_cd_seconds > 0 else 0
         status_text = (
-            f"⏳ <b>You are on cooldown</b>\n"
-            f"Time remaining: <b>{hours}h {mins}m</b>\n"
-            f"Level {level} cooldown: {cooldown_hours} hours"
+            f"⏳ <b>Cooldown Remaining: {hours}h {mins}m</b>\n"
+            f"{cd_bar} {pct_done}% done\n\n"
+            f"🌿 Level {level} cooldown: <b>{cooldown_hours}h</b>"
         )
         search_buttons = []
     else:
+        attempts_bar = create_daily_progress_bar(3 - attempts_left, 3, length=10)
         status_text = (
-            f"🔍 <b>Search attempts remaining: {attempts_left}/3</b>\n"
-            f"Level {level} cooldown after claim: <b>{cooldown_hours}h</b>"
+            f"🔍 <b>Search Attempts</b>\n"
+            f"{attempts_bar} <b>{attempts_left}/3</b> remaining\n\n"
+            f"🌿 Level {level} cooldown after claim: <b>{cooldown_hours}h</b>"
         )
         search_buttons = [
             [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
