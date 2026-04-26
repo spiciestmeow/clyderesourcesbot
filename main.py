@@ -4215,6 +4215,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "☀️ <b>Daily Bonus</b> — Resets daily bonus, referral "
             "lock and pending referral for clean testing\n"
             "Command: <code>/testdaily &lt;id&gt;</code>\n\n"
+            "🎮 <b>Steam Search</b> — Resets cooldown and all search attempts\n"
+            "Command: <code>/resetsteamsearch &lt;id&gt;</code>\n\n"
             "📌 <b>To use:</b> Close this and type the command.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
@@ -4254,12 +4256,13 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "Search by email to view account details, "
             "live Steam status, and full games list.\n\n"
             "📤 <b>Upload Steam:</b>\n"
-            "Add one or multiple Steam accounts. "
-            "Minimum required: email + password.\n"
-            "Optional: game name, SteamID64, banner image URL.\n\n"
+            "Add one or multiple Steam accounts.\n\n"
+            "🔄 <b>Reset Search:</b>\n"
+            "Reset cooldown and attempts for any user.\n"
+            "Command: <code>/resetsteamsearch &lt;user_id&gt;</code>\n"
+            "No ID = resets yourself.\n\n"
             "📋 <b>Notion Library:</b>\n"
-            "View, filter, and update Steam account availability "
-            "directly inside the bot via Notion integration.",
+            "View, filter, and update Steam account availability.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔍 Search Steam", callback_data="caretaker_searchsteam")],
                 [InlineKeyboardButton("📤 Upload Steam", callback_data="caretaker_uploadsteam")],
@@ -7739,6 +7742,85 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
 # ──────────────────────────────────────────────
 # NEW USER STEAM SEARCH SYSTEM (regular users only)
 # ──────────────────────────────────────────────
+async def handle_steam_landing(chat_id: int, first_name: str, query=None):
+    """Steam landing page — works for both owner and regular users"""
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return
+
+    level = profile.get("level", 1)
+    cooldown_hours = get_steam_cooldown_hours(level)
+
+    claim_ttl = await redis_client.ttl(f"steam_claim_cd:{chat_id}")
+    search_ttl = await redis_client.ttl(f"steam_search_cd:{chat_id}")
+    active_cd = max(claim_ttl, search_ttl)
+
+    attempts_left = 3 - int(
+        await redis_client.get(f"steam_search_attempts:{chat_id}") or 0
+    )
+
+    if active_cd > 0:
+        hours = active_cd // 3600
+        mins = (active_cd % 3600) // 60
+        status_text = (
+            f"⏳ <b>You are on cooldown</b>\n"
+            f"Time remaining: <b>{hours}h {mins}m</b>\n"
+            f"Level {level} cooldown: {cooldown_hours} hours"
+        )
+        search_buttons = []
+    else:
+        status_text = (
+            f"🔍 <b>Search attempts remaining: {attempts_left}/3</b>\n"
+            f"Level {level} cooldown after claim: <b>{cooldown_hours}h</b>"
+        )
+        search_buttons = [
+            [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
+        ]
+
+    # Owner gets extra admin button
+    owner_buttons = []
+    if chat_id == OWNER_ID:
+        owner_buttons = [
+            [InlineKeyboardButton("🛠️ Admin Steam Search", callback_data="owner_steam_search")],
+        ]
+
+    keyboard = InlineKeyboardMarkup(
+        search_buttons +
+        owner_buttons +
+        [
+            [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+        ]
+    )
+
+    caption = (
+        "🎮 <b>Steam Accounts</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{status_text}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "• Search for any game you want\n"
+        "• Found results expire in <b>3 minutes</b>\n"
+        "• 3 failed/expired searches → cooldown starts\n\n"
+        "<i>The forest holds many games, wanderer. 🍃</i>"
+    )
+
+    if query and query.message:
+        try:
+            await query.message.edit_caption(
+                caption=caption, parse_mode="HTML", reply_markup=keyboard
+            )
+        except Exception:
+            try:
+                await query.message.edit_text(
+                    text=caption, parse_mode="HTML", reply_markup=keyboard
+                )
+            except Exception:
+                pass
+    else:
+        await tg_app.bot.send_message(
+            chat_id, caption, parse_mode="HTML", reply_markup=keyboard
+        )
+
 async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
     profile = await get_user_profile(chat_id)
     if not profile:
@@ -7752,50 +7834,55 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
     search_ttl = await redis_client.ttl(f"steam_search_cd:{chat_id}")
     active_cd = max(claim_ttl, search_ttl)
 
+    attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+
+    # Build the steam landing page
     if active_cd > 0:
         hours = active_cd // 3600
         mins = (active_cd % 3600) // 60
-        msg = (
-            f"🌿 <b>You are still in cooldown.</b>\n\n"
-            f"⏳ Time left: <b>{hours}h {mins}m</b>\n"
-            f"Level {level} cooldown: {cooldown_hours} hours\n\n"
-            f"Try again later 🍃"
+        status_text = (
+            f"⏳ <b>You are on cooldown</b>\n"
+            f"Time remaining: <b>{hours}h {mins}m</b>\n"
+            f"Level {level} cooldown: {cooldown_hours} hours"
         )
-        if query:
-            try:
-                await query.message.edit_caption(caption=msg, parse_mode="HTML")
-            except Exception:
-                await query.message.edit_text(text=msg, parse_mode="HTML")
-        else:
-            await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML")
-        return
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+        ])
+    else:
+        status_text = (
+            f"🔍 <b>Search attempts remaining: {attempts_left}/3</b>\n"
+            f"Level {level} cooldown after claim: <b>{cooldown_hours}h</b>"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
+            [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+        ])
 
-    # ── Set waiting flag so process_update knows to intercept next message ──
-    await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
-
-    attempts_left = 2 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-
-    guide = (
-        "🎮 <b>Steam Account Search</b>\n"
+    caption = (
+        "🎮 <b>Steam Accounts</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "No more lists. Just search for any game you want.\n\n"
-        f"• You have <b>{attempts_left} search attempt(s)</b> remaining\n"
-        "• Found → Claim button appears (expires in 5 min)\n"
-        "• 2 failed searches → cooldown starts\n\n"
-        f"🔥 Lv{level} cooldown = <b>{cooldown_hours} hours</b>\n\n"
-        "<b>Reply with the game name you want.</b> 🍃"
+        f"{status_text}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "• Search for any game you want\n"
+        "• Found results expire in <b>3 minutes</b>\n"
+        "• 3 failed/expired searches → cooldown starts\n\n"
+        "<i>The forest holds many games, wanderer. 🍃</i>"
     )
 
-    if query:
+    if query and query.message:
         try:
-            await query.message.edit_caption(caption=guide, parse_mode="HTML")
+            await query.message.edit_caption(caption=caption, parse_mode="HTML", reply_markup=keyboard)
         except Exception:
-            await query.message.edit_text(text=guide, parse_mode="HTML")
+            try:
+                await query.message.edit_text(text=caption, parse_mode="HTML", reply_markup=keyboard)
+            except Exception:
+                pass
     else:
-        await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+        await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=keyboard)
 
 async def handle_steam_game_search(chat_id: int, first_name: str, game_query: str):
-    """Called when user types a game name while steam_searching flag is active"""
     profile = await get_user_profile(chat_id)
     if not profile:
         return
@@ -7805,10 +7892,10 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     cooldown_seconds = cooldown_hours * 3600
 
     attempts_key = f"steam_search_attempts:{chat_id}"
-    attempt_num = int(await redis_client.get(attempts_key) or 0) + 1
-    await redis_client.setex(attempts_key, cooldown_seconds, attempt_num)
+    current_attempts = int(await redis_client.get(attempts_key) or 0)
+    attempts_left = 3 - current_attempts
 
-    # Search steamCredentials by game_name (case-insensitive partial match)
+    # Search steamCredentials
     all_accounts = await _sb_get(
         "steamCredentials",
         **{"select": "*", "status": "eq.Available", "limit": 200}
@@ -7821,72 +7908,109 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     ]
 
     if matches:
-        # Found — store result and show claim button
         acc = matches[0]
         account_email = acc.get("email", "")
         game_name = acc.get("game_name", "Steam Account")
 
-        # Store result with 5-minute expiry
+        # Store result with 3 minute expiry
         await redis_client.setex(
             f"steam_search_result:{chat_id}",
-            300,
+            180,
             json.dumps({"email": account_email, "game_name": game_name})
         )
-
-        # Reset attempt counter on success (don't penalize for finding)
-        await redis_client.delete(attempts_key)
         await redis_client.delete(f"steam_searching:{chat_id}")
+
+        # Schedule expiry — count as failed attempt if not claimed within 3 min
+        async def _expire_result():
+            await asyncio.sleep(185)  # slightly after 3 min
+            still_there = await redis_client.get(f"steam_search_result:{chat_id}")
+            if still_there:
+                # They didn't claim — count as failed attempt
+                await redis_client.delete(f"steam_search_result:{chat_id}")
+                new_count = int(await redis_client.get(attempts_key) or 0) + 1
+                await redis_client.setex(attempts_key, cooldown_seconds, new_count)
+
+                if new_count >= 3:
+                    await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
+                    await redis_client.delete(attempts_key)
+                    await redis_client.delete(f"steam_searching:{chat_id}")
+                    try:
+                        await tg_app.bot.send_message(
+                            chat_id,
+                            f"⏳ <b>Result expired and attempts used up.</b>\n\n"
+                            f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+                else:
+                    remaining = 3 - new_count
+                    try:
+                        await tg_app.bot.send_message(
+                            chat_id,
+                            f"⏳ <b>Claim window expired!</b>\n\n"
+                            f"You didn't claim <b>{html.escape(game_name)}</b> in time.\n\n"
+                            f"🔍 <b>{remaining} search attempt(s) remaining.</b>\n\n"
+                            f"<i>Tap below to search again. 🍃</i>",
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
+                                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                            ])
+                        )
+                    except Exception:
+                        pass
+
+        asyncio.create_task(_expire_result())
 
         text = (
             f"✅ <b>Found a match!</b>\n\n"
             f"🎮 <b>{html.escape(game_name)}</b>\n\n"
-            f"⏳ This result expires in <b>5 minutes</b>.\n"
-            f"Tap below to claim it. 🍃"
+            f"⏳ Claim within <b>3 minutes</b> or it expires.\n"
+            f"<i>Tap below to claim it. 🍃</i>"
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(
                 f"✅ Claim {game_name[:30]}",
                 callback_data=f"claim_steam|{account_email}"
             )],
-            [InlineKeyboardButton("🔎 Search Different Game", callback_data="vamt_filter_steam")],
+            [InlineKeyboardButton("🔍 Search Different Game", callback_data="steam_do_search")],
             [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
         ])
         await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
 
     else:
-        # Not found
-        attempts_remaining = 2 - attempt_num
+        # Failed search — count attempt
+        new_count = current_attempts + 1
+        await redis_client.setex(attempts_key, cooldown_seconds, new_count)
+        attempts_left = 3 - new_count
 
-        if attempts_remaining <= 0:
-            # 2 failed searches — start cooldown
+        if attempts_left <= 0:
             await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
             await redis_client.delete(attempts_key)
             await redis_client.delete(f"steam_searching:{chat_id}")
 
-            hours = cooldown_hours
-            text = (
+            await tg_app.bot.send_message(
+                chat_id,
                 f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
-                f"You've used both search attempts.\n\n"
-                f"⏳ Cooldown started: <b>{hours} hours</b> (Level {level})\n\n"
-                f"<i>Try again after your cooldown. 🍃</i>"
+                f"You've used all 3 search attempts.\n\n"
+                f"⏳ Cooldown started: <b>{cooldown_hours} hours</b> (Level {level})\n\n"
+                f"<i>Try again after your cooldown. 🍃</i>",
+                parse_mode="HTML"
             )
-            await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
         else:
-            # 1 attempt left
-            text = (
-                f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
-                f"⚠️ You have <b>{attempts_remaining} search attempt</b> left.\n\n"
-                f"Try a different game name or spelling. 🍃"
-            )
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔎 Search Again", callback_data="vamt_filter_steam")],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-            ])
-            # Keep searching flag active for next attempt
             await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
             await tg_app.bot.send_message(
-                chat_id, text, parse_mode="HTML", reply_markup=keyboard
-            )   
+                chat_id,
+                f"❌ <b>Game not found: \"{html.escape(game_query)}\"</b>\n\n"
+                f"🔍 <b>{attempts_left} search attempt(s) remaining.</b>\n\n"
+                f"Try a different name or spelling. 🍃",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CALLBACK HANDLER
@@ -8654,6 +8778,13 @@ async def handle_callback(update: Update):
         ))
 
         await handle_profile_page(chat_id, first_name, query)
+
+    elif data == "owner_steam_search":
+            if chat_id != OWNER_ID:
+                await query.answer("🌿 Only the Forest Caretaker.", show_alert=True)
+                return
+            await handle_searchsteam_command(chat_id, "/searchsteam")
+            return
 
     elif data == "show_online_users":
             await redis_client.delete("online_users_cache")
@@ -9646,16 +9777,19 @@ async def handle_callback(update: Update):
 
             # ── Strip the "You reported this as" appended line from caption ──
             try:
-                current = query.message.caption or query.message.text or ""
+                current = getattr(query.message, 'caption', None) or getattr(query.message, 'text', None) or ""
                 clean_caption = current.split("\n\n━━━")[0]
-                await query.message.edit_caption(
-                    caption=(
-                        clean_caption +
-                        "\n\n<i>↩️ Feedback cleared. New buttons coming shortly...</i>"
-                    ),
-                    parse_mode="HTML",
-                    reply_markup=None
+                new_text = (
+                    clean_caption +
+                    "\n\n<i>↩️ Feedback cleared. New buttons coming shortly...</i>"
                 )
+                try:
+                    await query.message.edit_caption(caption=new_text, parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try:
+                        await query.message.edit_text(text=new_text, parse_mode="HTML", reply_markup=None)
+                    except Exception:
+                        pass  # message type doesn't support editing, ignore silently
             except Exception:
                 pass
 
@@ -9787,6 +9921,33 @@ async def handle_callback(update: Update):
                 show_alert=False
             )
 
+    elif data == "steam_do_search":
+            attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            
+            await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
+
+            guide = (
+                "🔍 <b>Search for a Steam Game</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"🎯 <b>{attempts_left} attempt(s) remaining</b>\n\n"
+                "• Type the game name below\n"
+                "• Found results expire in <b>3 minutes</b>\n"
+                "• Expired without claiming = attempt used\n\n"
+                "<b>Reply with the game name now.</b> 🍃"
+            )
+
+            if query and query.message:
+                try:
+                    await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                except Exception:
+                    try:
+                        await query.message.edit_text(text=guide, parse_mode="HTML")
+                    except Exception:
+                        pass
+            else:
+                await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+            return
+
     elif data.startswith("claim_steam|"):
         _, account_email = data.split("|")
         
@@ -9818,6 +9979,9 @@ async def handle_callback(update: Update):
                 f"(Level {level} cooldown)",
                 parse_mode="HTML"
             )
+
+        await redis_client.delete(f"steam_search_attempts:{chat_id}")
+        await redis_client.delete(f"steam_search_result:{chat_id}")
 
         # === YOUR ORIGINAL DELIVERY CODE STARTS HERE (unchanged) ===
         # Fetch account details for delivery
@@ -9934,12 +10098,7 @@ async def handle_callback(update: Update):
 
         # Steam - NEW SEARCH SYSTEM
         if category == "steam":
-            if chat_id == OWNER_ID:
-                # Owner keeps old behavior
-                await handle_searchsteam_command(chat_id, "/searchsteam", first_name, query=query)
-            else:
-                # Regular users get new search system
-                await handle_user_steam_search(chat_id, first_name, query)
+            await handle_steam_landing(chat_id, first_name, query)
             return
 
         # Cookie types
@@ -10588,9 +10747,22 @@ async def process_update(update_data: dict):
             )
             return
         
-    # ── STEAM GAME SEARCH INTERCEPT ──
-    if not text.startswith("/"):
-        if await redis_client.get(f"steam_searching:{chat_id}"):
+# ── STEAM GAME SEARCH INTERCEPT ──
+    is_real_command = any(text.startswith(cmd) for cmd in (
+        "/start", "/menu", "/clear", "/profile", "/myid", "/feedback",
+        "/leaderboard", "/history", "/streak", "/invite", "/spin", "/update",
+        "/updates", "/lang", "/language", "/forest", "/health", "/caretaker",
+        "/uploadkeys", "/uploadsteam", "/uploadwinoffice", "/searchsteam",
+        "/addupdate", "/addevent", "/setforestinfo", "/flushcache", "/checkstock",
+        "/viewreports", "/feedbacks", "/viewfeedback", "/resetfirst", "/reset",
+        "/resetguide", "/resetwheel", "/resetonboarding", "/resetprofilegif",
+        "/resetsteamclaim", "/testdaily", "/setlogo", "/addpatron", "/settitle",
+        "/referrals", "/online", "/test_achievements", "/award_beta",
+        "/remove_achievement",
+    ))
+
+    if await redis_client.get(f"steam_searching:{chat_id}"):
+        if not is_real_command:
             await handle_steam_game_search(chat_id, first_name, raw)
             return
 
@@ -10657,6 +10829,33 @@ async def process_update(update_data: dict):
             )
             return
         await redis_client.setex(start_key, 10, 1)
+
+    elif text.startswith("/resetsteamsearch"):
+            if chat_id != OWNER_ID:
+                await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+                return
+            
+            parts = text.split()
+            target_id = int(parts[1]) if len(parts) > 1 else chat_id
+            
+            keys = [
+                f"steam_claim_cd:{target_id}",
+                f"steam_search_cd:{target_id}",
+                f"steam_search_attempts:{target_id}",
+                f"steam_searching:{target_id}",
+                f"steam_search_result:{target_id}",
+            ]
+            deleted = await redis_client.delete(*keys)
+            
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ <b>Steam search fully reset for <code>{target_id}</code></b>\n\n"
+                f"• Cooldown cleared\n"
+                f"• Attempts reset to 3\n"
+                f"• Search state cleared\n\n"
+                f"Deleted {deleted} key(s) 🍃",
+                parse_mode="HTML"
+            )
 
     elif text.startswith("/settitle"):
         await handle_set_title(chat_id, first_name)
