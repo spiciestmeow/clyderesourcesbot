@@ -8049,12 +8049,6 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         
         # ← ADD THIS: clear searching state so typing doesn't retrigger
         await redis_client.delete(f"steam_searching:{chat_id}")
-
-        if attempts_left <= 0:
-            await redis_client.delete(f"steam_searching:{chat_id}")
-            await tg_app.bot.send_message(...)
-
-
         if attempts_left <= 0:
             await redis_client.delete(f"steam_searching:{chat_id}")
             await tg_app.bot.send_message(
