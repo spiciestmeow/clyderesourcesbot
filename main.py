@@ -9922,8 +9922,8 @@ async def handle_callback(update: Update):
                 show_alert=False
             )
 
-    # ── TEMPORARILY DISABLE STEAM FOR USERS ──
-    elif data == "steam_do_search" or data.startswith("vamt_filter_steam"):
+    # ── TEMPORARILY DISABLE STEAM FOR REGULAR USERS (OWNER still has full access) ──
+    elif (data == "steam_do_search" or data.startswith("vamt_filter_steam")) and chat_id != OWNER_ID:
         await query.answer("🌿 This feature is not available for now", show_alert=True)
         return
 
