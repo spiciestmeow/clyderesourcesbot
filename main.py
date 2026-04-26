@@ -9922,6 +9922,11 @@ async def handle_callback(update: Update):
                 show_alert=False
             )
 
+    # ── TEMPORARILY DISABLE STEAM FOR USERS ──
+    elif data == "steam_do_search" or data.startswith("vamt_filter_steam"):
+        await query.answer("🌿 This feature is not available for now", show_alert=True)
+        return
+
     elif data == "steam_do_search":
             attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
             
@@ -9949,6 +9954,18 @@ async def handle_callback(update: Update):
                 await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
             return
 
+    elif data == "search_different_game":
+        # Consume 1 attempt when user abandons the current result
+        attempts_key = f"steam_search_attempts:{chat_id}"
+        current_attempts = int(await redis_client.get(attempts_key) or 0)
+        await redis_client.setex(attempts_key, 300, current_attempts + 1)   # 5 min TTL
+
+        await query.answer("✅ 1 attempt used • Search reset", show_alert=False)
+
+        # Return to fresh search page
+        await handle_steam_landing(chat_id, first_name, query)
+        return
+
     elif data.startswith("claim_steam|"):
         _, account_email = data.split("|")
         
@@ -9962,27 +9979,21 @@ async def handle_callback(update: Update):
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
 
-        # === FIX: Get the REAL game name from the database ===
+        # Get real game name so it shows correctly in My Claims
         acc_data = await _sb_get(
             "steamCredentials",
-            **{
-                "email": f"eq.{account_email}",
-                "select": "game_name",
-            }
+            **{"email": f"eq.{account_email}", "select": "game_name"}
         ) or []
         real_game_name = acc_data[0].get("game_name", "Steam Account") if acc_data else "Steam Account"
 
-        # Try to claim with the correct game name
-        success = await claim_steam_account(
-            chat_id, first_name, account_email, real_game_name
-        )
+        success = await claim_steam_account(chat_id, first_name, account_email, real_game_name)
 
         if success:
             # Successful first claim
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
 
-            # Full cleanup so you can search again immediately
+            # Full cleanup
             await redis_client.delete(f"steam_search_result:{chat_id}")
             await redis_client.delete(f"steam_searching:{chat_id}")
             await redis_client.delete(f"steam_search_attempts:{chat_id}")
@@ -9998,10 +10009,29 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
+            # ── SCHEDULE FEEDBACK BUTTONS (this was missing) ──
+            asyncio.create_task(
+                send_delayed_feedback_buttons(
+                    chat_id=chat_id,
+                    account_email=account_email,
+                    game_name=real_game_name,
+                    delay=5
+                )
+            )
+
+            # 5-minute reminder in case user ignores the buttons
+            asyncio.create_task(
+                send_reminder_feedback(
+                    chat_id=chat_id,
+                    account_email=account_email,
+                    game_name=real_game_name,
+                    delay=7
+                )
+            )
+
         else:
-            # === Already claimed by YOU ===
+            # Already claimed by this user
             await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
-            # Show your claims page so you can see the record
             await show_my_steam_claims(chat_id, first_name, query, page=0)
             return
 
