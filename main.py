@@ -10003,7 +10003,7 @@ async def handle_callback(update: Update):
         password = acc.get("password", "")
         steam_id = acc.get("steam_id", "")
         release_type = acc.get("release_type", "daily")
-        image_url = acc.get("image_url", "").strip()
+        image_url = (acc.get("image_url") or "").strip()
 
         type_badge = (
             "🌟 Sunday Bonus Account"
