@@ -9977,9 +9977,11 @@ async def handle_callback(update: Update):
 
     # ── TEMPORARILY DISABLE STEAM FOR REGULAR USERS (OWNER still has full access) ──
     elif (data == "steam_do_search" or data.startswith("vamt_filter_steam")) and chat_id != OWNER_ID:
-        await query.answer("🌿 This feature is not available for now", show_alert=True)
+        asyncio.create_task(send_temporary_message(
+            chat_id, "🌿 This feature is not available right now.", duration=4
+        ))
         return
-
+        
     elif data == "steam_do_search":
             attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
             
