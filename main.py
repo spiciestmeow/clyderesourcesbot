@@ -9,6 +9,7 @@ import html
 import httpx
 import pytz
 import redis.asyncio as aioredis
+from telegram import MessageEntity
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -5257,10 +5258,20 @@ async def show_paginated_cookie_list(
         title, emoji, accent = "Prime Video", "📦", "🔵"
 
     # Loading states
+    loading_text = f"  Loading {title} cookies..."
+
     await query.message.edit_caption(
-        caption=f"<i>Loading {title} cookies...</i>",
-        parse_mode="HTML",
+        caption=loading_text,
+        caption_entities=[
+            MessageEntity(
+                type="custom_emoji",
+                offset=0,
+                length=2,
+                custom_emoji_id="5318911503938634641"
+            )
+        ]
     )
+
     await asyncio.sleep(1.0)
 
     profile    = await get_user_profile(chat_id)
