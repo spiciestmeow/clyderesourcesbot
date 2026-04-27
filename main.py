@@ -10490,6 +10490,13 @@ async def handle_callback(update: Update):
             await query.answer("⏳ This result has expired. Search again.", show_alert=True)
             return
 
+        # === ADD THESE LINES HERE ===
+        await query.answer()                   
+        try:
+            await query.message.delete()
+        except:
+            pass
+
         profile = await get_user_profile(chat_id)
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
