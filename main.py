@@ -5081,11 +5081,9 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
             f"{fb_emoji} <b>Your feedback: {fb_label}</b>\n"
             f"<i>Changed your mind? Tap below to update.</i>"
         )
-        # Show opposite button to allow switching
-        opposite = "working" if feedback_status == "not_working" else "not_working"
-        change_label = "✅ Mark as Working" if opposite == "working" else "❌ Mark as Not Working"
         feedback_buttons = [[
-            InlineKeyboardButton(change_label, callback_data=f"stfb_{'ok' if opposite == 'working' else 'bad'}|{email}|{game_name[:30]}")
+            InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
+            InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}"),
         ]]
     else:
         feedback_section = (
