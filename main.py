@@ -3587,9 +3587,12 @@ def kb_start():
 
 def kb_resources():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account")],
-        [InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides")],
+        [
+            InlineKeyboardButton("🪄 Spirit Treasures", url="https://clyderesourcehub.short.gy/steam-account"),
+            InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides"),
+        ],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
+        [InlineKeyboardButton("🍜 Crunchy Checker", callback_data="show_crunchyroll_bot")],
         [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")],
     ])
 
@@ -9055,6 +9058,42 @@ async def handle_callback(update: Update):
             )
             return
 
+    elif data == "show_crunchyroll_bot":
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        caption = (
+            "🍜 <b>Clyde's Crunchy Checker</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "A companion bot nestled deeper in the enchanted forest, "
+            "dedicated entirely to <b>Crunchyroll account validation</b>.\n\n"
+            "🌿 <b>What it offers:</b>\n"
+            "• 🔍 Check Crunchyroll account status\n"
+            "• ✅ Verify premium subscription validity\n"
+            "• 🌏 Detect regional restrictions\n"
+            "• 🎌 Test streaming capability\n"
+            "• 📊 Get detailed account info (plan, expiry, etc.)\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "<i>The anime spirits await you in a quieter grove of the forest.</i> 🍃✨"
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🍜 Open Crunchyroll Bot", url="https://t.me/clydecrunchybot")],
+            [InlineKeyboardButton("⬅️ Back to Resources", callback_data="show_resources")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+        ])
+
+        msg = await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=INVENTORY_GIF,
+            caption=caption,
+            reply_markup=keyboard,
+        )
+        await _remember(chat_id, msg.message_id)
+        return
+
     elif data == "set_language":
         await handle_set_language(chat_id, query=query)
         return
@@ -10055,7 +10094,7 @@ async def handle_callback(update: Update):
 
         attempts_left = 3 - current_attempts
         await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
-        
+
         # User actively chose to search again within the window — free, no attempt charged
         # Deleting the result key signals _expire_result to exit without charging
         await redis_client.delete(f"steam_search_result:{chat_id}")
