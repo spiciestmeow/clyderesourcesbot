@@ -11396,8 +11396,6 @@ async def process_update(update_data: dict):
             target_id = int(parts[1]) if len(parts) > 1 else chat_id
             
             keys = [
-                f"steam_claim_cd:{target_id}",
-                f"steam_search_cd:{target_id}",
                 f"steam_search_attempts:{target_id}",
                 f"steam_searching:{target_id}",
                 f"steam_search_result:{target_id}",
@@ -11406,11 +11404,60 @@ async def process_update(update_data: dict):
             
             await tg_app.bot.send_message(
                 chat_id,
-                f"✅ <b>Steam search fully reset for <code>{target_id}</code></b>\n\n"
-                f"• Cooldown cleared\n"
-                f"• Attempts reset to 3\n"
+                f"✅ <b>Steam search attempts reset for <code>{target_id}</code></b>\n\n"
+                f"• Attempts restored to 3\n"
                 f"• Search state cleared\n\n"
                 f"Deleted {deleted} key(s) 🍃",
+                parse_mode="HTML"
+            )
+
+    elif text.startswith("/resetsteamclaim"):
+            if chat_id != OWNER_ID:
+                await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can use this.")
+                return
+            
+            parts = text.split()
+            if len(parts) < 3:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "📌 Usage: <code>/resetsteamclaim &lt;user_id&gt; &lt;account_email&gt;</code>\n\n"
+                    "Example:\n<code>/resetsteamclaim 123456789 user@gmail.com</code>",
+                    parse_mode="HTML"
+                )
+                return
+            
+            target_id = parts[1]
+            account_email = parts[2]
+            
+            manila = pytz.timezone("Asia/Manila")
+            today_start = datetime.now(manila).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ).astimezone(pytz.utc).isoformat()
+            
+            # Clear Redis markers
+            deleted = await redis_client.delete(
+                f"steam_claimed:{target_id}:{account_email}",
+                f"steam_claim_cd:{target_id}",
+                f"steam_search_cd:{target_id}",
+                f"steam_search_attempts:{target_id}",
+                f"steam_fb:{target_id}:{account_email}",
+                f"steam_reminded:{target_id}:{account_email}",
+            )
+            
+            # Clear DB claim record for today
+            await _sb_delete(
+                f"steam_claims?chat_id=eq.{target_id}&account_email=eq.{account_email}&claimed_at=gte.{today_start}"
+            )
+            
+            await tg_app.bot.send_message(
+                chat_id,
+                f"✅ <b>Steam claim fully reset for <code>{target_id}</code></b>\n\n"
+                f"📧 Email: <code>{account_email}</code>\n\n"
+                f"• Claim record deleted from DB\n"
+                f"• Redis claim marker cleared\n"
+                f"• Cooldown cleared\n"
+                f"• Feedback markers cleared\n\n"
+                f"Deleted {deleted} Redis key(s) 🍃",
                 parse_mode="HTML"
             )
 
