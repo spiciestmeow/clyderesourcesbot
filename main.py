@@ -4832,8 +4832,8 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
         pass
 
 async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: int = 0):
-    """📜 My Claims — Shows all Steam accounts the user has ever claimed"""
-    ITEMS_PER_PAGE = 8
+    """📜 My Claims — Redesigned professional layout"""
+    ITEMS_PER_PAGE = 5  # reduced for cleaner look
 
     claims = await _sb_get(
         "steam_claims",
@@ -4845,19 +4845,28 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         }
     ) or []
 
+    manila = pytz.timezone("Asia/Manila")
+    now = datetime.now(manila)
+
     if not claims:
         text = (
-            "📜 <b>Your Claimed Treasures</b>\n"
+            "🎮 <b>My Steam Collection</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "🌫️ You haven't claimed any Steam accounts yet.\n\n"
-            "Go explore the Steam section and bring some games home! 🎮🍃"
+            "🌫️ <b>Your collection is empty.</b>\n\n"
+            "You haven't claimed any Steam accounts yet.\n"
+            "Head over to the Steam section and grab your first game! 🍃\n\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "<i>The forest holds many games waiting for you...</i> 🌲"
         )
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎮 Back to Steam Accounts", callback_data="vamt_filter_steam")],
+            [InlineKeyboardButton("🔍 Find a Game", callback_data="vamt_filter_steam")],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
         ])
         if query and query.message:
-            await query.message.edit_caption(text, parse_mode="HTML", reply_markup=keyboard)
+            try:
+                await query.message.edit_caption(text, parse_mode="HTML", reply_markup=keyboard)
+            except Exception:
+                await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
         else:
             await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=keyboard)
         return
@@ -4865,54 +4874,100 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
     total = len(claims)
     claims_today = await get_steam_claims_today(chat_id)
 
+    # ── Stats calculations ──
     total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
     start = page * ITEMS_PER_PAGE
     page_claims = claims[start:start + ITEMS_PER_PAGE]
 
-    manila = pytz.timezone("Asia/Manila")
-    lines = [
-        "📜 <b>Your Claimed Treasures</b>",
-        "━━━━━━━━━━━━━━━━━━",
-        f"🌿 You have claimed <b>{total}</b> account(s) so far",
-        f"🎯 Today: <b>{claims_today}</b>claimed",
-        f"📄 Page {page + 1} of {total_pages}\n\n"
-    ]
+    # ── Recent activity (last 7 days) ──
+    week_ago = now - timedelta(days=7)
+    claims_this_week = sum(
+        1 for c in claims
+        if c.get("claimed_at") and
+        datetime.fromisoformat(c["claimed_at"].replace("Z", "+00:00")).astimezone(manila) >= week_ago
+    )
 
+    # ── Header ──
+    text = (
+        "🎮 <b>My Steam Collection</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 <b>{html.escape(first_name)}'s Game Library</b>\n\n"
+        f"📦 Total Claimed: <b>{total}</b> account(s)\n"
+        f"📅 Claimed Today: <b>{claims_today}</b>\n"
+        f"🗓️ This Week: <b>{claims_this_week}</b>\n"
+        f"📄 Page <b>{page + 1}</b> of <b>{total_pages}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+    )
+
+    # ── Game entries ──
     for i, c in enumerate(page_claims, start + 1):
         game = html.escape(c.get("game_name", "Unknown Game"))
         email = html.escape(c.get("account_email", "—"))
+
+        # ── Time formatting ──
         try:
             dt = datetime.fromisoformat(c["claimed_at"].replace("Z", "+00:00"))
-            time_str = dt.astimezone(manila).strftime("%b %d, %Y • %I:%M %p")
-        except:
-            time_str = "—"
+            dt_manila = dt.astimezone(manila)
+            diff = now - dt_manila
+            diff_hours = diff.total_seconds() / 3600
 
-        lines.append(f"{i}. 🎮 <b>{game}</b>")
-        lines.append(f"   └ 📧 <tg-spoiler>{email}</tg-spoiler>")
-        lines.append(f"   └ 📅 {time_str}\n")
+            if diff.days == 0 and diff_hours < 1:
+                mins = int(diff.total_seconds() / 60)
+                time_ago = f"🟢 {mins}m ago"
+            elif diff.days == 0:
+                time_ago = f"🟡 {int(diff_hours)}h ago"
+            elif diff.days == 1:
+                time_ago = "🔵 Yesterday"
+            elif diff.days < 7:
+                time_ago = f"🔵 {diff.days}d ago"
+            else:
+                time_ago = f"⚪ {dt_manila.strftime('%b %d, %Y')}"
 
-    text = "\n".join(lines)
+            date_str = dt_manila.strftime("%b %d, %Y • %I:%M %p")
+        except Exception:
+            time_ago = "⚪ Unknown"
+            date_str = "—"
 
-    # Navigation buttons
+        # ── Entry block ──
+        text += (
+            f"<b>{i}.</b> 🎮 <b>{game}</b>\n"
+            f"     {time_ago}\n"
+            f"     📧 <tg-spoiler>{email}</tg-spoiler>\n"
+            f"     🕒 {date_str}\n\n"
+        )
+
+    text += "━━━━━━━━━━━━━━━━━━\n"
+    text += "<i>Tap an email to reveal it • Tap 🔍 to claim more</i> 🍃"
+
+    # ── Navigation buttons ──
     buttons = []
+
+    # Page navigation
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"myclaims_page_{page-1}"))
+        nav.append(InlineKeyboardButton("◀ Previous", callback_data=f"myclaims_page_{page-1}"))
     if start + ITEMS_PER_PAGE < total:
-        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"myclaims_page_{page+1}"))
+        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"myclaims_page_{page+1}"))
     if nav:
         buttons.append(nav)
 
+    # Action buttons
     buttons.append([
-        InlineKeyboardButton("🎮 Back to Steam Accounts", callback_data="vamt_filter_steam"),
-        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+        InlineKeyboardButton("🔍 Claim More Games", callback_data="vamt_filter_steam"),
+    ])
+    buttons.append([
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
     ])
 
     markup = InlineKeyboardMarkup(buttons)
 
     if query and query.message:
         try:
-            await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
             return
         except Exception:
             pass
