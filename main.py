@@ -597,7 +597,7 @@ async def get_steam_claims_today(chat_id: int) -> int:
 async def claim_steam_account(
     chat_id: int, first_name: str, account_email: str, game_name: str
 ) -> bool:
-    # Check if already claimed
+    # Check if already claimed by this user
     existing_claim = await _sb_get(
         "steam_claims",
         **{
@@ -609,7 +609,7 @@ async def claim_steam_account(
 
     if existing_claim:
         print(f"ℹ️ User {chat_id} tried to claim already-owned account: {account_email}")
-        return False  # already claimed by this user
+        return False
 
     success = await _sb_post("steam_claims", {
         "chat_id": chat_id,
@@ -619,6 +619,12 @@ async def claim_steam_account(
     })
 
     if success:
+        # ── Set a persistent Redis marker so feedback reminder knows claim exists ──
+        await redis_client.setex(
+            f"steam_claimed:{chat_id}:{account_email}",
+            90000,  # ~25 hours — longer than any feedback window
+            "1"
+        )
         asyncio.create_task(
             check_and_award_achievements(chat_id, first_name, action="steam_claim")
         )
@@ -4539,10 +4545,9 @@ async def send_delayed_feedback_buttons(
     game_name: str,
     delay: int = 7200
 ):
-    """Send feedback buttons after 2 hours"""
     await asyncio.sleep(delay)
 
-    # Skip if user already submitted feedback
+    # Fast Redis checks first
     fb_key = f"steam_fb:{chat_id}:{account_email}"
     if await redis_client.get(fb_key):
         return
@@ -4550,6 +4555,25 @@ async def send_delayed_feedback_buttons(
     reminded_key = f"steam_reminded:{chat_id}:{account_email}"
     if await redis_client.get(reminded_key):
         return
+
+    # Confirm claim marker exists (set during claim_steam_account)
+    claim_marker = f"steam_claimed:{chat_id}:{account_email}"
+    if not await redis_client.get(claim_marker):
+        # Fallback: double-check DB in case Redis expired
+        existing_claim = await _sb_get(
+            "steam_claims",
+            **{
+                "chat_id": f"eq.{chat_id}",
+                "account_email": f"eq.{account_email}",
+                "select": "id",
+            }
+        ) or []
+        if not existing_claim:
+            print(f"[FEEDBACK] No claim found — skipping reminder for {chat_id}")
+            return
+
+    # Set reminded flag before sending to prevent race conditions
+    await redis_client.setex(reminded_key, 90000, "1")
 
     try:
         await tg_app.bot.send_message(
@@ -7728,7 +7752,6 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
 # NEW USER STEAM SEARCH SYSTEM (regular users only)
 # ──────────────────────────────────────────────
 async def handle_steam_landing(chat_id: int, first_name: str, query=None):
-    """Steam landing page — works for both owner and regular users"""
     profile = await get_user_profile(chat_id)
     if not profile:
         return
@@ -7740,26 +7763,62 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
     search_ttl = await redis_client.ttl(f"steam_search_cd:{chat_id}")
     active_cd = max(claim_ttl, search_ttl)
 
-    attempts_left = 3 - int(
-        await redis_client.get(f"steam_search_attempts:{chat_id}") or 0
-    )
+    attempts_used = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+    attempts_left = 3 - attempts_used
+
+    def make_recharge_bar(elapsed_seconds: int, total_seconds: int, length: int = 10) -> str:
+        """Bar fills left→right as time passes. Empty=all white, Full=all green."""
+        if total_seconds <= 0:
+            return "🟩" * length
+        pct = min(elapsed_seconds / total_seconds, 1.0)
+        filled = round(pct * length)
+        empty = length - filled
+        if pct < 0.33:
+            fill_emoji = "🟥"
+        elif pct < 0.66:
+            fill_emoji = "🟨"
+        else:
+            fill_emoji = "🟩"
+        return fill_emoji * filled + "⬜" * empty
+
+    def make_attempts_bar(used: int, total: int = 3, length: int = 9) -> str:
+        """Each attempt = 3 blocks. Filled=available (green/yellow/red), empty=used (white)."""
+        available = total - used
+        blocks_per_slot = length // total
+        bar = ""
+        for i in range(total):
+            if i < available:
+                # Color based on how many left
+                if available == 3:
+                    emoji = "🟩"
+                elif available == 2:
+                    emoji = "🟨"
+                else:
+                    emoji = "🟥"
+                bar += emoji * blocks_per_slot
+            else:
+                bar += "⬜" * blocks_per_slot
+        return bar
 
     if active_cd > 0:
-        hours = active_cd // 3600
-        mins = (active_cd % 3600) // 60
         total_cd_seconds = cooldown_hours * 3600
         elapsed = total_cd_seconds - active_cd
-        cd_bar = create_daily_progress_bar(elapsed, total_cd_seconds, length=10)
         pct_done = round((elapsed / total_cd_seconds) * 100) if total_cd_seconds > 0 else 0
+
+        hours = active_cd // 3600
+        mins = (active_cd % 3600) // 60
+
+        cd_bar = make_recharge_bar(elapsed, total_cd_seconds, length=10)
+
         status_text = (
-            f"⏳ <b>Cooldown Remaining: {hours}h {mins}m</b>\n"
-            f"{cd_bar} {pct_done}% done\n\n"
+            f"⏳ <b>Recharging...</b>\n"
+            f"{cd_bar} {pct_done}%\n"
+            f"⏰ Ready in: <b>{hours}h {mins}m</b>\n\n"
             f"🌿 Level {level} cooldown: <b>{cooldown_hours}h</b>"
         )
         search_buttons = []
 
     elif attempts_left <= 0:
-        # Attempts exhausted — activate cooldown now so the timer shows correctly
         await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_hours * 3600, "1")
         await redis_client.delete(f"steam_search_attempts:{chat_id}")
         new_ttl = await redis_client.ttl(f"steam_search_cd:{chat_id}")
@@ -7767,28 +7826,33 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
         mins = (new_ttl % 3600) // 60
         total_cd_seconds = cooldown_hours * 3600
         elapsed = total_cd_seconds - new_ttl
-        cd_bar = create_daily_progress_bar(elapsed, total_cd_seconds, length=10)
         pct_done = round((elapsed / total_cd_seconds) * 100) if total_cd_seconds > 0 else 0
+
+        cd_bar = make_recharge_bar(elapsed, total_cd_seconds, length=10)
+        attempts_bar = make_attempts_bar(3, 3)  # all used
+
         status_text = (
-            f"🚫 <b>No Search Attempts Remaining</b>\n"
-            f"Cooldown: <b>{hours}h {mins}m</b>\n"
-            f"{cd_bar} {pct_done}% done\n\n"
+            f"🚫 <b>No Attempts Remaining</b>\n"
+            f"Attempts: {attempts_bar} 0/3\n\n"
+            f"⏳ <b>Recharging...</b>\n"
+            f"{cd_bar} {pct_done}%\n"
+            f"⏰ Ready in: <b>{hours}h {mins}m</b>\n\n"
             f"🌿 Level {level} cooldown: <b>{cooldown_hours}h</b>"
         )
         search_buttons = []
 
     else:
-        attempts_bar = create_daily_progress_bar(3 - attempts_left, 3, length=10)
+        attempts_bar = make_attempts_bar(attempts_used, 3)
+
         status_text = (
-            f"🔍 <b>Search Attempts</b>\n"
-            f"{attempts_bar} <b>{attempts_left}/3</b> remaining\n\n"
+            f"🎯 <b>Search Attempts</b>\n"
+            f"{attempts_bar} {attempts_left}/3\n\n"
             f"🌿 Level {level} cooldown after claim: <b>{cooldown_hours}h</b>"
         )
         search_buttons = [
             [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
         ]
 
-    # Owner gets extra admin button
     owner_buttons = []
     if chat_id == OWNER_ID:
         owner_buttons = [
