@@ -7971,7 +7971,9 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
 
     claim_ttl = await redis_client.ttl(f"steam_claim_cd:{chat_id}")
     search_ttl = await redis_client.ttl(f"steam_search_cd:{chat_id}")
+    
     active_cd = max(claim_ttl, search_ttl)
+    active_cd = min(active_cd, cooldown_hours * 3600)
 
     attempts_used = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
     attempts_left = 3 - attempts_used
