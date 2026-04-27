@@ -4832,8 +4832,7 @@ async def send_level_up_message(chat_id: int, first_name: str, old_level: int, n
         pass
 
 async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: int = 0):
-    """📜 My Claims — Redesigned professional layout"""
-    ITEMS_PER_PAGE = 5  # reduced for cleaner look
+    ITEMS_PER_PAGE = 5
 
     claims = await _sb_get(
         "steam_claims",
@@ -4874,12 +4873,6 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
     total = len(claims)
     claims_today = await get_steam_claims_today(chat_id)
 
-    # ── Stats calculations ──
-    total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
-    start = page * ITEMS_PER_PAGE
-    page_claims = claims[start:start + ITEMS_PER_PAGE]
-
-    # ── Recent activity (last 7 days) ──
     week_ago = now - timedelta(days=7)
     claims_this_week = sum(
         1 for c in claims
@@ -4887,24 +4880,58 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         datetime.fromisoformat(c["claimed_at"].replace("Z", "+00:00")).astimezone(manila) >= week_ago
     )
 
-    # ── Header ──
+    total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+    start = page * ITEMS_PER_PAGE
+    page_claims = claims[start:start + ITEMS_PER_PAGE]
+
+    # ── Check feedback status for page claims in parallel ──
+    async def check_feedback(email: str) -> str:
+        result = await _sb_get(
+            "key_reports",
+            **{
+                "chat_id": f"eq.{chat_id}",
+                "key_id": f"eq.{email}",
+                "service_type": "eq.steam",
+                "select": "status",
+            }
+        ) or []
+        if not result:
+            return ""
+        return result[0].get("status", "")
+
+    feedback_statuses = await asyncio.gather(*[
+        check_feedback(c.get("account_email", "")) for c in page_claims
+    ])
+
+    # ── Store detail data in Redis for each claim ──
+    for c in page_claims:
+        email = c.get("account_email", "")
+        short_key = f"{chat_id}_{abs(hash(email)) % 999999}"
+        await redis_client.setex(f"cd:{short_key}", 3600, json.dumps({
+            "email": email,
+            "game_name": c.get("game_name", "Unknown Game"),
+            "claimed_at": c.get("claimed_at", ""),
+        }))
+
+    # ── Build message ──
     text = (
         "🎮 <b>My Steam Collection</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 <b>{html.escape(first_name)}'s Game Library</b>\n\n"
-        f"📦 Total Claimed: <b>{total}</b> account(s)\n"
-        f"📅 Claimed Today: <b>{claims_today}</b>\n"
-        f"🗓️ This Week: <b>{claims_this_week}</b>\n"
+        f"📦 Total Claimed: <b>{total}</b>\n"
+        f"📅 Today: <b>{claims_today}</b>  •  🗓️ This Week: <b>{claims_this_week}</b>\n"
         f"📄 Page <b>{page + 1}</b> of <b>{total_pages}</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
     )
 
-    # ── Game entries ──
-    for i, c in enumerate(page_claims, start + 1):
-        game = html.escape(c.get("game_name", "Unknown Game"))
-        email = html.escape(c.get("account_email", "—"))
+    buttons = []
 
-        # ── Time formatting ──
+    for i, (c, fb_status) in enumerate(zip(page_claims, feedback_statuses), start + 1):
+        game = html.escape(c.get("game_name", "Unknown Game"))
+        email = c.get("account_email", "")
+        short_key = f"{chat_id}_{abs(hash(email)) % 999999}"
+
+        # ── Time ago ──
         try:
             dt = datetime.fromisoformat(c["claimed_at"].replace("Z", "+00:00"))
             dt_manila = dt.astimezone(manila)
@@ -4922,27 +4949,33 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
                 time_ago = f"🔵 {diff.days}d ago"
             else:
                 time_ago = f"⚪ {dt_manila.strftime('%b %d, %Y')}"
-
-            date_str = dt_manila.strftime("%b %d, %Y • %I:%M %p")
         except Exception:
             time_ago = "⚪ Unknown"
-            date_str = "—"
 
-        # ── Entry block ──
+        # ── Feedback badge ──
+        if fb_status == "working":
+            fb_line = "\n     ✅ Feedback given — Working"
+        elif fb_status == "not_working":
+            fb_line = "\n     ❌ Feedback given — Not Working"
+        else:
+            fb_line = ""
+
         text += (
             f"<b>{i}.</b> 🎮 <b>{game}</b>\n"
-            f"     {time_ago}\n"
-            f"     📧 <tg-spoiler>{email}</tg-spoiler>\n"
-            f"     🕒 {date_str}\n\n"
+            f"     {time_ago}{fb_line}\n\n"
         )
 
+        # ── Button ──
+        btn_icon = "✅" if fb_status else "👁"
+        buttons.append([InlineKeyboardButton(
+            f"{btn_icon} {game[:32]}",
+            callback_data=f"steam_detail|{short_key}|{page}"
+        )])
+
     text += "━━━━━━━━━━━━━━━━━━\n"
-    text += "<i>Tap an email to reveal it • Tap 🔍 to claim more</i> 🍃"
+    text += "<i>Tap a game to view credentials & give feedback</i> 🍃"
 
-    # ── Navigation buttons ──
-    buttons = []
-
-    # Page navigation
+    # ── Navigation ──
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀ Previous", callback_data=f"myclaims_page_{page-1}"))
@@ -4951,23 +4984,145 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
     if nav:
         buttons.append(nav)
 
-    # Action buttons
-    buttons.append([
-        InlineKeyboardButton("🔍 Claim More Games", callback_data="vamt_filter_steam"),
-    ])
-    buttons.append([
-        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
-    ])
+    buttons.append([InlineKeyboardButton("🔍 Claim More Games", callback_data="vamt_filter_steam")])
+    buttons.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
     markup = InlineKeyboardMarkup(buttons)
 
     if query and query.message:
         try:
-            await query.message.edit_caption(
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=markup
-            )
+            await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
+            return
+        except Exception:
+            pass
+
+    await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
+
+async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str, back_page: int, query=None):
+    """Detail page for a single steam claim — credentials + feedback"""
+
+    # ── Retrieve stored data ──
+    raw = await redis_client.get(f"cd:{short_key}")
+    if not raw:
+        await query.answer("⏳ Session expired. Please go back and try again.", show_alert=True)
+        return
+
+    data = json.loads(raw)
+    email = data.get("email", "")
+    game_name = data.get("game_name", "Unknown Game")
+    claimed_at_raw = data.get("claimed_at", "")
+
+    # ── Fetch live password from steamCredentials (never stored in claims) ──
+    acc_data = await _sb_get(
+        "steamCredentials",
+        **{
+            "email": f"eq.{email}",
+            "select": "password,steam_id,games",
+        }
+    ) or []
+
+    password = "—"
+    steam_id = ""
+    extra_games = []
+    if acc_data:
+        acc = acc_data[0]
+        password = acc.get("password", "—")
+        steam_id = acc.get("steam_id", "") or ""
+        extra_games = acc.get("games") or []
+
+    # ── Format claimed time ──
+    try:
+        manila = pytz.timezone("Asia/Manila")
+        dt = datetime.fromisoformat(claimed_at_raw.replace("Z", "+00:00")).astimezone(manila)
+        claimed_str = dt.strftime("%b %d, %Y • %I:%M %p")
+        now = datetime.now(manila)
+        diff = now - dt
+        diff_h = diff.total_seconds() / 3600
+        if diff_h < 1:
+            ago = f"🟢 {int(diff.total_seconds()/60)}m ago"
+        elif diff_h < 24:
+            ago = f"🟡 {int(diff_h)}h ago"
+        elif diff.days == 1:
+            ago = "🔵 Yesterday"
+        else:
+            ago = f"🔵 {diff.days}d ago"
+    except Exception:
+        claimed_str = "—"
+        ago = "—"
+
+    # ── Check existing feedback ──
+    fb_data = await _sb_get(
+        "key_reports",
+        **{
+            "chat_id": f"eq.{chat_id}",
+            "key_id": f"eq.{email}",
+            "service_type": "eq.steam",
+            "select": "status",
+        }
+    ) or []
+    has_feedback = len(fb_data) > 0
+    feedback_status = fb_data[0].get("status", "") if has_feedback else ""
+
+    # ── Optional lines ──
+    sid_line = f"\n🆔 Steam ID: <code>{steam_id}</code>" if steam_id else ""
+
+    extra_line = ""
+    if extra_games:
+        preview = ", ".join(html.escape(g) for g in extra_games[:3])
+        more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
+        extra_line = f"\n🎮 Also includes: <i>{preview}{more}</i>"
+
+    # ── Feedback section ──
+    if has_feedback:
+        fb_emoji = "✅" if feedback_status == "working" else "❌"
+        fb_label = "Working" if feedback_status == "working" else "Not Working"
+        feedback_section = (
+            f"\n━━━━━━━━━━━━━━━━━━\n"
+            f"{fb_emoji} <b>You reported this as: {fb_label}</b>\n"
+            f"<i>Thank you for your feedback! 🍃</i>"
+        )
+        feedback_buttons = []
+    else:
+        feedback_section = (
+            f"\n━━━━━━━━━━━━━━━━━━\n"
+            f"<b>Did this account work?</b>\n"
+            f"<i>Tap below to let the Caretaker know 🍃</i>"
+        )
+        feedback_buttons = [
+            [
+                InlineKeyboardButton(
+                    "✅ Working",
+                    callback_data=f"stfb_ok|{email}|{game_name[:30]}"
+                ),
+                InlineKeyboardButton(
+                    "❌ Not Working",
+                    callback_data=f"stfb_bad|{email}|{game_name[:30]}"
+                ),
+            ]
+        ]
+
+    text = (
+        f"🎮 <b>{html.escape(game_name)}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📧 Email: <tg-spoiler>{html.escape(email)}</tg-spoiler>\n"
+        f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
+        f"{sid_line}"
+        f"{extra_line}\n\n"
+        f"🕒 Claimed: <b>{claimed_str}</b>\n"
+        f"     {ago}"
+        f"{feedback_section}"
+    )
+
+    back_button = [[InlineKeyboardButton(
+        "◀ Back to My Claims",
+        callback_data=f"myclaims_page_{back_page}"
+    )]]
+
+    markup = InlineKeyboardMarkup(feedback_buttons + back_button)
+
+    if query and query.message:
+        try:
+            await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
             return
         except Exception:
             pass
@@ -10007,6 +10162,17 @@ async def handle_callback(update: Update):
             print(f"My claims page error: {e}")
             await query.answer("Error loading page", show_alert=True)
         return
+    
+    elif data.startswith("steam_detail|"):
+            try:
+                parts = data.split("|")
+                short_key = parts[1]
+                back_page = int(parts[2]) if len(parts) > 2 else 0
+                await show_steam_claim_detail(chat_id, first_name, short_key, back_page, query)
+            except Exception as e:
+                print(f"Steam detail error: {e}")
+                await query.answer("Error loading details", show_alert=True)
+            return
 
     # ── STEAM FEEDBACK: Working ──
     elif data.startswith("stfb_ok|"):
