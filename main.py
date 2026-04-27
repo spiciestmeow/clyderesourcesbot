@@ -10085,24 +10085,43 @@ async def handle_callback(update: Update):
             return
 
     elif data == "search_different_game":
-        # Guard: re-check attempts before allowing the search prompt
-        current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-        if current_attempts >= 3:
-            await query.answer("🚫 No search attempts remaining!", show_alert=True)
-            await handle_steam_landing(chat_id, first_name, query)
+            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            if current_attempts >= 3:
+                await query.answer("🚫 No search attempts remaining!", show_alert=True)
+                await handle_steam_landing(chat_id, first_name, query)
+                return
+
+            attempts_left = 3 - current_attempts
+
+            # Delete old result — won't charge an attempt
+            await redis_client.delete(f"steam_search_result:{chat_id}")
+
+            # Set searching state so next text message is intercepted
+            await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
+
+            await query.answer("🔍 Ready for a new search", show_alert=False)
+
+            guide = (
+                "🔍 <b>Search for a Steam Game</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"🎯 <b>{attempts_left} attempt(s) remaining</b>\n\n"
+                "• Type the game name below\n"
+                "• Found results expire in <b>10 minutes</b>\n"
+                "• Expired without claiming = attempt used\n\n"
+                "<b>Reply with the game name now.</b> 🍃"
+            )
+
+            if query and query.message:
+                try:
+                    await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                except Exception:
+                    try:
+                        await query.message.edit_text(text=guide, parse_mode="HTML")
+                    except Exception:
+                        await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+            else:
+                await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
             return
-
-        attempts_left = 3 - current_attempts
-        await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
-
-        # User actively chose to search again within the window — free, no attempt charged
-        # Deleting the result key signals _expire_result to exit without charging
-        await redis_client.delete(f"steam_search_result:{chat_id}")
-        await redis_client.delete(f"steam_searching:{chat_id}")
-
-        await query.answer("🔍 Ready for a new search", show_alert=False)
-        await handle_steam_landing(chat_id, first_name, query)
-        return
 
     elif data.startswith("claim_steam|"):
         _, account_email = data.split("|")
