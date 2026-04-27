@@ -7977,10 +7977,11 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
     attempts_left = 3 - attempts_used
 
     def make_recharge_bar(elapsed_seconds: int, total_seconds: int, length: int = 10) -> str:
-        """Bar fills left→right as time passes. Empty=all white, Full=all green."""
         if total_seconds <= 0:
             return "🟩" * length
-        pct = min(elapsed_seconds / total_seconds, 1.0)
+        # Clamp elapsed to valid range
+        elapsed_seconds = max(0, min(elapsed_seconds, total_seconds))
+        pct = elapsed_seconds / total_seconds
         filled = round(pct * length)
         empty = length - filled
         if pct < 0.33:
@@ -8012,7 +8013,7 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
 
     if active_cd > 0:
         total_cd_seconds = cooldown_hours * 3600
-        elapsed = total_cd_seconds - active_cd
+        elapsed = max(0, total_cd_seconds - active_cd)
         pct_done = round((elapsed / total_cd_seconds) * 100) if total_cd_seconds > 0 else 0
 
         hours = active_cd // 3600
