@@ -426,7 +426,45 @@ async def translate_text(text: str, target_lang: str) -> str:
         return translated
     except Exception:
         return text  # fallback to original text if anything fails
-    
+# ──────────────────────────────────────────────
+# GAME LOGOS INTEGRATION (uses existing game_logos table)
+# ──────────────────────────────────────────────
+async def get_game_logo_url(game_name: str) -> str | None:
+    """Returns the logo URL from the game_logos table.
+    Falls back to None if not found (we'll use steamCredentials.image_url next).
+    Cached in Redis for 1 hour.
+    """
+    if not game_name or not str(game_name).strip():
+        return None
+
+    normalized = str(game_name).strip()
+    cache_key = f"game_logo:{normalized.lower()}"
+
+    # Check Redis cache first
+    cached = await redis_client.get(cache_key)
+    if cached:
+        return cached if cached != "null" else None
+
+    # Query Supabase (exact match on game_name)
+    data = await _sb_get(
+        "game_logos",
+        **{
+            "game_name": f"eq.{normalized}",
+            "select": "game_url",
+            "limit": 1
+        }
+    )
+
+    logo_url = data[0].get("game_url") if data and len(data) > 0 else None
+
+    # Cache result (even if None) for 1 hour
+    await redis_client.setex(
+        cache_key,
+        3600,
+        logo_url if logo_url else "null"
+    )
+
+    return logo_url
 # ══════════════════════════════════════════════════════════════════════════════
 # STEAM AUTOMATED DISTRIBUTION SYSTEM
 # ══════════════════════════════════════════════════════════════════════════════
