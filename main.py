@@ -9075,7 +9075,7 @@ async def handle_callback(update: Update):
             "• 🌏 Detect regional restrictions\n"
             "• 🎌 Test streaming capability\n"
             "• 📊 Get detailed account info (plan, expiry, etc.)\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
+            "━━━━━━━━━━━━━━━━━━\n"
             "<i>The anime spirits await you in a quieter grove of the forest.</i> 🍃✨"
         )
 
@@ -9087,7 +9087,7 @@ async def handle_callback(update: Update):
 
         msg = await send_animated_translated(
             chat_id=chat_id,
-            animation_url=INVENTORY_GIF,
+            animation_url=CRUNCHY_GIF,
             caption=caption,
             reply_markup=keyboard,
         )

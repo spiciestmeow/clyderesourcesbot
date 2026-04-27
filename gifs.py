@@ -38,3 +38,4 @@ DONOR_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr
 
 
 COOKIE_TUTORIAL_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
+CRUNCHY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMHRuc3JoZmgxbnpuaWlkd2k2anFsZjByamtjaXd0cnRxZzBzemtuYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EJrhtXJFLG87zvsU0Y/giphy.gif"
