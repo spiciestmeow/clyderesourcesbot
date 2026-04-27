@@ -2790,7 +2790,23 @@ async def get_event_countdown(event: dict) -> str:
             return "\n⏳ <b>Event has ended</b>"
     except Exception:
         return ""  # fallback if date format is broken
-
+    
+def make_attempts_bar(used: int, total: int = 3, length: int = 9) -> str:
+    available = total - used
+    blocks_per_slot = length // total
+    bar = ""
+    for i in range(total):
+        if i < available:
+            if available == 3:
+                emoji = "🟩"
+            elif available == 2:
+                emoji = "🟨"
+            else:
+                emoji = "🟥"
+            bar += emoji * blocks_per_slot
+        else:
+            bar += "⬜" * blocks_per_slot
+    return bar
 
 def create_progress_bar(current_xp: int, required_xp: int, length: int = 12) -> str:
     if required_xp <= 0:
@@ -8015,22 +8031,7 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
             fill_emoji = "🟩"
         return fill_emoji * filled + "⬜" * empty
 
-    def make_attempts_bar(used: int, total: int = 3, length: int = 9) -> str:
-        available = total - used
-        blocks_per_slot = length // total
-        bar = ""
-        for i in range(total):
-            if i < available:
-                if available == 3:
-                    emoji = "🟩"
-                elif available == 2:
-                    emoji = "🟨"
-                else:
-                    emoji = "🟥"
-                bar += emoji * blocks_per_slot
-            else:
-                bar += "⬜" * blocks_per_slot
-        return bar
+
 
     if active_cd > 0:
         elapsed_seconds = total_cd_seconds - active_cd
@@ -10438,7 +10439,7 @@ async def handle_callback(update: Update):
                 "🔍 <b>Search for a Steam Game</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-                f"{create_daily_progress_bar(3 - attempts_left, 3, length=8)}\n\n"
+                f"{make_attempts_bar(3 - attempts_left)}\n\n" 
                 "📌 <b>Tips for better results:</b>\n"
                 "• Use the exact game title\n"
                 "• Short names work too (e.g. <code>batman</code>)\n"
@@ -10481,7 +10482,7 @@ async def handle_callback(update: Update):
                 "🔍 <b>Search for a Steam Game</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-                f"{create_daily_progress_bar(3 - attempts_left, 3, length=8)}\n\n"
+                f"{make_attempts_bar(3 - attempts_left)}\n\n" 
                 "📌 <b>Tips for better results:</b>\n"
                 "• Use the exact game title\n"
                 "• Short names work too (e.g. <code>batman</code>)\n"
