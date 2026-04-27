@@ -11433,14 +11433,18 @@ async def process_update(update_data: dict):
                 f"steam_search_attempts:{target_id}",
                 f"steam_searching:{target_id}",
                 f"steam_search_result:{target_id}",
+                f"steam_claim_cd:{target_id}",    # ← was missing
+                f"steam_search_cd:{target_id}",   # ← was missing
             ]
             deleted = await redis_client.delete(*keys)
             
             await tg_app.bot.send_message(
                 chat_id,
-                f"✅ <b>Steam search attempts reset for <code>{target_id}</code></b>\n\n"
+                f"✅ <b>Steam search fully reset for <code>{target_id}</code></b>\n\n"
                 f"• Attempts restored to 3\n"
-                f"• Search state cleared\n\n"
+                f"• Search state cleared\n"
+                f"• Claim cooldown cleared\n"       # ← new
+                f"• Search cooldown cleared\n\n"    # ← new
                 f"Deleted {deleted} key(s) 🍃",
                 parse_mode="HTML"
             )
