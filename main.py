@@ -5002,7 +5002,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
     """Detail page for a single steam claim — credentials + feedback"""
 
     # ── Retrieve stored data ──
-    raw = await redis_client.get(f"cd:{short_key}")
+    raw = await redis_client.get(f"steam_claim_data:{chat_id}:{short_key}")
     if not raw:
         await query.answer("⏳ Session expired. Please go back and try again.", show_alert=True)
         return
@@ -5050,80 +5050,48 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         claimed_str = "—"
         ago = "—"
 
-    # ── Check existing feedback ──
-    fb_data = await _sb_get(
-        "key_reports",
-        **{
-            "chat_id": f"eq.{chat_id}",
-            "key_id": f"eq.{email}",
-            "service_type": "eq.steam",
-            "select": "status",
-        }
-    ) or []
-    has_feedback = len(fb_data) > 0
-    feedback_status = fb_data[0].get("status", "") if has_feedback else ""
+    # ── Check existing feedback (Redis) ──
+    fb_key = f"steam_fb:{chat_id}:{email}"
+    current_feedback = await redis_client.get(fb_key)
+
+    # ── Feedback section ──
+    if current_feedback == "working":
+        feedback_section = "\n━━━━━━━━━━━━━━━━━━\n✅ <b>Your feedback: Working</b>\n<i>Changed your mind? Tap below to update.</i>"
+    elif current_feedback == "not_working":
+        feedback_section = "\n━━━━━━━━━━━━━━━━━━\n❌ <b>Your feedback: Not Working</b>\n<i>Changed your mind? Tap below to update.</i>"
+    else:
+        feedback_section = "\n━━━━━━━━━━━━━━━━━━\n<b>Did this account work?</b>\n<i>Tap below to let the Caretaker know 🍃</i>"
+
+    # ── Buttons: Both options always visible + Back button always visible
+    feedback_buttons = [
+        [
+            InlineKeyboardButton("✅ Mark as Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
+            InlineKeyboardButton("❌ Mark as Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}")
+        ]
+    ]
+
+    # Show Undo if user already gave feedback
+    if current_feedback:
+        feedback_buttons.append([InlineKeyboardButton("↩️ Undo my feedback", callback_data=f"stfb_undo|{email}|{game_name[:30]}")])
+
+    back_button = [[InlineKeyboardButton("◀ Back to My Claims", callback_data=f"myclaims_page_{back_page}")]]
+
+    markup = InlineKeyboardMarkup(feedback_buttons + back_button)
 
     # ── Optional lines ──
     sid_line = f"\n🆔 Steam ID: <code>{steam_id}</code>" if steam_id else ""
-
-    extra_line = ""
-    if extra_games:
-        preview = ", ".join(html.escape(g) for g in extra_games[:3])
-        more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
-        extra_line = f"\n🎮 Also includes: <i>{preview}{more}</i>"
-
-    # ── Feedback section ──
-    if has_feedback:
-        fb_emoji = "✅" if feedback_status == "working" else "❌"
-        fb_label = "Working" if feedback_status == "working" else "Not Working"
-        feedback_section = (
-            f"\n━━━━━━━━━━━━━━━━━━\n"
-            f"{fb_emoji} <b>Your feedback: {fb_label}</b>\n"
-            f"<i>Changed your mind? Tap below to update.</i>"
-        )
-        # Show opposite button to allow switching
-        opposite = "working" if feedback_status == "not_working" else "not_working"
-        change_label = "✅ Mark as Working" if opposite == "working" else "❌ Mark as Not Working"
-        feedback_buttons = [[
-            InlineKeyboardButton(change_label, callback_data=f"stfb_{'ok' if opposite == 'working' else 'bad'}|{email}|{game_name[:30]}")
-        ]]
-    else:
-        feedback_section = (
-            f"\n━━━━━━━━━━━━━━━━━━\n"
-            f"<b>Did this account work?</b>\n"
-            f"<i>Tap below to let the Caretaker know 🍃</i>"
-        )
-        feedback_buttons = [
-            [
-                InlineKeyboardButton(
-                    "✅ Working",
-                    callback_data=f"stfb_ok|{email}|{game_name[:30]}"
-                ),
-                InlineKeyboardButton(
-                    "❌ Not Working",
-                    callback_data=f"stfb_bad|{email}|{game_name[:30]}"
-                ),
-            ]
-        ]
+    # (extra_games line removed for cleanliness – can be added back if needed)
 
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📧 Email: <tg-spoiler>{html.escape(email)}</tg-spoiler>\n"
         f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
-        f"{sid_line}"
-        f"{extra_line}\n\n"
+        f"{sid_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
         f"     {ago}"
         f"{feedback_section}"
     )
-
-    back_button = [[InlineKeyboardButton(
-        "◀ Back to My Claims",
-        callback_data=f"myclaims_page_{back_page}"
-    )]]
-
-    markup = InlineKeyboardMarkup(feedback_buttons + back_button)
 
     if query and query.message:
         try:
@@ -5133,7 +5101,6 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
             pass
 
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
-
 # ══════════════════════════════════════════════════════════════════════════════
 # INVENTORY — PAGINATED COOKIES
 # ══════════════════════════════════════════════════════════════════════════════
