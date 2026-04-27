@@ -5078,10 +5078,15 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         fb_label = "Working" if feedback_status == "working" else "Not Working"
         feedback_section = (
             f"\n━━━━━━━━━━━━━━━━━━\n"
-            f"{fb_emoji} <b>You reported this as: {fb_label}</b>\n"
-            f"<i>Thank you for your feedback! 🍃</i>"
+            f"{fb_emoji} <b>Your feedback: {fb_label}</b>\n"
+            f"<i>Changed your mind? Tap below to update.</i>"
         )
-        feedback_buttons = []
+        # Show opposite button to allow switching
+        opposite = "working" if feedback_status == "not_working" else "not_working"
+        change_label = "✅ Mark as Working" if opposite == "working" else "❌ Mark as Not Working"
+        feedback_buttons = [[
+            InlineKeyboardButton(change_label, callback_data=f"stfb_{'ok' if opposite == 'working' else 'bad'}|{email}|{game_name[:30]}")
+        ]]
     else:
         feedback_section = (
             f"\n━━━━━━━━━━━━━━━━━━\n"
@@ -7460,14 +7465,15 @@ async def handle_steam_feedback(
     emoji  = "✅" if is_working else "❌"
     label  = "Working" if is_working else "Not Working"
 
-    # Save to key_reports
-    await _sb_post("key_reports", {
-        "chat_id":      chat_id,
-        "first_name":   first_name,
-        "key_id":       account_email,
+    # With this (upsert on chat_id + key_id + service_type combo):
+    await _sb_upsert("key_reports", {
+        "chat_id": chat_id,
+        "first_name": first_name,
+        "key_id": account_email,
         "service_type": "steam",
-        "status":       status,
-    })
+        "status": status,
+        "updated_at": datetime.now(pytz.utc).isoformat(),
+    }, on_conflict="chat_id,key_id,service_type")
 
     # ── Only notify owner — NO auto status change yet ──
     owner_kb = InlineKeyboardMarkup([
@@ -10181,14 +10187,15 @@ async def handle_callback(update: Update):
         if len(parts) == 3:
             _, account_email, game_name = parts
 
-            # Spam guard
-            fb_key = f"steam_fb:{chat_id}:{account_email}"
-            if not await redis_client.set(fb_key, 1, ex=86400, nx=True):
+            fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
+            if await redis_client.exists(fb_cooldown_key):
+                ttl = await redis_client.ttl(fb_cooldown_key)
                 await query.answer(
-                    "🌿 You already submitted feedback for this account!",
+                    f"⏳ Please wait {ttl}s before changing your feedback again.",
                     show_alert=True
                 )
                 return
+            await redis_client.setex(fb_cooldown_key, 300, "1")
 
             await handle_steam_feedback(
                 chat_id, first_name,
@@ -10203,14 +10210,15 @@ async def handle_callback(update: Update):
         if len(parts) == 3:
             _, account_email, game_name = parts
 
-            # Spam guard
-            fb_key = f"steam_fb:{chat_id}:{account_email}"
-            if not await redis_client.set(fb_key, 1, ex=86400, nx=True):
+            fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
+            if await redis_client.exists(fb_cooldown_key):
+                ttl = await redis_client.ttl(fb_cooldown_key)
                 await query.answer(
-                    "🌿 You already submitted feedback for this account!",
+                    f"⏳ Please wait {ttl}s before changing your feedback again.",
                     show_alert=True
                 )
                 return
+            await redis_client.setex(fb_cooldown_key, 300, "1")
 
             await handle_steam_feedback(
                 chat_id, first_name,
