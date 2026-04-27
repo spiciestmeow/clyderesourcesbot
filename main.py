@@ -426,45 +426,131 @@ async def translate_text(text: str, target_lang: str) -> str:
         return translated
     except Exception:
         return text  # fallback to original text if anything fails
+
+
 # ──────────────────────────────────────────────
-# GAME LOGOS INTEGRATION (uses existing game_logos table)
+# ADMIN COMMAND: Add Game Logo (Update 3)
 # ──────────────────────────────────────────────
-async def get_game_logo_url(game_name: str) -> str | None:
-    """Returns the logo URL from the game_logos table.
-    Falls back to None if not found (we'll use steamCredentials.image_url next).
-    Cached in Redis for 1 hour.
+async def handle_add_game_logo(chat_id: int, raw_text: str):
+    """Admin command: /addgamelogo "Game Name" https://logo-url"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add game logos.")
+        return
+
+    body = raw_text[len("/addgamelogo"):].strip()
+    if not body:
+        await tg_app.bot.send_message(
+            chat_id,
+            "📌 Usage:\n\n"
+            "<code>/addgamelogo \"Exact Game Name\" https://example.com/logo.jpg</code>\n\n"
+            "• Use quotes around the game name if it has spaces.\n"
+            "• Last part must be a valid image URL.",
+            parse_mode="HTML"
+        )
+        return
+
+    # Simple but robust parsing: last word = URL, everything before = game_name
+    parts = body.rsplit(maxsplit=1)
+    if len(parts) < 2:
+        await tg_app.bot.send_message(chat_id, "❌ Please provide both game name and URL.", parse_mode="HTML")
+        return
+
+    game_name = parts[0].strip().strip('"\'')  # remove surrounding quotes if present
+    game_url = parts[1].strip()
+
+    if not game_name or not game_url.startswith("http"):
+        await tg_app.bot.send_message(
+            chat_id,
+            "❌ Invalid format.\nMake sure the URL starts with http/https and game name is not empty.",
+            parse_mode="HTML"
+        )
+        return
+
+    # Upsert into game_logos table
+    payload = {
+        "game_name": game_name,
+        "game_url": game_url
+    }
+
+    success, status = await _sb_upsert("game_logos", payload, on_conflict="game_name")
+
+    if success:
+        # Clear Redis cache so new logo shows immediately
+        cache_key = f"game_logo:{game_name.lower()}"
+        await redis_client.delete(cache_key)
+
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Game logo added successfully!</b>\n\n"
+            f"🎮 <b>Game:</b> {html.escape(game_name)}\n"
+            f"🖼️ <b>URL:</b> <code>{html.escape(game_url)}</code>\n\n"
+            f"Cache cleared — logo is now live for claims! 🌲",
+            parse_mode="HTML"
+        )
+    else:
+        await tg_app.bot.send_message(
+            chat_id,
+            "❌ Failed to save to database. Check server logs.",
+            parse_mode="HTML"
+        )
+# ──────────────────────────────────────────────
+# GAME LOGOS INTEGRATION — Prioritizes games[] array (as requested)
+# ──────────────────────────────────────────────
+async def get_game_logo_url(game_name: str, games_list: list = None) -> str | None:
+    """Returns the best logo URL from game_logos table.
+    Prioritizes the games[] text[] array (most accounts have multiple games).
+    Falls back to single game_name, then cached Redis (1 hour).
     """
-    if not game_name or not str(game_name).strip():
+    candidates = []
+
+    # 1. Primary game_name (always try first)
+    if game_name and str(game_name).strip():
+        candidates.append(str(game_name).strip())
+
+    # 2. All games from the games[] array
+    if games_list and isinstance(games_list, list):
+        for g in games_list:
+            if g and isinstance(g, str) and str(g).strip():
+                candidates.append(str(g).strip())
+
+    if not candidates:
         return None
 
-    normalized = str(game_name).strip()
-    cache_key = f"game_logo:{normalized.lower()}"
+    # Try each candidate until we find a logo
+    for name in candidates:
+        normalized = name.strip()
+        cache_key = f"game_logo:{normalized.lower()}"
 
-    # Check Redis cache first
-    cached = await redis_client.get(cache_key)
-    if cached:
-        return cached if cached != "null" else None
+        # Check Redis cache
+        cached = await redis_client.get(cache_key)
+        if cached:
+            if cached != "null":
+                return cached
+            continue  # None was cached → try next candidate
 
-    # Query Supabase (exact match on game_name)
-    data = await _sb_get(
-        "game_logos",
-        **{
-            "game_name": f"eq.{normalized}",
-            "select": "game_url",
-            "limit": 1
-        }
-    )
+        # Query game_logos table (exact match)
+        data = await _sb_get(
+            "game_logos",
+            **{
+                "game_name": f"eq.{normalized}",
+                "select": "game_url",
+                "limit": 1
+            }
+        )
 
-    logo_url = data[0].get("game_url") if data and len(data) > 0 else None
+        logo_url = data[0].get("game_url") if data and len(data) > 0 else None
 
-    # Cache result (even if None) for 1 hour
-    await redis_client.setex(
-        cache_key,
-        3600,
-        logo_url if logo_url else "null"
-    )
+        # Cache result
+        await redis_client.setex(
+            cache_key,
+            3600,
+            logo_url if logo_url else "null"
+        )
 
-    return logo_url
+        if logo_url:
+            return logo_url
+
+    return None
 # ══════════════════════════════════════════════════════════════════════════════
 # STEAM AUTOMATED DISTRIBUTION SYSTEM
 # ══════════════════════════════════════════════════════════════════════════════
@@ -10578,12 +10664,12 @@ async def handle_callback(update: Update):
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
 
-        # Fetch full account details
+        # Fetch full account details (including games[] array)
         acc_data = await _sb_get(
             "steamCredentials", 
             **{
                 "email": f"eq.{account_email}",
-                "select": "game_name,image_url,password,steam_id,release_type"
+                "select": "game_name,image_url,password,steam_id,release_type,games"
             }
         ) or []
         
@@ -10597,9 +10683,10 @@ async def handle_callback(update: Update):
         steam_id = acc.get("steam_id", "")
         release_type = acc.get("release_type", "daily")
         account_image_url = acc.get("image_url")
+        games_list = acc.get("games") or []   # ← NEW: games text[] array
 
-        # ── NEW: Game logo from game_logos table (Update 2) ──
-        logo_url = await get_game_logo_url(game_name)
+        # ── NEW: Game logo from game_logos table (prioritizes games[] array) ──
+        logo_url = await get_game_logo_url(game_name, games_list)
         final_image_url = logo_url or account_image_url   # smart fallback
 
         success = await claim_steam_account(chat_id, first_name, account_email, game_name)
@@ -11865,7 +11952,11 @@ async def process_update(update_data: dict):
 
     elif text.startswith("/clear"):
         await handle_clear(chat_id, msg_id, first_name)
-
+        
+    elif text.startswith("/addgamelogo"):
+        await handle_add_game_logo(chat_id, raw)
+        return
+        
     elif text.startswith("/feedback"):
         feedback_text = raw[9:].strip()   # preserve original casing
         if not feedback_text:
