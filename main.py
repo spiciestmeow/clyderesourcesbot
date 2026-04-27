@@ -4929,15 +4929,23 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
             "claimed_at": c.get("claimed_at", ""),
         }))
 
-    # ── Build message ──
+    # ── Tip rotation ──
+    tips = [
+        "Tap a game to view credentials & give feedback 🍃",
+        "Feedback helps the Caretaker keep the forest clean 🌿",
+        "Working accounts keep the clearing thriving ✨",
+        "Report broken accounts so others aren't affected 🌲",
+        "Your claims help shape the forest's future 🍃",
+    ]
+    tip = tips[page % len(tips)]
+
+    # ── Build header ──
     text = (
         "🎮 <b>My Steam Collection</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 <b>{html.escape(first_name)}'s Game Library</b>\n\n"
-        f"📦 Total Claimed: <b>{total}</b>\n"
-        f"📅 Today: <b>{claims_today}</b>  •  🗓️ This Week: <b>{claims_this_week}</b>\n"
-        f"📄 Page <b>{page + 1}</b> of <b>{total_pages}</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 {total} Total  •  📅 {claims_today} Today  •  🗓 {claims_this_week} This Week\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
     )
 
     buttons = []
@@ -4946,6 +4954,14 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         game = html.escape(c.get("game_name", "Unknown Game"))
         email = c.get("account_email", "")
         short_key = f"{chat_id}_{abs(hash(email)) % 999999}"
+
+        # ── Feedback badge ──
+        if fb_status == "working":
+            fb_badge = "✅ Verified"
+        elif fb_status == "not_working":
+            fb_badge = "❌ Reported"
+        else:
+            fb_badge = "⏳ Pending"
 
         # ── Time ago ──
         try:
@@ -4968,33 +4984,32 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         except Exception:
             time_ago = "⚪ Unknown"
 
-        # ── Feedback badge ──
-        if fb_status == "working":
-            fb_line = "\n     ✅ Feedback given — Working"
-        elif fb_status == "not_working":
-            fb_line = "\n     ❌ Feedback given — Not Working"
-        else:
-            fb_line = ""
-
+        # ── Entry card ──
         text += (
             f"<b>{i}.</b> 🎮 <b>{game}</b>\n"
-            f"     {time_ago}{fb_line}\n\n"
+            f"     {time_ago}  ·  {fb_badge}\n"
+            "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
         )
 
-        # ── Button ──
-        btn_icon = "✅" if fb_status else "👁"
+        # ── Button (keep original style — just the game name with fb icon) ──
+        btn_icon = "✅" if fb_status == "working" else ("❌" if fb_status == "not_working" else "🎮")
         buttons.append([InlineKeyboardButton(
-            f"{btn_icon} {game[:32]}",
+            f"{btn_icon} {game[:35]}",
             callback_data=f"steam_detail|{short_key}|{page}"
         )])
 
-    text += "━━━━━━━━━━━━━━━━━━\n"
-    text += "<i>Tap a game to view credentials & give feedback</i> 🍃"
+    # ── Footer ──
+    text += (
+        f"\n<i>{tip}</i>\n\n"
+        f"📄 Page <b>{page + 1}</b> of <b>{total_pages}</b>"
+    )
 
     # ── Navigation ──
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀ Previous", callback_data=f"myclaims_page_{page-1}"))
+    # Center page indicator (disabled button)
+    nav.append(InlineKeyboardButton(f"· {page + 1}/{total_pages} ·", callback_data="noop"))
     if start + ITEMS_PER_PAGE < total:
         nav.append(InlineKeyboardButton("Next ▶", callback_data=f"myclaims_page_{page+1}"))
     if nav:
@@ -5013,7 +5028,6 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
             pass
 
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
-
 async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str, back_page: int, query=None):
     """Detail page for a single steam claim — credentials + feedback"""
 
@@ -7475,6 +7489,9 @@ async def handle_steam_feedback(
     is_working: bool,
     query
 ):
+    fb_key = f"steam_fb:{chat_id}:{account_email}"
+    await redis_client.setex(fb_key, 90000, "1") 
+
     status = "working" if is_working else "not_working"
     emoji  = "✅" if is_working else "❌"
     label  = "Working" if is_working else "Not Working"
