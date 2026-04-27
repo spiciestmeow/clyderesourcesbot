@@ -10568,8 +10568,7 @@ async def handle_callback(update: Update):
             await query.answer("⏳ This result has expired. Search again.", show_alert=True)
             return
 
-        # === ADD THESE LINES HERE ===
-        await query.answer()                   
+        await query.answer()
         try:
             await query.message.delete()
         except:
@@ -10579,16 +10578,33 @@ async def handle_callback(update: Update):
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
 
-        # Get real game name
+        # Fetch full account details
         acc_data = await _sb_get(
-            "steamCredentials", **{"email": f"eq.{account_email}", "select": "game_name"}
+            "steamCredentials", 
+            **{
+                "email": f"eq.{account_email}",
+                "select": "game_name,image_url,password,steam_id,release_type"
+            }
         ) or []
-        real_game_name = acc_data[0].get("game_name", "Steam Account") if acc_data else "Steam Account"
+        
+        if not acc_data:
+            await query.answer("❌ Account no longer available!", show_alert=True)
+            return
 
-        success = await claim_steam_account(chat_id, first_name, account_email, real_game_name)
+        acc = acc_data[0]
+        game_name = acc.get("game_name") or "Steam Account"
+        password = acc.get("password", "")
+        steam_id = acc.get("steam_id", "")
+        release_type = acc.get("release_type", "daily")
+        account_image_url = acc.get("image_url")
+
+        # ── NEW: Game logo from game_logos table (Update 2) ──
+        logo_url = await get_game_logo_url(game_name)
+        final_image_url = logo_url or account_image_url   # smart fallback
+
+        success = await claim_steam_account(chat_id, first_name, account_email, game_name)
 
         if success:
-            # === FIRST TIME CLAIM ===
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
 
@@ -10608,100 +10624,54 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
-        else:
-            # === ALREADY CLAIMED ===
-            await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
-            
-            # Do NOT auto-redirect to My Claims anymore
-            # User can tap "My Claims" button manually if they want
-            return
-
-        await redis_client.delete(f"steam_search_attempts:{chat_id}")
-        await redis_client.delete(f"steam_search_result:{chat_id}")
-
-        # === YOUR ORIGINAL DELIVERY CODE STARTS HERE (unchanged) ===
-        # Fetch account details for delivery
-        acc_data = await _sb_get(
-            "steamCredentials",
-            **{
-                "email": f"eq.{account_email}",
-                "status": "eq.Available",
-                "select": "*",
-            }
-        ) or []
-
-        if not acc_data:
-            await query.answer("❌ Account already claimed by someone else!", show_alert=True)
-            return
-
-        acc = acc_data[0]
-        game_name = acc.get("game_name") or "Steam Account"
-        password = acc.get("password", "")
-        steam_id = acc.get("steam_id", "")
-        release_type = acc.get("release_type", "daily")
-        image_url = (acc.get("image_url") or "").strip()
-
-        # Store claim data for undo/feedback
-        await redis_client.setex(
-            f"steam_claim_data:{chat_id}:{account_email}",
-            120,
-            json.dumps({
-                "password": password,
-                "game_name": game_name,
-                "steam_id": steam_id,
-                "release_type": release_type,
-            })
-        )
-
-        caption = (
-            f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
-            f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
-            f"{'🆔 Steam ID: <code>' + str(steam_id) + '</code>\n' if steam_id else ''}\n\n"
-            f"⚠️ <b>Important Notice:</b>\n"
-            f"<i>Steam may show a warning on first login — this is normal, just proceed.</i>\n"
-            f"• Do not change password or email.\n\n"
-            f"🕐 We'll check back in <b>2 hours</b> to see if it worked. 🍃\n\n"
-            f"<i>Enjoy your game, wanderer! 🍃</i>"
-        )
-
-        # Send photo or message + credentials
-        if image_url:
-            try:
-                await tg_app.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=image_url,
-                    caption=caption,
-                    parse_mode="HTML"
-                )
-            except Exception:
-                await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
-        else:
-            await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
-
-        asyncio.create_task(send_temporary_message(
-            chat_id,
-            f"✨ <i>{html.escape(game_name)} successfully claimed!</i>",
-            duration=3
-        ))
-
-        # Send feedback buttons after 2 hrs
-        asyncio.create_task(
-            send_delayed_feedback_buttons(
-                chat_id=chat_id,
-                account_email=account_email,
-                game_name=game_name,
-                delay=7200  # 2 hours
+            # ── DELIVERY WITH BEAUTIFUL GAME LOGO ──
+            caption = (
+                f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
+                f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
+                f"{'🆔 Steam ID: <code>' + str(steam_id) + '</code>\n' if steam_id else ''}\n\n"
+                f"⚠️ <b>Important Notice:</b>\n"
+                f"<i>Steam may show a warning on first login — this is normal, just proceed.</i>\n"
+                f"• Do not change password or email.\n\n"
+                f"🕐 We'll check back in <b>2 hours</b> to see if it worked. 🍃\n\n"
+                f"<i>Enjoy your game, wanderer!</i>"
             )
-        )
 
-        # Award XP
-        action_xp, _ = await add_xp(chat_id, first_name, "steam_claim", xp_override=20)
-        if action_xp:
-            asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+            if final_image_url:
+                try:
+                    await tg_app.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=final_image_url,
+                        caption=caption,
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
+            else:
+                await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
 
+            asyncio.create_task(send_temporary_message(
+                chat_id, f"✨ <i>{html.escape(game_name)} successfully claimed!</i>", duration=3
+            ))
 
+            # Schedule feedback buttons
+            asyncio.create_task(
+                send_delayed_feedback_buttons(
+                    chat_id=chat_id,
+                    account_email=account_email,
+                    game_name=game_name,
+                    delay=7200
+                )
+            )
+
+            # Award XP
+            action_xp, _ = await add_xp(chat_id, first_name, "steam_claim", xp_override=20)
+            if action_xp:
+                asyncio.create_task(send_xp_feedback(chat_id, action_xp))
+
+        else:
+            await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
 
     # ── INVENTORY FILTERS ──
     elif data.startswith("vamt_filter_"):
