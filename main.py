@@ -7531,10 +7531,24 @@ async def handle_steam_feedback(
                if not is_working else
                "<i>Thank you for your feedback! 🍃</i>")
         )
+
+        # Always keep the back button + optional undo
+        back_button = [[InlineKeyboardButton(
+            "◀ Back to My Claims",
+            callback_data=f"my_steam_claims"   # goes to page 0, user can navigate
+        )]]
+
+        final_markup = InlineKeyboardMarkup(
+            ([[InlineKeyboardButton(
+                "↩️ Undo — I made a mistake!",
+                callback_data=f"stfb_undo|{account_email}|{game_name[:30]}"
+            )]] if not is_working else []) + back_button
+        )
+        
         await query.message.edit_caption(
             caption=new_caption,
             parse_mode="HTML",
-            reply_markup=undo_kb
+            reply_markup=final_markup
         )
     except Exception:
         pass
@@ -7544,7 +7558,9 @@ async def handle_steam_feedback(
         async def remove_undo():
             await asyncio.sleep(30)
             try:
-                await query.message.edit_reply_markup(reply_markup=None)
+                await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")
+                ]]))
             except Exception:
                 pass
         asyncio.create_task(remove_undo())
