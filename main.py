@@ -7939,24 +7939,28 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     query_words = query_lower.split()
 
     def match_score(acc):
+        # Check single game_name (existing)
         name = (acc.get("game_name") or "").lower()
-        if not name:
-            return 0
-        # Exact match
-        if query_lower == name:
-            return 100
-        # Starts with query
-        if name.startswith(query_lower):
-            return 90
-        # Query is substring of name
-        if query_lower in name:
-            return 80
-        # All words match somewhere in name
-        if all(w in name for w in query_words):
-            return 70
-        # Any word matches
-        matched = sum(1 for w in query_words if w in name)
-        return matched * 10 if matched else 0
+        
+        # Check games array (new)
+        games_list = acc.get("games") or []
+        all_names = [name] + [g.lower() for g in games_list if g]
+        
+        best = 0
+        for n in all_names:
+            if not n:
+                continue
+            if query_lower == n:
+                return 100
+            if n.startswith(query_lower):
+                best = max(best, 90)
+            if query_lower in n:
+                best = max(best, 80)
+            if all(w in n for w in query_words):
+                best = max(best, 70)
+            matched = sum(1 for w in query_words if w in n)
+            best = max(best, matched * 10)
+        return best
 
     scored = [(acc, match_score(acc)) for acc in all_accounts]
     scored = [(acc, s) for acc, s in scored if s > 0]
@@ -8315,19 +8319,25 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
     # Show the requested page (and edit if from callback)
     await show_games_page(chat_id, term, supabase_text, live_status, games, page=page, query=query)
 
-async def show_steam_search_results(chat_id: int, results: list, first_name: str, query=None):
-    """Show found accounts with Claim button"""
+async def show_steam_search_results(chat_id: int, results: list, first_name: str, query=None, game_query: str = ""):
     text = f"✅ <b>Found {len(results)} account(s)!</b>\n\n"
     buttons = []
+    query_lower = game_query.lower()  # ← fix: define it here
 
-    for acc in results:
-        game_name = acc.get("game_name") or "Steam Account"
-        email = acc.get("email")
-        text += f"🎮 <b>{html.escape(game_name)}</b>\n\n"
-        buttons.append([InlineKeyboardButton("✅ Claim This Account", callback_data=f"claim_steam|{email}")])
+    for acc in results[:8]:
+        games_list = [acc.get("game_name") or ""] + (acc.get("games") or [])
+        matched_game = next(
+            (g for g in games_list if g and query_lower in g.lower()),
+            acc.get("game_name") or "Steam Account"
+        )
+        text += f"🎮 <b>{html.escape(matched_game)}</b>\n"
+        text += f"📦 <i>+{len(acc.get('games') or [])} other games in this account</i>\n\n"
+        buttons.append([InlineKeyboardButton(
+            f"✅ Claim — {matched_game[:30]}",
+            callback_data=f"claim_steam|{acc.get('email')}"
+        )])
 
     buttons.append([InlineKeyboardButton("🔎 Search Different Game", callback_data="vamt_filter_steam")])
-
     final_text = text + "⏳ Result expires in <b>5 minutes</b>."
 
     if query and query.message:
@@ -8660,6 +8670,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         # This allows skipping SteamID without breaking image URL
         steam_id  = None
         image_url = None
+        extra_games = []
         steam_id_warning = ""
 
         for field in lines[3:]:
@@ -8667,12 +8678,11 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             if not field:
                 continue
             if field.isdigit() and len(field) == 17:
-                steam_id = field  # ✅ Valid SteamID64
+                steam_id = field
             elif field.startswith("http"):
-                image_url = field  # ✅ Valid image URL
+                image_url = field
             else:
-                # ⚠️ Something provided but unrecognizable
-                steam_id_warning = f" ⚠️ (unrecognized field ignored: {field[:20]})"
+                extra_games.append(field)
 
         # ✅ Build missing fields note
         missing = []
@@ -8695,11 +8705,12 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "email":        email,
             "password":     password,
             "game_name":    game_name,
+            "games":        extra_games,   # ← now properly defined
             "steam_id":     steam_id,
             "image_url":    image_url,
             "status":       "Available",
-            "release_type": "daily",      # ✅ added
-            "release_at":   tonight_8pm,  # ✅ added
+            "release_type": "daily",
+            "release_at":   tonight_8pm,
             "action":       None,
             "Posted":       None,
         }
@@ -10065,11 +10076,15 @@ async def handle_callback(update: Update):
             guide = (
                 "🔍 <b>Search for a Steam Game</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"🎯 <b>{attempts_left} attempt(s) remaining</b>\n\n"
-                "• Type the game name below\n"
-                "• Found results expire in <b>10 minutes</b>\n"
-                "• Expired without claiming = attempt used\n\n"
-                "<b>Reply with the game name now.</b> 🍃"
+                f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
+                f"{create_daily_progress_bar(3 - attempts_left, 3, length=8)}\n\n"
+                "📌 <b>Tips for better results:</b>\n"
+                "• Use the exact game title\n"
+                "• Short names work too (e.g. <code>batman</code>)\n"
+                "• Partial names are supported\n\n"
+                "⏳ Results expire in <b>10 minutes</b>\n"
+                "⚠️ Expired without claiming = attempt used\n\n"
+                "✏️ <b>Type the game name now:</b> 🍃"
             )
 
             if query and query.message:
@@ -10104,11 +10119,15 @@ async def handle_callback(update: Update):
             guide = (
                 "🔍 <b>Search for a Steam Game</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"🎯 <b>{attempts_left} attempt(s) remaining</b>\n\n"
-                "• Type the game name below\n"
-                "• Found results expire in <b>10 minutes</b>\n"
-                "• Expired without claiming = attempt used\n\n"
-                "<b>Reply with the game name now.</b> 🍃"
+                f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
+                f"{create_daily_progress_bar(3 - attempts_left, 3, length=8)}\n\n"
+                "📌 <b>Tips for better results:</b>\n"
+                "• Use the exact game title\n"
+                "• Short names work too (e.g. <code>batman</code>)\n"
+                "• Partial names are supported\n\n"
+                "⏳ Results expire in <b>10 minutes</b>\n"
+                "⚠️ Expired without claiming = attempt used\n\n"
+                "✏️ <b>Type the game name now:</b> 🍃"
             )
 
             if query and query.message:
