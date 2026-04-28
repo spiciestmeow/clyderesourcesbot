@@ -10757,11 +10757,13 @@ async def handle_callback(update: Update):
     elif data.startswith("claim_steam|"):
         _, account_email = data.split("|")
         
-        # Verify claim is still valid (10-minute expiration)
+        # ── CHECK 10-MINUTE EXPIRATION ──
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
-            # ── EXPIRED MESSAGE (beautiful + shows remaining attempts)
-            remaining = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            # Expired → NOW deduct attempt
+            current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
+            remaining = 3 - (current + 1)
 
             expired_text = (
                 f"⏳ <b>This search has expired.</b>\n\n"
@@ -10785,6 +10787,7 @@ async def handle_callback(update: Update):
             )
             return
 
+        # ── VALID CLAIM (still within 10 minutes) ──
         await query.answer("🔑 Claiming account...", show_alert=False)
 
         profile = await get_user_profile(chat_id)
@@ -10814,9 +10817,7 @@ async def handle_callback(update: Update):
         success = await claim_steam_account(chat_id, first_name, account_email, game_name)
 
         if success:
-            # NO global Unavailable — other users can still see and claim this account
-
-            # DECREMENT ATTEMPT ONLY WHEN CLAIM IS SUCCESSFUL
+            # Deduct attempt only when they actually claim
             current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
             await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current_attempts + 1))
 
@@ -10866,6 +10867,7 @@ async def handle_callback(update: Update):
 
         else:
             await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
+
     # ── INVENTORY FILTERS ──
     elif data.startswith("vamt_filter_"):
         category = data.replace("vamt_filter_", "").lower()
