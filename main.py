@@ -60,23 +60,32 @@ def is_bundle_account(acc: dict) -> bool:
     return len(valid_games) >= 2
 
 
-async def show_steam_account_selection(chat_id: int, game_name: str, query: str, query_obj=None):
-    # Fetch ALL available accounts, then filter by game_name OR games[]
-    all_accounts = await _sb_get(
-        "steamCredentials",
-        **{
-            "status": "eq.Available",
-            "select": "email,game_name,image_url,password,steam_id,release_type,games"
-        }
-    ) or []
+async def show_steam_account_selection(chat_id: int, group_key: str, game_name: str, query_obj=None):
+    # Retrieve exact emails stored during search
+    raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
+    if not raw:
+        await tg_app.bot.send_message(chat_id, "⏳ Result expired. Please search again.", parse_mode="HTML")
+        return
+    
+    emails = json.loads(raw)
+    
+    # Fetch only those exact accounts
+    accounts = []
+    for email in emails:
+        acc_data = await _sb_get(
+            "steamCredentials",
+            **{
+                "email": f"eq.{email}",
+                "status": "eq.Available",
+                "select": "email,game_name,image_url,password,steam_id,release_type,games"
+            }
+        ) or []
+        if acc_data:
+            accounts.extend(acc_data)
 
-    # Filter: match game_name OR any entry in games[]
-    name_lower = game_name.lower()
-    accounts = [
-        acc for acc in all_accounts
-        if name_lower in (acc.get("game_name") or "").lower()
-        or any(name_lower in (g or "").lower() for g in (acc.get("games") or []))
-    ]
+    if not accounts:
+        await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
+        return
 
     if not accounts:
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
@@ -8629,17 +8638,21 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     buttons = []
     for game_name, accounts in grouped.items():
         count = len(accounts)
-
-        # Always claim the first available account for this game
         claim_email = accounts[0].get("email", "")
 
-        # Show other games in this account as a hint
+        # Store emails in Redis for show_steam_account_selection
+        emails = [acc.get("email") for acc in accounts if acc.get("email")]
+        safe_key = abs(hash(f"{chat_id}:{game_name}")) % 999999
+        await redis_client.setex(
+            f"steam_group:{chat_id}:{safe_key}",
+            600,
+            json.dumps(emails)
+        )
+
         other_games = get_all_game_names(accounts[0])
-        # Remove the matched game from the hint list to avoid redundancy
         other_games = [g for g in other_games if g.lower() != game_name.lower()]
         other_hint = ""
         if other_games:
-            # Show up to 2 other games as a teaser
             preview = ", ".join(other_games[:2])
             more = f" +{len(other_games) - 2} more" if len(other_games) > 2 else ""
             other_hint = f"\n   <i>Also includes: {html.escape(preview)}{more}</i>"
@@ -8651,10 +8664,16 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             text += f"🎮 <b>{html.escape(game_name)}</b>{other_hint}\n\n"
             label = f"✅ {game_name[:35]}"
 
-        buttons.append([InlineKeyboardButton(
-            label,
-            callback_data=f"claim_steam|{claim_email}"
-        )])
+        if count > 1:
+            buttons.append([InlineKeyboardButton(
+                label,
+                callback_data=f"steam_select_accounts|{safe_key}|{game_name[:20]}"
+            )])
+        else:
+            buttons.append([InlineKeyboardButton(
+                label,
+                callback_data=f"claim_steam|{claim_email}"
+            )])
 
     buttons.append([InlineKeyboardButton("🔍 Search Different Game", callback_data="search_different_game")])
     buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
@@ -9405,8 +9424,10 @@ async def handle_callback(update: Update):
 
     # ── NEW: MULTI-ACCOUNT SELECTION SCREEN ──
     elif data.startswith("steam_select_accounts|"):
-        _, game_name, original_query = data.split("|", 2)
-        await show_steam_account_selection(chat_id, game_name, original_query, query)
+        parts = data.split("|", 2)
+        group_key = parts[1]
+        game_name = parts[2] if len(parts) > 2 else "Steam Account"
+        await show_steam_account_selection(chat_id, group_key, game_name, query)
         return
     
     elif data.startswith("set_title|"):
