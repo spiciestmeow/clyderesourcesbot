@@ -61,15 +61,22 @@ def is_bundle_account(acc: dict) -> bool:
 
 
 async def show_steam_account_selection(chat_id: int, game_name: str, query: str, query_obj=None):
-    """Shows clean list of all accounts for a specific game_name"""
-    accounts = await _sb_get(
+    # Fetch ALL available accounts, then filter by game_name OR games[]
+    all_accounts = await _sb_get(
         "steamCredentials",
         **{
-            "game_name": f"eq.{game_name}",
             "status": "eq.Available",
             "select": "email,game_name,image_url,password,steam_id,release_type,games"
         }
     ) or []
+
+    # Filter: match game_name OR any entry in games[]
+    name_lower = game_name.lower()
+    accounts = [
+        acc for acc in all_accounts
+        if name_lower in (acc.get("game_name") or "").lower()
+        or any(name_lower in (g or "").lower() for g in (acc.get("games") or []))
+    ]
 
     if not accounts:
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
