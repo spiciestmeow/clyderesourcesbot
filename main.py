@@ -69,7 +69,6 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     emails = data.get("emails", [])
     game_name = data.get("game_name", game_name) 
     
-    # Fetch only those exact accounts
     accounts = []
     for email in emails:
         acc_data = await _sb_get(
@@ -82,10 +81,6 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         ) or []
         if acc_data:
             accounts.extend(acc_data)
-
-    if not accounts:
-        await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
-        return
 
     if not accounts:
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
@@ -106,8 +101,9 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             InlineKeyboardButton(f"✅ Claim Account {i}", callback_data=f"claim_steam|{acc['email']}")
         ])
 
+    # FIXED: Proper back button
+    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
-    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data="steam_back_to_results")])
 
     try:
         if query_obj and query_obj.message:
@@ -9470,19 +9466,6 @@ async def handle_callback(update: Update):
 
         await handle_profile_page(chat_id, first_name, query)
 
-    elif data == "steam_back_to_results":
-        last_query = await redis_client.get(f"steam_last_search:{chat_id}")
-        if last_query:
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-            await handle_steam_game_search(chat_id, first_name, last_query)
-        else:
-            # Fallback if results expired
-            await handle_steam_landing(chat_id, first_name, query)
-        return
-
     elif data == "owner_steam_search":
             if chat_id != OWNER_ID:
                 await query.answer("🌿 Only the Forest Caretaker.", show_alert=True)
@@ -10705,6 +10688,24 @@ async def handle_callback(update: Update):
             else:
                 await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
             return
+    
+    # ── BACK TO RESULTS (after opening bundle)
+    elif data.startswith("steam_back_to_results|"):
+        try:
+            _, group_key = data.split("|", 1)
+            await show_steam_account_selection(chat_id, group_key, "", query)
+        except:
+            await query.answer("❌ Result expired", show_alert=True)
+        return
+
+    elif data == "steam_back_to_results":
+        await query.answer("🔄 Returning to results...", show_alert=False)
+        cached = await redis_client.get(f"steam_search_result:{chat_id}")
+        if cached:
+            await handle_searchsteam_command(chat_id, "", query=query)
+        else:
+            await query.answer("⏳ Search expired. Please search again.", show_alert=True)
+        return
 
     elif data == "search_different_game":
             current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
@@ -10756,10 +10757,10 @@ async def handle_callback(update: Update):
     elif data.startswith("claim_steam|"):
         _, account_email = data.split("|")
         
-        # Verify the search result is still valid
-        cached = await redis_client.get(f"steam_search_result:{chat_id}")
-        if not cached or account_email not in cached:
-            await query.answer("⏳ This result has expired. Search again.", show_alert=True)
+        # Verify claim is still valid
+        cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
+        if not cached_result:
+            await query.answer("⏳ This search has expired. Search again.", show_alert=True)
             return
 
         await query.answer()
@@ -10772,13 +10773,10 @@ async def handle_callback(update: Update):
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
 
-        # Fetch full account details (including games[] array)
         acc_data = await _sb_get(
             "steamCredentials", 
-            **{
-                "email": f"eq.{account_email}",
-                "select": "game_name,image_url,password,steam_id,release_type,games"
-            }
+            **{"email": f"eq.{account_email}", "status": "eq.Available",
+               "select": "game_name,image_url,password,steam_id,release_type,games"}
         ) or []
         
         if not acc_data:
@@ -10791,22 +10789,23 @@ async def handle_callback(update: Update):
         steam_id = acc.get("steam_id", "")
         release_type = acc.get("release_type", "daily")
         account_image_url = acc.get("image_url")
-        games_list = acc.get("games") or []   # ← NEW: games text[] array
+        games_list = acc.get("games") or []
 
-        # ── NEW: Game logo from game_logos table (prioritizes games[] array) ──
         logo_url = await get_game_logo_url(game_name, games_list)
-        final_image_url = logo_url or account_image_url   # smart fallback
+        final_image_url = logo_url or account_image_url
 
         success = await claim_steam_account(chat_id, first_name, account_email, game_name)
 
         if success:
+            # DECREMENT ATTEMPT ONLY WHEN CLAIM IS SUCCESSFUL
+            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current_attempts + 1))
+
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
 
-            # Cleanup search state
             await redis_client.delete(f"steam_search_result:{chat_id}")
             await redis_client.delete(f"steam_searching:{chat_id}")
-            await redis_client.delete(f"steam_search_attempts:{chat_id}")
 
             hours_left = cooldown_seconds // 3600
             mins_left = (cooldown_seconds % 3600) // 60
@@ -10819,7 +10818,6 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
-            # ── DELIVERY WITH BEAUTIFUL GAME LOGO ──
             caption = (
                 f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -10835,32 +10833,14 @@ async def handle_callback(update: Update):
 
             if final_image_url:
                 try:
-                    await tg_app.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=final_image_url,
-                        caption=caption,
-                        parse_mode="HTML"
-                    )
-                except Exception:
+                    await tg_app.bot.send_photo(chat_id=chat_id, photo=final_image_url, caption=caption, parse_mode="HTML")
+                except:
                     await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
             else:
                 await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
 
-            asyncio.create_task(send_temporary_message(
-                chat_id, f"✨ <i>{html.escape(game_name)} successfully claimed!</i>", duration=3
-            ))
+            asyncio.create_task(send_delayed_feedback_buttons(chat_id, account_email, game_name, delay=7200))
 
-            # Schedule feedback buttons
-            asyncio.create_task(
-                send_delayed_feedback_buttons(
-                    chat_id=chat_id,
-                    account_email=account_email,
-                    game_name=game_name,
-                    delay=7200
-                )
-            )
-
-            # Award XP
             action_xp, _ = await add_xp(chat_id, first_name, "steam_claim", xp_override=20)
             if action_xp:
                 asyncio.create_task(send_xp_feedback(chat_id, action_xp))
@@ -11575,6 +11555,19 @@ async def process_update(update_data: dict):
                 await redis_client.delete(f"steam_search_prompt:{chat_id}")
 
             term = raw.lower().strip()
+
+            attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(attempts + 1))
+            
+            if attempts + 1 >= 3:
+                await redis_client.delete(f"steam_searching:{chat_id}")
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "🚫 <b>You have used all 3 search attempts today.</b>\n\n"
+                    "Come back tomorrow (Manila midnight) for fresh attempts 🍃",
+                    parse_mode="HTML"
+                )
+                return
             accounts = await _sb_get(
                 "steamCredentials",
                 **{
