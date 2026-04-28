@@ -5511,6 +5511,45 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
         extra_line = f"\n🎮 Also includes: <i>{preview}{more}</i>"
 
+    # ── Fetch claim stats for this account ──
+    claim_stats = await _sb_get(
+        "steam_claims",
+        **{"account_email": f"eq.{email}", "select": "chat_id"}
+    ) or []
+    total_claimers = len(claim_stats)
+
+    # ── Fetch feedback stats ──
+    fb_stats = await _sb_get(
+        "key_reports",
+        **{"key_id": f"eq.{email}", "service_type": "eq.steam", "select": "status"}
+    ) or []
+    working_count = sum(1 for f in fb_stats if f.get("status") == "working")
+    bad_count = sum(1 for f in fb_stats if f.get("status") == "not_working")
+    total_fb = working_count + bad_count
+    rating_pct = round((working_count / total_fb) * 100) if total_fb > 0 else None
+
+    # ── Build rating badge ──
+    if rating_pct is None:
+        rating_line = "⬜ No feedback yet"
+    elif rating_pct >= 80:
+        rating_line = f"🟢 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+    elif rating_pct >= 50:
+        rating_line = f"🟡 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+    else:
+        rating_line = f"🔴 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+
+    # ── Top 3 games preview ──
+    preview_games = [g for g in extra_games[:3] if g.strip()]
+    games_preview = ""
+    if preview_games:
+        icons = ["🎯", "🎮", "🕹️"]
+        games_preview = "\n" + "\n".join(
+            f"   {icons[i]} {html.escape(g)}"
+            for i, g in enumerate(preview_games)
+        )
+        if len(extra_games) > 3:
+            games_preview += f"\n   ···  +{len(extra_games) - 3} more"
+
     if has_feedback:
         fb_emoji = "✅" if feedback_status == "working" else "❌"
         fb_label = "Working" if feedback_status == "working" else "Not Working"
@@ -5534,7 +5573,6 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
             InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}"),
         ]]
 
-
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -5545,7 +5583,12 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"{sid_line}"
         f"{extra_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
-        f"     {ago}"
+        f"     {ago}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>Account Stats</b>\n"
+        f"👥 Claimed by: <b>{total_claimers}</b> user{'s' if total_claimers != 1 else ''}\n"
+        f"⭐ Rating: {rating_line}\n"
+        f"{games_preview}\n"
         f"{feedback_section}"
     )
 
