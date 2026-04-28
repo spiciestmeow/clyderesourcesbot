@@ -5439,37 +5439,41 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
             pass
 
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
+    
 async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str, back_page: int, query=None):
-    """Detail page for a single steam claim — credentials + feedback"""
 
-    # ── Retrieve stored data ──
     raw = await redis_client.get(f"cd:{short_key}")
     if not raw:
         await query.answer("⏳ Session expired. Please go back and try again.", show_alert=True)
         return
+
 
     data = json.loads(raw)
     email = data.get("email", "")
     game_name = data.get("game_name", "Unknown Game")
     claimed_at_raw = data.get("claimed_at", "")
 
-    # ── Fetch live password from steamCredentials (never stored in claims) ──
     acc_data = await _sb_get(
         "steamCredentials",
-        **{
-            "email": f"eq.{email}",
-            "select": "password,steam_id,games",
-        }
+        **{"email": f"eq.{email}", "select": "password,steam_id,games,image_url"},
     ) or []
 
     password = "—"
     steam_id = ""
     extra_games = []
+    image_url = None
+    
     if acc_data:
         acc = acc_data[0]
         password = acc.get("password", "—")
         steam_id = acc.get("steam_id", "") or ""
         extra_games = acc.get("games") or []
+        image_url = acc.get("image_url")
+
+    # ── Try to get a better logo from game_logos table ──
+    logo_url = await get_game_logo_url(game_name, extra_games)
+    final_image = logo_url or image_url  # prefer logo table, fallback to account banner
+
 
     # ── Format claimed time ──
     try:
@@ -5494,26 +5498,19 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
     # ── Check existing feedback ──
     fb_data = await _sb_get(
         "key_reports",
-        **{
-            "chat_id": f"eq.{chat_id}",
-            "key_id": f"eq.{email}",
-            "service_type": "eq.steam",
-            "select": "status",
-        }
+        **{"chat_id": f"eq.{chat_id}", "key_id": f"eq.{email}",
+           "service_type": "eq.steam", "select": "status"}
     ) or []
     has_feedback = len(fb_data) > 0
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
-    # ── Optional lines ──
     sid_line = f"\n🆔 Steam ID: <code>{steam_id}</code>" if steam_id else ""
-
     extra_line = ""
     if extra_games:
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
         extra_line = f"\n🎮 Also includes: <i>{preview}{more}</i>"
 
-    # ── Feedback section ──
     if has_feedback:
         fb_emoji = "✅" if feedback_status == "working" else "❌"
         fb_label = "Working" if feedback_status == "working" else "Not Working"
@@ -5532,24 +5529,19 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
             f"<b>Did this account work?</b>\n"
             f"<i>Tap below to let the Caretaker know 🍃</i>"
         )
-        feedback_buttons = [
-            [
-                InlineKeyboardButton(
-                    "✅ Working",
-                    callback_data=f"stfb_ok|{email}|{game_name[:30]}"
-                ),
-                InlineKeyboardButton(
-                    "❌ Not Working",
-                    callback_data=f"stfb_bad|{email}|{game_name[:30]}"
-                ),
-            ]
-        ]
+        feedback_buttons = [[
+            InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
+            InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}"),
+        ]]
+
 
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📧 Email: <tg-spoiler>{html.escape(email)}</tg-spoiler>\n"
-        f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
+        f"📧 Email:\n"
+        f"<tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
+        f"🔑 Password:\n"
+        f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
         f"{sid_line}"
         f"{extra_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
@@ -5557,12 +5549,6 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"{feedback_section}"
     )
 
-    back_button = [[InlineKeyboardButton(
-        "◀ Back to My Claims",
-        callback_data=f"myclaims_page_{back_page}"
-    )]]
-
-    # Add "See All Games" button only for bundles
     see_all_btn = []
     if len(extra_games) > 3:
         see_all_btn = [[InlineKeyboardButton(
@@ -5570,15 +5556,34 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
             callback_data=f"show_all_games|{short_key}"
         )]]
 
+    back_button = [[InlineKeyboardButton(
+        "◀ Back to My Claims",
+        callback_data=f"myclaims_page_{back_page}"
+    )]]
+
     markup = InlineKeyboardMarkup(feedback_buttons + see_all_btn + back_button)
 
+    # ── Delete old message then send with game image ──
     if query and query.message:
         try:
-            await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
+            await query.message.delete()
+        except Exception:
+            pass
+
+    if final_image:
+        try:
+            await tg_app.bot.send_photo(
+                chat_id=chat_id,
+                photo=final_image,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
             return
         except Exception:
             pass
 
+    # Fallback: no image available
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
 
 # ══════════════════════════════════════════════════════════════════════════════
