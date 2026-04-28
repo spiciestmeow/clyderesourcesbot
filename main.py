@@ -10763,11 +10763,7 @@ async def handle_callback(update: Update):
             await query.answer("⏳ This search has expired. Search again.", show_alert=True)
             return
 
-        await query.answer()
-        try:
-            await query.message.delete()
-        except:
-            pass
+        await query.answer("🔑 Claiming account...", show_alert=False)
 
         profile = await get_user_profile(chat_id)
         level = profile.get("level", 1)
@@ -10787,7 +10783,6 @@ async def handle_callback(update: Update):
         game_name = acc.get("game_name") or "Steam Account"
         password = acc.get("password", "")
         steam_id = acc.get("steam_id", "")
-        release_type = acc.get("release_type", "daily")
         account_image_url = acc.get("image_url")
         games_list = acc.get("games") or []
 
@@ -10797,6 +10792,9 @@ async def handle_callback(update: Update):
         success = await claim_steam_account(chat_id, first_name, account_email, game_name)
 
         if success:
+            # NO global Unavailable — other users can still see and claim this account
+            # Only this user will be filtered out in future searches (CHANGE 2)
+
             # DECREMENT ATTEMPT ONLY WHEN CLAIM IS SUCCESSFUL
             current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
             await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current_attempts + 1))
@@ -10847,7 +10845,6 @@ async def handle_callback(update: Update):
 
         else:
             await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
-
     # ── INVENTORY FILTERS ──
     elif data.startswith("vamt_filter_"):
         category = data.replace("vamt_filter_", "").lower()
@@ -11568,13 +11565,24 @@ async def process_update(update_data: dict):
                     parse_mode="HTML"
                 )
                 return
-            accounts = await _sb_get(
+
+            all_accounts = await _sb_get(
                 "steamCredentials",
                 **{
                     "status": "eq.Available",
                     "select": "email,game_name,image_url,password,steam_id,release_type,games"
                 }
             ) or []
+
+            # Get emails this user has already claimed
+            user_claimed_data = await _sb_get(
+                "steam_claims",
+                **{"chat_id": f"eq.{chat_id}", "select": "account_email"}
+            ) or []
+            user_claimed_emails = {row["account_email"] for row in user_claimed_data}
+
+            # Filter out accounts this user already claimed
+            accounts = [acc for acc in all_accounts if acc.get("email") not in user_claimed_emails]
 
             # Search in BOTH game_name AND games[] array
             matching_accounts = []
