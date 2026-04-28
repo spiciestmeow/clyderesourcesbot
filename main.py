@@ -490,72 +490,117 @@ async def translate_text(text: str, target_lang: str) -> str:
     except Exception:
         return text  # fallback to original text if anything fails
 
-
 # ──────────────────────────────────────────────
-# ADMIN COMMAND: Add Game Logo (Update 3)
+# ADMIN COMMAND: Add Game Logo (BULK + DUPLICATE SAFE)
 # ──────────────────────────────────────────────
 async def handle_add_game_logo(chat_id: int, raw_text: str):
-    """Admin command: /addgamelogo "Game Name" https://logo-url"""
+    """Admin command: /addgamelogo — bulk upload with duplicate protection"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add game logos.")
         return
 
     body = raw_text[len("/addgamelogo"):].strip()
+
     if not body:
         await tg_app.bot.send_message(
             chat_id,
-            "📌 Usage:\n\n"
-            "<code>/addgamelogo \"Exact Game Name\" https://example.com/logo.jpg</code>\n\n"
-            "• Use quotes around the game name if it has spaces.\n"
-            "• Last part must be a valid image URL.",
+            "📌 <b>Game Logo Bulk Upload</b>\n\n"
+            "Send in this format:\n\n"
+            "<code>/addgamelogo\n"
+            "Game Name 1\n"
+            "https://example.com/logo1.jpg\n\n"
+            "Game Name 2\n"
+            "https://example.com/logo2.jpg\n\n"
+            "Exact Game With Spaces\n"
+            "https://example.com/logo3.png</code>\n\n"
+            "• Game name on its own line\n"
+            "• URL on the next line\n"
+            "• Blank lines between entries are ignored\n"
+            "• Lines starting with # are comments",
             parse_mode="HTML"
         )
         return
 
-    # Simple but robust parsing: last word = URL, everything before = game_name
-    parts = body.rsplit(maxsplit=1)
-    if len(parts) < 2:
-        await tg_app.bot.send_message(chat_id, "❌ Please provide both game name and URL.", parse_mode="HTML")
-        return
+    # Clean lines
+    lines = [line.strip() for line in body.splitlines() 
+             if line.strip() and not line.strip().startswith('#')]
 
-    game_name = parts[0].strip().strip('"\'')  # remove surrounding quotes if present
-    game_url = parts[1].strip()
+    added = 0
+    duplicates = 0
+    duplicate_list = []   # ← will show at the end
+    i = 0
 
-    if not game_name or not game_url.startswith("http"):
-        await tg_app.bot.send_message(
-            chat_id,
-            "❌ Invalid format.\nMake sure the URL starts with http/https and game name is not empty.",
-            parse_mode="HTML"
+    while i < len(lines):
+        game_name_raw = lines[i]
+        game_name = game_name_raw.strip().strip('"\'')   # remove quotes if present
+
+        # Find the next URL
+        url = None
+        j = i + 1
+        while j < len(lines):
+            if lines[j].startswith(('http://', 'https://')):
+                url = lines[j]
+                break
+            j += 1
+
+        if game_name and url:
+            # ── Check if this game already exists (duplicate protection) ──
+            existing = await _sb_get(
+                "game_logos",
+                **{"game_name": f"eq.{game_name}", "select": "game_name", "limit": 1}
+            )
+
+            if existing:
+                duplicates += 1
+                duplicate_list.append(game_name)
+                print(f"⚠️ Duplicate skipped: {game_name}")
+            else:
+                # New logo → insert
+                payload = {
+                    "game_name": game_name,
+                    "game_url": url
+                }
+                success, _ = await _sb_upsert("game_logos", payload, on_conflict="game_name")
+                
+                if success:
+                    # Clear cache immediately
+                    await redis_client.delete(f"game_logo:{game_name.lower()}")
+                    added += 1
+                    print(f"✅ Added: {game_name}")
+                else:
+                    duplicates += 1
+                    duplicate_list.append(game_name)
+
+            i = j + 1
+        else:
+            i += 1  # skip invalid line
+
+    # ── Beautiful final message (Netflix upload style) ──
+    if added > 0 or duplicates > 0:
+        result = (
+            f"✅ <b>Bulk Game Logo Import Complete!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"🌱 <b>Successfully added:</b> {added} new logo(s)\n"
+            f"⚠️ <b>Duplicates (skipped):</b> {duplicates}\n\n"
         )
-        return
 
-    # Upsert into game_logos table
-    payload = {
-        "game_name": game_name,
-        "game_url": game_url
-    }
+        if duplicate_list:
+            result += "<b>📋 Duplicate games (not overwritten):</b>\n"
+            for name in duplicate_list:
+                result += f"• <code>{html.escape(name)}</code>\n"
+            result += "\n"
 
-    success, status = await _sb_upsert("game_logos", payload, on_conflict="game_name")
+        result += "🧹 All Redis caches cleared — new logos are now live in the forest! 🌲"
 
-    if success:
-        # Clear Redis cache so new logo shows immediately
-        cache_key = f"game_logo:{game_name.lower()}"
-        await redis_client.delete(cache_key)
-
-        await tg_app.bot.send_message(
-            chat_id,
-            f"✅ <b>Game logo added successfully!</b>\n\n"
-            f"🎮 <b>Game:</b> {html.escape(game_name)}\n"
-            f"🖼️ <b>URL:</b> <code>{html.escape(game_url)}</code>\n\n"
-            f"Cache cleared — logo is now live for claims! 🌲",
-            parse_mode="HTML"
-        )
+        await tg_app.bot.send_message(chat_id, result, parse_mode="HTML")
     else:
         await tg_app.bot.send_message(
             chat_id,
-            "❌ Failed to save to database. Check server logs.",
+            "❌ No valid game logos were found in your message.\n\n"
+            "Please check the format and try again. 🌿",
             parse_mode="HTML"
         )
+
 # ──────────────────────────────────────────────
 # GAME LOGOS INTEGRATION — Prioritizes games[] array (as requested)
 # ──────────────────────────────────────────────
