@@ -107,7 +107,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         ])
 
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
-    buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="steam_do_search")])
+    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data="steam_back_to_results")])
 
     try:
         if query_obj and query_obj.message:
@@ -8502,6 +8502,9 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
 
     scored.sort(key=lambda x: x[1], reverse=True)
 
+    # Add this right before building the result message (after unclaimed check)
+    await redis_client.setex(f"steam_last_search:{chat_id}", 600, game_query)
+
     # ── Filter out already-claimed accounts by this user ──
     unclaimed = []
     for acc, score, matched_name in scored:
@@ -9466,6 +9469,19 @@ async def handle_callback(update: Update):
         ))
 
         await handle_profile_page(chat_id, first_name, query)
+
+    elif data == "steam_back_to_results":
+        last_query = await redis_client.get(f"steam_last_search:{chat_id}")
+        if last_query:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await handle_steam_game_search(chat_id, first_name, last_query)
+        else:
+            # Fallback if results expired
+            await handle_steam_landing(chat_id, first_name, query)
+        return
 
     elif data == "owner_steam_search":
             if chat_id != OWNER_ID:
@@ -10679,9 +10695,11 @@ async def handle_callback(update: Update):
             if query and query.message:
                 try:
                     await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                    await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
                 except Exception:
                     try:
                         await query.message.edit_text(text=guide, parse_mode="HTML")
+                        await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
                     except Exception:
                         pass
             else:
@@ -10723,9 +10741,12 @@ async def handle_callback(update: Update):
             if query and query.message:
                 try:
                     await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                    await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
                 except Exception:
                     try:
                         await query.message.edit_text(text=guide, parse_mode="HTML")
+                        await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
+
                     except Exception:
                         await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
             else:
@@ -11537,7 +11558,22 @@ async def process_update(update_data: dict):
     if await redis_client.get(f"steam_searching:{chat_id}"):
         if not is_real_command:
             await redis_client.delete(f"steam_searching:{chat_id}")
-            
+
+            # DELETE the user's typed message
+            try:
+                await tg_app.bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+
+            # DELETE the search prompt message (stored in Redis)
+            search_prompt_id = await redis_client.get(f"steam_search_prompt:{chat_id}")
+            if search_prompt_id:
+                try:
+                    await tg_app.bot.delete_message(chat_id, int(search_prompt_id))
+                except Exception:
+                    pass
+                await redis_client.delete(f"steam_search_prompt:{chat_id}")
+
             term = raw.lower().strip()
             accounts = await _sb_get(
                 "steamCredentials",
