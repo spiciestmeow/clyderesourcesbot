@@ -11605,17 +11605,6 @@ async def process_update(update_data: dict):
                         label += f" — {count} account{'s' if count > 1 else ''} available"
                         text += label + "\n\n"
 
-                # Store first result so claim validation passes
-                if unclaimed := [(acc.get("email",""), display_name) 
-                                for display_name, acc_list in grouped.items() 
-                                for acc in acc_list[:1]]:
-                    first_email, first_game = unclaimed[0]
-                    await redis_client.setex(
-                        f"steam_search_result:{chat_id}",
-                        600,
-                        json.dumps({"email": first_email, "game_name": first_game})
-                    )
-
                     # Store emails in Redis for show_steam_account_selection
                     emails = [acc.get("email") for acc in acc_list if acc.get("email")]
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
@@ -11628,6 +11617,17 @@ async def process_update(update_data: dict):
                         f"👉 View all {count} account{'s' if count > 1 else ''}",
                         callback_data=f"steam_sel|{chat_id}|{safe_key}"
                     )])
+
+            # ✅ Set steam_search_result ONCE after the loop
+            first_acc, first_name_game = next(
+                ((a, n) for n, accs in grouped.items() for a in accs[:1]), (None, None)
+            )
+            if first_acc:
+                await redis_client.setex(
+                    f"steam_search_result:{chat_id}",
+                    600,
+                    json.dumps({"email": first_acc.get("email", ""), "game_name": first_name_game})
+                )
 
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
