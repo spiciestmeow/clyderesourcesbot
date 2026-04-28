@@ -59,15 +59,15 @@ def is_bundle_account(acc: dict) -> bool:
     valid_games = [str(g).strip() for g in games if str(g).strip()]
     return len(valid_games) >= 2
 
-
 async def show_steam_account_selection(chat_id: int, group_key: str, game_name: str, query_obj=None):
-    # Retrieve exact emails stored during search
     raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
     if not raw:
         await tg_app.bot.send_message(chat_id, "⏳ Result expired. Please search again.", parse_mode="HTML")
         return
     
-    emails = json.loads(raw)
+    data = json.loads(raw)
+    emails = data.get("emails", [])
+    game_name = data.get("game_name", game_name) 
     
     # Fetch only those exact accounts
     accounts = []
@@ -8646,7 +8646,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         await redis_client.setex(
             f"steam_group:{chat_id}:{safe_key}",
             600,
-            json.dumps(emails)
+            json.dumps({"emails": emails, "game_name": game_name})
         )
 
         other_games = get_all_game_names(accounts[0])
@@ -8667,7 +8667,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         if count > 1:
             buttons.append([InlineKeyboardButton(
                 label,
-                callback_data=f"steam_select_accounts|{safe_key}|{game_name[:20]}"
+                callback_data=f"steam_sel|{chat_id}|{safe_key}"
             )])
         else:
             buttons.append([InlineKeyboardButton(
@@ -9423,11 +9423,11 @@ async def handle_callback(update: Update):
         return
 
     # ── NEW: MULTI-ACCOUNT SELECTION SCREEN ──
-    elif data.startswith("steam_select_accounts|"):
-        parts = data.split("|", 2)
-        group_key = parts[1]
-        game_name = parts[2] if len(parts) > 2 else "Steam Account"
-        await show_steam_account_selection(chat_id, group_key, game_name, query)
+    elif data.startswith("steam_sel|"):
+        parts = data.split("|")
+        target_chat_id = int(parts[1])
+        group_key = parts[2]
+        await show_steam_account_selection(target_chat_id, group_key, "", query)
         return
     
     elif data.startswith("set_title|"):
