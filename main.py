@@ -50,6 +50,58 @@ LEVEL_TITLE_DESCRIPTIONS = {
 }
 
 # ──────────────────────────────────────────────
+# NEW: STEAM SEARCH HELPERS (Multi-account + Bundle UX)
+# ──────────────────────────────────────────────
+
+def is_bundle_account(acc: dict) -> bool:
+    """Returns True if this is a big bundle account (2+ games in games[])"""
+    games = acc.get("games") or []
+    valid_games = [str(g).strip() for g in games if str(g).strip()]
+    return len(valid_games) >= 2
+
+
+async def show_steam_account_selection(chat_id: int, game_name: str, query: str, query_obj=None):
+    """Shows clean list of all accounts for a specific game_name"""
+    accounts = await _sb_get(
+        "steamCredentials",
+        **{
+            "game_name": f"eq.{game_name}",
+            "status": "eq.Available",
+            "select": "email,game_name,image_url,password,steam_id,release_type,games"
+        }
+    ) or []
+
+    if not accounts:
+        await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
+        return
+
+    text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
+    buttons = []
+
+    for i, acc in enumerate(accounts, 1):
+        email = acc.get("email", "")
+        short_email = email[:15] + "..." if len(email) > 15 else email
+        bundle_note = " ← <b>Big Bundle</b>" if is_bundle_account(acc) else ""
+
+        text += f"{i}️⃣ <b>Account {i}</b>{bundle_note}\n"
+        text += f"   📧 <code>{html.escape(short_email)}</code>\n\n"
+
+        buttons.append([
+            InlineKeyboardButton(f"✅ Claim Account {i}", callback_data=f"claim_steam|{acc['email']}")
+        ])
+
+    buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+    buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="steam_do_search")])
+
+    try:
+        if query_obj and query_obj.message:
+            await query_obj.message.edit_text(text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+    except Exception:
+        await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+
+# ──────────────────────────────────────────────
 # NEW STEAM SEARCH + COOLDOWN SYSTEM
 # ──────────────────────────────────────────────
 STEAM_COOLDOWN_HOURS = {
@@ -61,7 +113,6 @@ def get_steam_cooldown_hours(level: int) -> int:
     """Returns cooldown in hours based on user level"""
     level = min(max(int(level), 1), 10)
     return STEAM_COOLDOWN_HOURS.get(level, 4)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
@@ -9344,6 +9395,12 @@ async def handle_callback(update: Update):
         except Exception as e:
             print(f"Profile page error: {e}")
         return
+
+    # ── NEW: MULTI-ACCOUNT SELECTION SCREEN ──
+    elif data.startswith("steam_select_accounts|"):
+        _, game_name, original_query = data.split("|", 2)
+        await show_steam_account_selection(chat_id, game_name, original_query, query)
+        return
     
     elif data.startswith("set_title|"):
         chosen_title = data.split("|", 1)[1].strip()
@@ -11446,10 +11503,71 @@ async def process_update(update_data: dict):
         "/remove_achievement",
     ))
 
+    # ── STEAM GAME SEARCH INTERCEPT + NEW IMPROVED RESULT LOGIC ──
     if await redis_client.get(f"steam_searching:{chat_id}"):
         if not is_real_command:
-            await redis_client.delete(f"steam_searching:{chat_id}")  # clear immediately
-            await handle_steam_game_search(chat_id, first_name, raw)
+            await redis_client.delete(f"steam_searching:{chat_id}")
+            
+            # NEW IMPROVED SEARCH RESULT LOGIC
+            term = raw.lower().strip()
+            accounts = await _sb_get(
+                "steamCredentials",
+                **{
+                    "status": "eq.Available",
+                    "select": "email,game_name,image_url,password,steam_id,release_type,games"
+                }
+            ) or []
+
+            matching_accounts = [
+                acc for acc in accounts
+                if term in str(acc.get("game_name", "")).lower()
+                or any(term in str(g).lower() for g in (acc.get("games") or []))
+            ]
+
+            if not matching_accounts:
+                await tg_app.bot.send_message(chat_id, f"🌫️ No accounts found for \"<b>{html.escape(term)}</b>\".", parse_mode="HTML")
+                return
+
+            from collections import defaultdict
+            grouped = defaultdict(list)
+            for acc in matching_accounts:
+                game_name = (acc.get("game_name") or "Steam Account").strip()
+                grouped[game_name].append(acc)
+
+            text = f"✅ Found <b>{len(matching_accounts)}</b> account(s) for \"<b>{html.escape(term)}</b>\"\n\n"
+            buttons = []
+
+            for game_name, acc_list in grouped.items():
+                count = len(acc_list)
+                has_bundle = any(is_bundle_account(acc) for acc in acc_list)
+
+                if count == 1 and not has_bundle:
+                    acc = acc_list[0]
+                    text += f"🎮 <b>{html.escape(game_name)}</b> — 1 account available\n\n"
+                    buttons.append([InlineKeyboardButton(
+                        f"✅ Claim {html.escape(game_name)}",
+                        callback_data=f"claim_steam|{acc['email']}"
+                    )])
+                else:
+                    label = f"🎮 <b>{html.escape(game_name)}</b>"
+                    if has_bundle:
+                        label += " ← <b>Big Bundle</b>"
+                    label += f" — {count} account{'s' if count > 1 else ''} available"
+                    text += label + "\n\n"
+                    buttons.append([InlineKeyboardButton(
+                        f"👉 View all {count} account{'s' if count > 1 else ''}",
+                        callback_data=f"steam_select_accounts|{html.escape(game_name)}|{html.escape(term)}"
+                    )])
+
+            buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+            buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text=text.strip(),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
             return
 
     # ── Command dispatch ──
