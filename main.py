@@ -5562,17 +5562,15 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         callback_data=f"myclaims_page_{back_page}"
     )]]
 
-   # After building feedback_buttons, add a "See all games" button if bundle
-   all_games_buttons = []
-   if len(extra_games) > 3:
-       all_games_buttons = [[
-           InlineKeyboardButton(
-               f"📋 See All {len(extra_games)} Games",
-               callback_data=f"show_all_games|{short_key}"
-           )
-       ]]
+    # Add "See All Games" button only for bundles
+    see_all_btn = []
+    if len(extra_games) > 3:
+        see_all_btn = [[InlineKeyboardButton(
+            f"📋 See All {len(extra_games) + 1} Games",
+            callback_data=f"show_all_games|{short_key}"
+        )]]
 
-    markup = InlineKeyboardMarkup(feedback_buttons + back_button)
+    markup = InlineKeyboardMarkup(feedback_buttons + see_all_btn + back_button)
 
     if query and query.message:
         try:
@@ -10824,28 +10822,36 @@ async def handle_callback(update: Update):
 
         claim_data = json.loads(raw)
         email = claim_data.get("email", "")
-    
+        game_name = claim_data.get("game_name", "Unknown")
+
         acc_data = await _sb_get(
             "steamCredentials",
             **{"email": f"eq.{email}", "select": "game_name,games"}
         ) or []
-    
+
         if not acc_data:
-            await query.answer("❌ Account data not found.", show_alert=True)
+            await query.answer("❌ Not found.", show_alert=True)
             return
-    
+
         acc = acc_data[0]
         all_games = [acc.get("game_name", "")] + (acc.get("games") or [])
         all_games = [g for g in all_games if g.strip()]
-    
-        # Split into pages of 20 games each to avoid message limit
-        lines = "\n".join(f"• {html.escape(g)}" for g in all_games)
-        text = f"🎮 <b>All Games in Bundle ({len(all_games)} total)</b>\n\n{lines}"
-    
-        # Telegram limit safety: truncate if too long
+
+        lines = "\n".join(
+            f"{'🎮' if i == 0 else '•'} {html.escape(g)}"
+            for i, g in enumerate(all_games)
+        )
+        text = (
+            f"📋 All Games in Bundle\n"
+            f"{html.escape(game_name)}\n"
+            f"{len(all_games)} games total\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"{lines}"
+        )
+
         if len(text) > 4000:
-            text = text[:3950] + "\n\n<i>...and more</i>"
-    
+            text = text[:3950] + "\n\n...and more"
+
         await query.answer()
         await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
 
