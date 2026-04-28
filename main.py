@@ -11594,7 +11594,30 @@ async def process_update(update_data: dict):
                     matching_accounts.append(acc)
 
             if not matching_accounts:
-                await tg_app.bot.send_message(chat_id, f"🌫️ No accounts found for \"<b>{html.escape(term)}</b>\".", parse_mode="HTML")
+                remaining_attempts = 3 - (attempts + 1)
+
+                no_result_text = (
+                    f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
+                    f"🎯 <b>Search Attempts:</b> {remaining_attempts}/3 remaining\n"
+                    f"{make_attempts_bar(remaining_attempts)}\n\n"
+                    f"💡 <b>Tips to get better results:</b>\n"
+                    f"• Try the exact or shorter game title\n"
+                    f"• Popular games usually have more accounts\n\n"
+                    # f"• Partial names work well (e.g. <code>elden</code>, <code>cyber</code>, <code>gta</code>)\n\n"
+                    f"🌲 <i>You still have <b>{remaining_attempts}</b> attempt{'' if remaining_attempts == 1 else 's'} left today!</i>"
+                )
+
+                buttons = [
+                    [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                ]
+
+                await tg_app.bot.send_message(
+                    chat_id,
+                    no_result_text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
                 return
 
             from collections import defaultdict
