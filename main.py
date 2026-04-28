@@ -11503,12 +11503,11 @@ async def process_update(update_data: dict):
         "/remove_achievement",
     ))
 
-    # ── STEAM GAME SEARCH INTERCEPT + NEW IMPROVED RESULT LOGIC ──
+    # ── FINAL SMART SEARCH RESULT LOGIC (Clean + Beautiful Bundle Display) ──
     if await redis_client.get(f"steam_searching:{chat_id}"):
         if not is_real_command:
             await redis_client.delete(f"steam_searching:{chat_id}")
             
-            # NEW IMPROVED SEARCH RESULT LOGIC
             term = raw.lower().strip()
             accounts = await _sb_get(
                 "steamCredentials",
@@ -11518,6 +11517,7 @@ async def process_update(update_data: dict):
                 }
             ) or []
 
+            # Match in game_name OR games[] array
             matching_accounts = [
                 acc for acc in accounts
                 if term in str(acc.get("game_name", "")).lower()
@@ -11531,32 +11531,51 @@ async def process_update(update_data: dict):
             from collections import defaultdict
             grouped = defaultdict(list)
             for acc in matching_accounts:
-                game_name = (acc.get("game_name") or "Steam Account").strip()
-                grouped[game_name].append(acc)
+                # Smart display name: Use searched term for bundles, original game_name for normal accounts
+                if is_bundle_account(acc):
+                    display_name = raw.title()
+                else:
+                    display_name = (acc.get("game_name") or "Steam Account").strip()
+                grouped[display_name].append(acc)
 
             text = f"✅ Found <b>{len(matching_accounts)}</b> account(s) for \"<b>{html.escape(term)}</b>\"\n\n"
             buttons = []
 
-            for game_name, acc_list in grouped.items():
+            for display_name, acc_list in grouped.items():
                 count = len(acc_list)
                 has_bundle = any(is_bundle_account(acc) for acc in acc_list)
 
                 if count == 1 and not has_bundle:
+                    # Normal single account
                     acc = acc_list[0]
-                    text += f"🎮 <b>{html.escape(game_name)}</b> — 1 account available\n\n"
+                    text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account available\n\n"
                     buttons.append([InlineKeyboardButton(
-                        f"✅ Claim {html.escape(game_name)}",
+                        f"✅ Claim {html.escape(display_name)}",
                         callback_data=f"claim_steam|{acc['email']}"
                     )])
                 else:
-                    label = f"🎮 <b>{html.escape(game_name)}</b>"
+                    # Multiple accounts or bundle
+                    label = f"🎮 <b>{html.escape(display_name)}</b>"
                     if has_bundle:
-                        label += " ← <b>Big Bundle</b>"
-                    label += f" — {count} account{'s' if count > 1 else ''} available"
-                    text += label + "\n\n"
+                        total_games = len([g for g in (acc_list[0].get("games") or []) if str(g).strip()])
+                        label += f" ← <b>Big Bundle ({total_games} games total)</b>"
+                        
+                        # Smart "Also includes" line
+                        games_list = acc_list[0].get("games") or []
+                        example_games = [g for g in games_list if str(g).strip()][:4]
+                        if example_games:
+                            examples = ", ".join(example_games[:3])
+                            text += label + "\n"
+                            text += f"   Also includes: {examples} +{total_games-3} more\n\n"
+                        else:
+                            text += label + "\n\n"
+                    else:
+                        label += f" — {count} account{'s' if count > 1 else ''} available"
+                        text += label + "\n\n"
+
                     buttons.append([InlineKeyboardButton(
                         f"👉 View all {count} account{'s' if count > 1 else ''}",
-                        callback_data=f"steam_select_accounts|{html.escape(game_name)}|{html.escape(term)}"
+                        callback_data=f"steam_select_accounts|{html.escape(display_name)}|{html.escape(term)}"
                     )])
 
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
