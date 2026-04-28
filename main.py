@@ -156,6 +156,48 @@ def get_steam_cooldown_hours(level: int) -> int:
     level = min(max(int(level), 1), 10)
     return STEAM_COOLDOWN_HOURS.get(level, 4)
 
+def clean_image_url(url: str) -> str:
+    """Smart cleaner for any image URL (Steam + general)"""
+    if not url or not url.startswith(('http://', 'https://')):
+        return url.strip()
+
+    original_url = url.strip()
+
+    # 1. Remove query parameters (?...) and fragments (#...)
+    if "?" in url:
+        url = url.split("?", 1)[0]
+    if "#" in url:
+        url = url.split("#", 1)[0]
+
+    # 2. Special handling for Steam URLs (very common case)
+    if "steamstatic.com" in url or "steamusercontent.com" in url:
+        # Ensure it ends with /header.jpg
+        if "/header." in url and not url.lower().endswith(('.jpg', '.jpeg', '.png')):
+            url = url.split("/header.")[0] + "/header.jpg"
+        # Remove any extra parameters that might remain
+        if "?" in url:
+            url = url.split("?", 1)[0]
+
+    # 3. Final safety: If it doesn't look like an image, try to find last image extension
+    lower_url = url.lower()
+    image_exts = ('.jpg', '.jpeg', '.png', '.webp', '.gif')
+    
+    if not any(lower_url.endswith(ext) for ext in image_exts):
+        for ext in image_exts:
+            pos = lower_url.rfind(ext)
+            if pos != -1:
+                url = url[:pos + len(ext)]
+                break
+
+    # 4. Final cleanup
+    cleaned = url.strip()
+    
+    # Log if we changed something (helpful for debugging)
+    if cleaned != original_url:
+        print(f"🧹 Cleaned URL: {original_url[:100]}... → {cleaned}")
+
+    return cleaned
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -524,7 +566,7 @@ async def translate_text(text: str, target_lang: str) -> str:
 # ADMIN COMMAND: Add Game Logo (BULK + DUPLICATE SAFE)
 # ──────────────────────────────────────────────
 async def handle_add_game_logo(chat_id: int, raw_text: str):
-    """Admin command: /addgamelogo — bulk upload with duplicate protection"""
+    """Admin command: /addgamelogo — bulk upload with duplicate protection + smart Steam URL cleaning"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add game logos.")
         return
@@ -540,9 +582,7 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
             "Game Name 1\n"
             "https://example.com/logo1.jpg\n\n"
             "Game Name 2\n"
-            "https://example.com/logo2.jpg\n\n"
-            "Exact Game With Spaces\n"
-            "https://example.com/logo3.png</code>\n\n"
+            "https://shared.fastly.steamstatic.com/.../header.jpg?t=123456</code>\n\n"
             "• Game name on its own line\n"
             "• URL on the next line\n"
             "• Blank lines between entries are ignored\n"
@@ -557,7 +597,7 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
 
     added = 0
     duplicates = 0
-    duplicate_list = []   # ← will show at the end
+    duplicate_list = []
     i = 0
 
     while i < len(lines):
@@ -574,7 +614,10 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
             j += 1
 
         if game_name and url:
-            # ── Check if this game already exists (duplicate protection) ──
+            # ── SMART STEAM URL CLEANING ──
+            cleaned_url = clean_image_url(url)
+
+            # Check for duplicate game
             existing = await _sb_get(
                 "game_logos",
                 **{"game_name": f"eq.{game_name}", "select": "game_name", "limit": 1}
@@ -585,27 +628,25 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
                 duplicate_list.append(game_name)
                 print(f"⚠️ Duplicate skipped: {game_name}")
             else:
-                # New logo → insert
                 payload = {
                     "game_name": game_name,
-                    "game_url": url
+                    "game_url": cleaned_url
                 }
                 success, _ = await _sb_upsert("game_logos", payload, on_conflict="game_name")
                 
                 if success:
-                    # Clear cache immediately
                     await redis_client.delete(f"game_logo:{game_name.lower()}")
                     added += 1
-                    print(f"✅ Added: {game_name}")
+                    print(f"✅ Added: {game_name} → {cleaned_url}")
                 else:
                     duplicates += 1
                     duplicate_list.append(game_name)
 
             i = j + 1
         else:
-            i += 1  # skip invalid line
+            i += 1
 
-    # ── Beautiful final message (Netflix upload style) ──
+    # Result message...
     if added > 0 or duplicates > 0:
         result = (
             f"✅ <b>Bulk Game Logo Import Complete!</b>\n"
@@ -615,21 +656,13 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
         )
 
         if duplicate_list:
-            result += "<b>📋 Duplicate games (not overwritten):</b>\n"
-            for name in duplicate_list:
-                result += f"• <code>{html.escape(name)}</code>\n"
-            result += "\n"
+            result += "<b>📋 Duplicate games:</b>\n" + "\n".join(f"• <code>{html.escape(name)}</code>" for name in duplicate_list[:10]) + "\n\n"
 
-        result += "🧹 All Redis caches cleared — new logos are now live in the forest! 🌲"
+        result += "🧹 All Redis caches cleared — new logos are now live! 🌲"
 
         await tg_app.bot.send_message(chat_id, result, parse_mode="HTML")
     else:
-        await tg_app.bot.send_message(
-            chat_id,
-            "❌ No valid game logos were found in your message.\n\n"
-            "Please check the format and try again. 🌿",
-            parse_mode="HTML"
-        )
+        await tg_app.bot.send_message(chat_id, "❌ No valid game logos found.", parse_mode="HTML")
 
 # ──────────────────────────────────────────────
 # GAME LOGOS INTEGRATION — Prioritizes games[] array (as requested)
