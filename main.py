@@ -665,28 +665,33 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
         await tg_app.bot.send_message(chat_id, "❌ No valid game logos found.", parse_mode="HTML")
 
 async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str = "logos.txt"):
-    """Process game logo upload from .txt file"""
+    """Process game logo upload from .txt file with nice progress"""
     lines = [line.strip() for line in content.splitlines() 
              if line.strip() and not line.strip().startswith('#')]
 
+    total_entries = len(lines) // 2
     added = 0
     duplicates = 0
     duplicate_list = []
     errors = []
     i = 0
 
+    # Initial nice loading message
     loading = await tg_app.bot.send_message(
         chat_id, 
-        f"🌿 Processing <code>{filename}</code>...\n"
-        f"Found {len(lines)//2} potential logo entries...",
+        f"🌿 <b>Processing Game Logos</b>\n\n"
+        f"📄 <code>{filename}</code>\n"
+        f"🔍 Found <b>{total_entries}</b> potential entries...\n\n"
+        f"⏳ Starting import...",
         parse_mode="HTML"
     )
+
+    processed = 0
 
     while i < len(lines):
         game_name_raw = lines[i]
         game_name = game_name_raw.strip().strip('"\'')
         
-        # Find next URL
         url = None
         j = i + 1
         while j < len(lines):
@@ -696,6 +701,22 @@ async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str 
             j += 1
 
         if game_name and url:
+            processed += 1
+            percentage = int((processed / max(total_entries, 1)) * 100)
+
+            # Update progress every 8 entries (smooth but not too spammy)
+            if processed % 8 == 0 or processed == total_entries:
+                progress_bar = "█" * (percentage // 5) + "░" * (20 - percentage // 5)
+                await loading.edit_text(
+                    f"🌿 <b>Processing Game Logos</b>\n\n"
+                    f"📄 <code>{filename}</code>\n"
+                    f"📊 <b>{processed}/{total_entries}</b> entries • <b>{percentage}%</b>\n"
+                    f"[{progress_bar}]\n\n"
+                    f"✅ Added: <b>{added}</b>\n"
+                    f"⚠️ Duplicates: <b>{duplicates}</b>",
+                    parse_mode="HTML"
+                )
+
             # Check duplicate
             existing = await _sb_get(
                 "game_logos", 
@@ -722,22 +743,22 @@ async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str 
         else:
             i += 1
 
-    # Final Result
+    # Final beautiful result
     result = f"✅ <b>Game Logo Import Complete!</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-    result += f"📄 File: <code>{filename}</code>\n"
-    result += f"🌱 Successfully added: <b>{added}</b> new logos\n"
-    result += f"⚠️ Duplicates skipped: <b>{duplicates}</b>\n"
+    result += f"📄 <b>File:</b> <code>{filename}</code>\n"
+    result += f"🌱 <b>Successfully added:</b> {added} new logos\n"
+    result += f"⚠️ <b>Duplicates skipped:</b> {duplicates}\n"
 
     if errors:
-        result += f"❌ Failed: {len(errors)}\n"
+        result += f"❌ <b>Failed:</b> {len(errors)}\n"
 
     if duplicate_list:
-        result += "\n<b>Duplicates:</b>\n" + "\n".join(f"• {html.escape(name)}" for name in duplicate_list[:20])
+        result += f"\n<b>Duplicates:</b>\n" + "\n".join(f"• {html.escape(name)}" for name in duplicate_list[:15])
 
-    result += "\n\n🧹 All caches cleared — logos are now live in the forest! 🌲"
+    result += "\n\n🧹 All Redis caches cleared — new logos are now live in the forest! 🌲"
 
     await loading.edit_text(result, parse_mode="HTML")
-
+    
 # ──────────────────────────────────────────────
 # GAME LOGOS INTEGRATION — Prioritizes games[] array (as requested)
 # ──────────────────────────────────────────────
@@ -2566,8 +2587,8 @@ async def handle_document(update: Update):
     
     # ── GAME LOGO TXT UPLOAD ──
     if chat_id == OWNER_ID:
-        waiting_logo = await redis_client.get(f"waiting_for_gamelogo:{chat_id}")
-        if waiting_logo:
+        waiting_gamelogo = await redis_client.get(f"waiting_for_gamelogo:{chat_id}")
+        if waiting_gamelogo and chat_id == OWNER_ID:
             await redis_client.delete(f"waiting_for_gamelogo:{chat_id}")
             
             document = message.document
@@ -2577,12 +2598,14 @@ async def handle_document(update: Update):
                     file_bytes = await file.download_as_bytearray()
                     content = file_bytes.decode("utf-8", errors="replace")
                     
-                    await handle_game_logo_txt_upload(chat_id, content, document.file_name)
+                    await handle_game_logo_txt_upload(chat_id, content, document.file_name or "logos.txt")
                     return
                 except Exception as e:
                     await message.reply_text(f"❌ Failed to process file: {e}")
                     return
-
+            else:
+                await message.reply_text("❌ Please send a **.txt** file for game logos.")
+                return
     # ── KEY UPLOAD: Owner only ──
     if chat_id != OWNER_ID:
         return
@@ -12431,21 +12454,24 @@ async def process_update(update_data: dict):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add game logos.")
             return
-        
-        await redis_client.setex(f"waiting_for_gamelogo:{chat_id}", 600, "1")  # 10 min timeout
+
+        body = raw[len("/addgamelogo"):].strip()
+
+        # OLD WAY: User pasted content directly after the command
+        if body:
+            await handle_add_game_logo(chat_id, raw)   # ← your existing function
+            return
+
+        # NEW WAY: No content = ask for .txt file
+        await redis_client.setex(f"waiting_for_gamelogo:{chat_id}", 600, "1")
         
         await tg_app.bot.send_message(
             chat_id,
-            "📤 <b>Game Logo TXT Upload</b>\n\n"
-            "Send me a <b>.txt</b> file now with this format:\n\n"
-            "<code>Game Name 1\n"
-            "https://image-url-1.jpg\n\n"
-            "Game Name 2\n"
-            "https://image-url-2.jpg</code>\n\n"
-            "• One game name + URL per pair\n"
-            "• Blank lines are ignored\n"
-            "• Lines starting with # are comments\n"
-            "• You can upload 100+ at once",
+            "📤 <b>Send Game Logos</b>\n\n"
+            "Choose your preferred method:\n\n"
+            "• **Paste directly** (old way) — just type again with content\n"
+            "• **Send .txt file** (recommended for many games)\n\n"
+            "Send your <b>.txt</b> file now or paste using the old format.",
             parse_mode="HTML"
         )
         return
