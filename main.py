@@ -98,7 +98,10 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         text += f"   📧 <code>{html.escape(short_email)}</code>\n\n"
 
         buttons.append([
-            InlineKeyboardButton(f"✅ Claim Account {i}", callback_data=f"claim_steam|{acc['email']}")
+            InlineKeyboardButton(
+                f"✅ Claim Account {i}", 
+                callback_data=f"claim_steam|{acc['email']}|{group_key}"
+            )
         ])
 
     # FIXED: Proper back button
@@ -112,6 +115,33 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
     except Exception:
         await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+
+# ──────────────────────────────────────────────
+# NEW: Get the exact display name the user saw during search
+# ──────────────────────────────────────────────
+async def get_display_name_for_claim(chat_id: int, group_key: str = None, fallback_email: str = None) -> str:
+    """Returns the nice display name shown in search (especially important for bundles)"""
+    if group_key:
+        raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
+        if raw:
+            try:
+                data = json.loads(raw)
+                game_name = data.get("game_name")
+                if game_name:
+                    return game_name
+            except Exception:
+                pass
+
+    # Fallback: fetch from database
+    if fallback_email:
+        acc_data = await _sb_get(
+            "steamCredentials",
+            **{"email": f"eq.{fallback_email}", "select": "game_name"}
+        ) or []
+        if acc_data:
+            return acc_data[0].get("game_name", "Steam Account")
+
+    return "Steam Account"
 
 # ──────────────────────────────────────────────
 # NEW STEAM SEARCH + COOLDOWN SYSTEM
@@ -827,7 +857,7 @@ async def get_steam_claims_today(chat_id: int) -> int:
     return len(data)
 
 async def claim_steam_account(
-    chat_id: int, first_name: str, account_email: str, game_name: str
+    chat_id: int, first_name: str, account_email: str, game_name: str = None
 ) -> bool:
     # Check if already claimed by this user
     existing_claim = await _sb_get(
@@ -847,14 +877,13 @@ async def claim_steam_account(
         "chat_id": chat_id,
         "first_name": first_name,
         "account_email": account_email,
-        "game_name": game_name,
+        "game_name": game_name or "Steam Account",   # ← now uses nice name
     })
 
     if success:
-        # ── Set a persistent Redis marker so feedback reminder knows claim exists ──
         await redis_client.setex(
             f"steam_claimed:{chat_id}:{account_email}",
-            90000,  # ~25 hours — longer than any feedback window
+            90000,
             "1"
         )
         asyncio.create_task(
@@ -10800,16 +10829,23 @@ async def handle_callback(update: Update):
             return
 
     elif data.startswith("claim_steam|"):
-        _, account_email = data.split("|")
-        
+        parts = data.split("|")
+        account_email = parts[1]
+        group_key = parts[2] if len(parts) > 2 else None
+
+        # === NEW: Get the exact display name user saw in search ===
+        display_name = await get_display_name_for_claim(
+            chat_id=chat_id,
+            group_key=group_key,
+            fallback_email=account_email
+        )
+
         # ── CHECK 10-MINUTE EXPIRATION ──
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
-            # Expired → NOW deduct attempt
             current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
             await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
             remaining = 3 - (current + 1)
-
             expired_text = (
                 f"⏳ <b>This search has expired.</b>\n\n"
                 f"The results are no longer valid.\n"
@@ -10818,21 +10854,16 @@ async def handle_callback(update: Update):
                 f"{make_attempts_bar(remaining)}\n\n"
                 f"🌲 You can search again right now!"
             )
-
             buttons = [
                 [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
                 [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
             ]
-
             await tg_app.bot.send_message(
-                chat_id,
-                expired_text,
-                parse_mode="HTML",
+                chat_id, expired_text, parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
             return
 
-        # ── VALID CLAIM (still within 10 minutes) ──
         await query.answer("🔑 Claiming account...", show_alert=False)
 
         profile = await get_user_profile(chat_id)
@@ -10850,19 +10881,18 @@ async def handle_callback(update: Update):
             return
 
         acc = acc_data[0]
-        game_name = acc.get("game_name") or "Steam Account"
         password = acc.get("password", "")
         steam_id = acc.get("steam_id", "")
         account_image_url = acc.get("image_url")
         games_list = acc.get("games") or []
 
-        logo_url = await get_game_logo_url(game_name, games_list)
+        logo_url = await get_game_logo_url(acc.get("game_name"), games_list)
         final_image_url = logo_url or account_image_url
 
-        success = await claim_steam_account(chat_id, first_name, account_email, game_name)
+        # Use the nice display name we got from search
+        success = await claim_steam_account(chat_id, first_name, account_email, display_name)
 
         if success:
-            # Deduct attempt only when they actually claim
             current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
             await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current_attempts + 1))
 
@@ -10883,8 +10913,9 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
+            # === FINAL SUCCESS MESSAGE WITH CORRECT NAME ===
             caption = (
-                f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
+                f"🎮 <b>{html.escape(display_name)} — Claimed!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
                 f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
                 f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
@@ -10904,7 +10935,7 @@ async def handle_callback(update: Update):
             else:
                 await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
 
-            asyncio.create_task(send_delayed_feedback_buttons(chat_id, account_email, game_name, delay=7200))
+            asyncio.create_task(send_delayed_feedback_buttons(chat_id, account_email, display_name, delay=7200))
 
             action_xp, _ = await add_xp(chat_id, first_name, "steam_claim", xp_override=20)
             if action_xp:
