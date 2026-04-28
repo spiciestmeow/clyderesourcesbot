@@ -11503,7 +11503,7 @@ async def process_update(update_data: dict):
         "/remove_achievement",
     ))
 
-    # ── FINAL SMART SEARCH RESULT LOGIC (Clean + Beautiful Bundle Display) ──
+    # ── FINAL SMART SEARCH RESULT LOGIC (Combined game_name + games[] + Clean Display) ──
     if await redis_client.get(f"steam_searching:{chat_id}"):
         if not is_real_command:
             await redis_client.delete(f"steam_searching:{chat_id}")
@@ -11517,12 +11517,14 @@ async def process_update(update_data: dict):
                 }
             ) or []
 
-            # Match in game_name OR games[] array
-            matching_accounts = [
-                acc for acc in accounts
-                if term in str(acc.get("game_name", "")).lower()
-                or any(term in str(g).lower() for g in (acc.get("games") or []))
-            ]
+            # Search in BOTH game_name AND games[] array
+            matching_accounts = []
+            for acc in accounts:
+                game_name = str(acc.get("game_name", "")).lower()
+                games_list = [str(g).lower() for g in (acc.get("games") or []) if str(g).strip()]
+                
+                if term in game_name or any(term in g for g in games_list):
+                    matching_accounts.append(acc)
 
             if not matching_accounts:
                 await tg_app.bot.send_message(chat_id, f"🌫️ No accounts found for \"<b>{html.escape(term)}</b>\".", parse_mode="HTML")
@@ -11531,9 +11533,11 @@ async def process_update(update_data: dict):
             from collections import defaultdict
             grouped = defaultdict(list)
             for acc in matching_accounts:
-                # Smart display name: Use searched term for bundles, original game_name for normal accounts
                 if is_bundle_account(acc):
-                    display_name = raw.title()
+                    # Smart display: Prefer the actual searched game name
+                    games_list = [str(g).strip() for g in (acc.get("games") or []) if str(g).strip()]
+                    best_match = next((g for g in games_list if term in g.lower()), None)
+                    display_name = best_match or raw.title()
                 else:
                     display_name = (acc.get("game_name") or "Steam Account").strip()
                 grouped[display_name].append(acc)
@@ -11546,7 +11550,6 @@ async def process_update(update_data: dict):
                 has_bundle = any(is_bundle_account(acc) for acc in acc_list)
 
                 if count == 1 and not has_bundle:
-                    # Normal single account
                     acc = acc_list[0]
                     text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account available\n\n"
                     buttons.append([InlineKeyboardButton(
@@ -11554,13 +11557,12 @@ async def process_update(update_data: dict):
                         callback_data=f"claim_steam|{acc['email']}"
                     )])
                 else:
-                    # Multiple accounts or bundle
                     label = f"🎮 <b>{html.escape(display_name)}</b>"
                     if has_bundle:
                         total_games = len([g for g in (acc_list[0].get("games") or []) if str(g).strip()])
                         label += f" ← <b>Big Bundle ({total_games} games total)</b>"
                         
-                        # Smart "Also includes" line
+                        # Smart "Also includes"
                         games_list = acc_list[0].get("games") or []
                         example_games = [g for g in games_list if str(g).strip()][:4]
                         if example_games:
@@ -11588,7 +11590,7 @@ async def process_update(update_data: dict):
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
             return
-
+        
     # ── Command dispatch ──
     if text.startswith("/start"):
         # ── Fetch profile first so we know if user is new or existing
