@@ -664,6 +664,80 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
     else:
         await tg_app.bot.send_message(chat_id, "❌ No valid game logos found.", parse_mode="HTML")
 
+async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str = "logos.txt"):
+    """Process game logo upload from .txt file"""
+    lines = [line.strip() for line in content.splitlines() 
+             if line.strip() and not line.strip().startswith('#')]
+
+    added = 0
+    duplicates = 0
+    duplicate_list = []
+    errors = []
+    i = 0
+
+    loading = await tg_app.bot.send_message(
+        chat_id, 
+        f"🌿 Processing <code>{filename}</code>...\n"
+        f"Found {len(lines)//2} potential logo entries...",
+        parse_mode="HTML"
+    )
+
+    while i < len(lines):
+        game_name_raw = lines[i]
+        game_name = game_name_raw.strip().strip('"\'')
+        
+        # Find next URL
+        url = None
+        j = i + 1
+        while j < len(lines):
+            if lines[j].startswith(('http://', 'https://')):
+                url = clean_image_url(lines[j])
+                break
+            j += 1
+
+        if game_name and url:
+            # Check duplicate
+            existing = await _sb_get(
+                "game_logos", 
+                **{"game_name": f"eq.{game_name}", "select": "game_name", "limit": 1}
+            )
+
+            if existing:
+                duplicates += 1
+                duplicate_list.append(game_name)
+            else:
+                payload = {
+                    "game_name": game_name,
+                    "game_url": url
+                }
+                success, _ = await _sb_upsert("game_logos", payload, on_conflict="game_name")
+                
+                if success:
+                    await redis_client.delete(f"game_logo:{game_name.lower()}")
+                    added += 1
+                else:
+                    errors.append(game_name)
+            
+            i = j + 1
+        else:
+            i += 1
+
+    # Final Result
+    result = f"✅ <b>Game Logo Import Complete!</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    result += f"📄 File: <code>{filename}</code>\n"
+    result += f"🌱 Successfully added: <b>{added}</b> new logos\n"
+    result += f"⚠️ Duplicates skipped: <b>{duplicates}</b>\n"
+
+    if errors:
+        result += f"❌ Failed: {len(errors)}\n"
+
+    if duplicate_list:
+        result += "\n<b>Duplicates:</b>\n" + "\n".join(f"• {html.escape(name)}" for name in duplicate_list[:20])
+
+    result += "\n\n🧹 All caches cleared — logos are now live in the forest! 🌲"
+
+    await loading.edit_text(result, parse_mode="HTML")
+
 # ──────────────────────────────────────────────
 # GAME LOGOS INTEGRATION — Prioritizes games[] array (as requested)
 # ──────────────────────────────────────────────
@@ -2490,6 +2564,25 @@ async def handle_document(update: Update):
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
         return
     
+    # ── GAME LOGO TXT UPLOAD ──
+    if chat_id == OWNER_ID:
+        waiting_logo = await redis_client.get(f"waiting_for_gamelogo:{chat_id}")
+        if waiting_logo:
+            await redis_client.delete(f"waiting_for_gamelogo:{chat_id}")
+            
+            document = message.document
+            if document and (document.file_name or "").lower().endswith(".txt"):
+                try:
+                    file = await document.get_file()
+                    file_bytes = await file.download_as_bytearray()
+                    content = file_bytes.decode("utf-8", errors="replace")
+                    
+                    await handle_game_logo_txt_upload(chat_id, content, document.file_name)
+                    return
+                except Exception as e:
+                    await message.reply_text(f"❌ Failed to process file: {e}")
+                    return
+
     # ── KEY UPLOAD: Owner only ──
     if chat_id != OWNER_ID:
         return
@@ -2680,6 +2773,7 @@ async def handle_document(update: Update):
             f"✨ Successfully imported <b>{imported}</b> key(s) from <code>{filename}</code>",
             parse_mode="HTML"
         )
+
 # ──────────────────────────────────────────────
 # MAINTENANCE_MODE CONFIG
 # ──────────────────────────────────────────────
@@ -12334,7 +12428,26 @@ async def process_update(update_data: dict):
         await handle_clear(chat_id, msg_id, first_name)
         
     elif text.startswith("/addgamelogo"):
-        await handle_add_game_logo(chat_id, raw)
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add game logos.")
+            return
+        
+        await redis_client.setex(f"waiting_for_gamelogo:{chat_id}", 600, "1")  # 10 min timeout
+        
+        await tg_app.bot.send_message(
+            chat_id,
+            "📤 <b>Game Logo TXT Upload</b>\n\n"
+            "Send me a <b>.txt</b> file now with this format:\n\n"
+            "<code>Game Name 1\n"
+            "https://image-url-1.jpg\n\n"
+            "Game Name 2\n"
+            "https://image-url-2.jpg</code>\n\n"
+            "• One game name + URL per pair\n"
+            "• Blank lines are ignored\n"
+            "• Lines starting with # are comments\n"
+            "• You can upload 100+ at once",
+            parse_mode="HTML"
+        )
         return
         
     elif text.startswith("/feedback"):
