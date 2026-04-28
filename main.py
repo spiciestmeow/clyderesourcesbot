@@ -10757,10 +10757,32 @@ async def handle_callback(update: Update):
     elif data.startswith("claim_steam|"):
         _, account_email = data.split("|")
         
-        # Verify claim is still valid
+        # Verify claim is still valid (10-minute expiration)
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
-            await query.answer("⏳ This search has expired. Search again.", show_alert=True)
+            # ── EXPIRED MESSAGE (beautiful + shows remaining attempts)
+            remaining = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+
+            expired_text = (
+                f"⏳ <b>This search has expired.</b>\n\n"
+                f"The results are no longer valid.\n"
+                f"(10 minutes have passed without claiming)\n\n"
+                f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                f"{make_attempts_bar(remaining)}\n\n"
+                f"🌲 You can search again right now!"
+            )
+
+            buttons = [
+                [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+            ]
+
+            await tg_app.bot.send_message(
+                chat_id,
+                expired_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
             return
 
         await query.answer("🔑 Claiming account...", show_alert=False)
@@ -10793,7 +10815,6 @@ async def handle_callback(update: Update):
 
         if success:
             # NO global Unavailable — other users can still see and claim this account
-            # Only this user will be filtered out in future searches (CHANGE 2)
 
             # DECREMENT ATTEMPT ONLY WHEN CLAIM IS SUCCESSFUL
             current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
