@@ -10642,7 +10642,8 @@ async def handle_callback(update: Update):
                 "• Use the exact game title\n"
                 "• Short names work too (e.g. <code>batman</code>)\n"
                 "• Partial names are supported\n\n"
-                "⏳ Results expire in <b>10 minutes</b>\n"
+                "⏰ <b>You have 5 minutes</b> to type the game name\n"
+                "📌 Results expire in <b>10 minutes</b> after search\n"
                 "⚠️ Expired without claiming = attempt used\n\n"
                 "✏️ <b>Type the game name now:</b> 🍃"
             )
@@ -10685,7 +10686,8 @@ async def handle_callback(update: Update):
                 "• Use the exact game title\n"
                 "• Short names work too (e.g. <code>batman</code>)\n"
                 "• Partial names are supported\n\n"
-                "⏳ Results expire in <b>10 minutes</b>\n"
+                "⏰ <b>You have 5 minutes</b> to type the game name\n"
+                "📌 Results expire in <b>10 minutes</b> after search\n"
                 "⚠️ Expired without claiming = attempt used\n\n"
                 "✏️ <b>Type the game name now:</b> 🍃"
             )
