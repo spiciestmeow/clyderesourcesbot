@@ -5570,7 +5570,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
     if extra_games:
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
-        extra_line = f"\n<><b>🎮 Also includes:</b> <i>{preview}{more}</i>"
+        extra_line = f"\n<b>🎮 Also includes:</b> <i>{preview}{more}</i>"
 
     # ── Fetch claim stats for this account ──
     claim_stats = await _sb_get(
@@ -5642,9 +5642,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"🔑 Password:\n"
         f"<tg-spoiler><code>{html.escape(password)}</code></tg-spoiler>\n\n"
         f"{sid_line}"
-        f"<blockquote>"
-        f"{extra_line}"
-        f"</blockquote>\n\n"
+        f"{extra_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
         f"     {ago}\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
