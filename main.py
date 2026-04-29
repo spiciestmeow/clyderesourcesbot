@@ -5576,14 +5576,14 @@ async def show_steam_claim_detail(
     if steam_id:
         steam_id_line = (
             f"🆔 <b>Steam ID:</b>\n"
-            f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n\n"
+            f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n"
         )
 
     extra_line = ""
     if extra_games:
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
-        extra_line = f"<b>🎮 Also includes:</b> <i>{preview}{more}</i>\n\n"
+        extra_line = f"<b>🎮 Also includes:</b> <i>{preview}{more}</i>\n"
 
     # ── Fetch claim stats for this account ──
     claim_stats = await _sb_get(
@@ -5648,7 +5648,7 @@ async def show_steam_claim_detail(
         f"🔑 Password:\n"
         f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
         f"{steam_id_line}"
-        f"{extra_line}\n\n"
+        f"{extra_line}"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
         f"     {ago}\n\n"
     )
