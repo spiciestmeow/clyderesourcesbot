@@ -793,18 +793,32 @@ async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str 
 # ──────────────────────────────────────────────
 # GAME LOGOS INTEGRATION — Prioritizes games[] array (as requested)
 # ──────────────────────────────────────────────
-async def get_game_logo_url(game_name: str, games_list: list = None) -> str | None:
+# ──────────────────────────────────────────────
+# GAME LOGOS INTEGRATION — Prioritizes games[] array + preferred display name
+# ──────────────────────────────────────────────
+async def get_game_logo_url(
+    game_name: str = None, 
+    games_list: list = None, 
+    preferred_name: str = None   # ← NEW: highest priority (what user actually saw)
+) -> str | None:
     """Returns the best logo URL from game_logos table.
-    Prioritizes the games[] text[] array (most accounts have multiple games).
-    Falls back to single game_name, then cached Redis (1 hour).
+    
+    Priority order:
+    1. preferred_name (the exact name shown to the user during search — most important for bundles)
+    2. game_name column
+    3. All entries in the games[] text[] array
     """
     candidates = []
 
-    # 1. Primary game_name (always try first)
+    # 1. Highest priority: the name the user actually saw in search results
+    if preferred_name and str(preferred_name).strip():
+        candidates.append(str(preferred_name).strip())
+
+    # 2. Original game_name column (fallback)
     if game_name and str(game_name).strip():
         candidates.append(str(game_name).strip())
 
-    # 2. All games from the games[] array
+    # 3. All games from the games[] array (for bundles)
     if games_list and isinstance(games_list, list):
         for g in games_list:
             if g and isinstance(g, str) and str(g).strip():
@@ -813,8 +827,17 @@ async def get_game_logo_url(game_name: str, games_list: list = None) -> str | No
     if not candidates:
         return None
 
-    # Try each candidate until we find a logo
+    # Remove exact duplicates while preserving order
+    seen = set()
+    unique_candidates = []
     for name in candidates:
+        normalized = name.strip().lower()
+        if normalized not in seen:
+            seen.add(normalized)
+            unique_candidates.append(name.strip())
+
+    # Try each candidate until we find a logo
+    for name in unique_candidates:
         normalized = name.strip()
         cache_key = f"game_logo:{normalized.lower()}"
 
@@ -823,7 +846,7 @@ async def get_game_logo_url(game_name: str, games_list: list = None) -> str | No
         if cached:
             if cached != "null":
                 return cached
-            continue  # None was cached → try next candidate
+            continue
 
         # Query game_logos table (exact match)
         data = await _sb_get(
@@ -848,6 +871,7 @@ async def get_game_logo_url(game_name: str, games_list: list = None) -> str | No
             return logo_url
 
     return None
+
 # ══════════════════════════════════════════════════════════════════════════════
 # STEAM AUTOMATED DISTRIBUTION SYSTEM
 # ══════════════════════════════════════════════════════════════════════════════
@@ -5546,7 +5570,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
     if extra_games:
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
-        extra_line = f"\n🎮 Also includes: <i>{preview}{more}</i>"
+        extra_line = f"\n<><b>🎮 Also includes:</b> <i>{preview}{more}</i>"
 
     # ── Fetch claim stats for this account ──
     claim_stats = await _sb_get(
@@ -5614,11 +5638,13 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📧 Email:\n"
-        f"<tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
+        f"<tg-spoiler><code>{html.escape(email)}</code></tg-spoiler>\n\n"
         f"🔑 Password:\n"
-        f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
+        f"<tg-spoiler><code>{html.escape(password)}</code></tg-spoiler>\n\n"
         f"{sid_line}"
-        f"{extra_line}\n\n"
+        f"<blockquote">"
+        f"{extra_line}"
+        f"</blockquote>\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
         f"     {ago}\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -11203,7 +11229,12 @@ async def handle_callback(update: Update):
         account_image_url = acc.get("image_url")
         games_list = acc.get("games") or []
 
-        logo_url = await get_game_logo_url(acc.get("game_name"), games_list)
+        logo_url = await get_game_logo_url(
+            game_name=acc.get("game_name"),
+            games_list=games_list,
+            preferred_name=display_name
+        )
+        
         final_image_url = logo_url or account_image_url
 
         # Use the nice display name we got from search
@@ -11235,11 +11266,16 @@ async def handle_callback(update: Update):
                 f"🎮 <b>{html.escape(display_name)} — Successfully Claimed!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
                 f"📧 <b>Login Email:</b>\n"
-                f"<tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n\n"
+                f"<tg-spoiler><code>{html.escape(account_email)}</code></tg-spoiler>\n\n"
                 f"🔑 <b>Password:</b>\n"
-                f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
-                f"{f'🆔 <b>Steam ID:</b>\n<code>{steam_id}</code>\n\n' if steam_id else ''}"
-                # ── Beautiful Blockquote for Important Notice ──
+                f"<tg-spoiler><code>{html.escape(password)}</code></tg-spoiler>\n\n"
+            )
+            if steam_id:
+                caption += (
+                    f"🆔 <b>Steam ID:</b>\n"
+                    f"<tg-spoiler><code>{steam_id}</code></tg-spoiler>\n\n"
+                )
+            caption += (
                 f"<blockquote expandable=\"true\">"
                 f"⚠️ <b>Important Notice</b>\n\n"
                 f"<i>Steam may show a warning on first login — this is completely normal.</i>\n\n"
