@@ -5576,14 +5576,16 @@ async def show_steam_claim_detail(
     if steam_id:
         steam_id_line = (
             f"🆔 <b>Steam ID:</b>\n"
-            f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n"
+            f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n\n"
         )
 
+    # ── Extra Games (Bundle): Only show when it's a bundle account (same clean style as Steam ID) ──
     extra_line = ""
-    if extra_games:
+    if extra_games and len(extra_games) > 0:
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
-        extra_line = f"<b>🎮 Also includes:</b> <i>{preview}{more}</i>\n"
+        extra_line = f"<b>🎮 Also includes:</b> <i>{preview}{more}</i>\n\n"
+
 
     # ── Fetch claim stats for this account ──
     claim_stats = await _sb_get(
