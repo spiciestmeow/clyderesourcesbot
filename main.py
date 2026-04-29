@@ -156,7 +156,7 @@ def get_steam_cooldown_hours(level: int) -> int:
     level = min(max(int(level), 1), 10)
     return STEAM_COOLDOWN_HOURS.get(level, 4)
 
-def get_colored_progress_bar(percentage: int, width: int = 20) -> str:
+def get_colored_progress_bar(percentage: int, width: int = 10) -> str:
     """Beautiful color-coded progress bar: empty → red → yellow → green"""
     if percentage == 0:
         return "⬛" * width + f" <b>0%</b> ⚫"
@@ -12541,7 +12541,7 @@ async def process_update(update_data: dict):
             return
         
         parts = text.split()
-        if len(parts) < 2:
+        if len(parts) <b 2:
             await tg_app.bot.send_message(
                 chat_id,
                 "🔧 <b>Usage:</b> <code>/testdaily &lt;user_id&gt;</code>\n\n"
@@ -12598,8 +12598,8 @@ async def process_update(update_data: dict):
             chat_id,
             "📤 <b>Send Game Logos</b>\n\n"
             "Choose your preferred method:\n\n"
-            "• **Paste directly** (old way) — just type again with content\n"
-            "• **Send .txt file** (recommended for many games)\n\n"
+            "• <b>Paste directly</b> (old way) — just type again with content\n"
+            "• <b>Send .txt file</b> (recommended for many games)\n\n"
             "Send your <b>.txt</b> file now or paste using the old format.",
             parse_mode="HTML"
         )
