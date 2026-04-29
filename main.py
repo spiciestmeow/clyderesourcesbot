@@ -86,16 +86,35 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
 
-    text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
-    buttons = []
+    # ── HERO IMAGE (Priority: Game Logo → Account Image) ──
+    hero_image = await get_game_logo_url(
+        game_name=game_name,
+        preferred_name=game_name   # This is what the user actually saw in search
+    )
 
+    # Fallback to Steam header image if no game logo exists
+    if not hero_image and accounts:
+        raw_image = accounts[0].get("image_url")
+        if raw_image:
+            hero_image = clean_image_url(raw_image)
+
+    # ── BUILD RICH CAPTION ──
+    text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
+
+    buttons = []
     for i, acc in enumerate(accounts, 1):
         email = acc.get("email", "")
-        short_email = email[:15] + "..." if len(email) > 15 else email
+        short_email = email[:18] + "..." if len(email) > 18 else email
         bundle_note = " ← <b>Big Bundle</b>" if is_bundle_account(acc) else ""
+        steam_id = str(acc.get("steam_id", "")).strip()
 
         text += f"{i}️⃣ <b>Account {i}</b>{bundle_note}\n"
-        text += f"   📧 <code>{html.escape(short_email)}</code>\n\n"
+        text += f"   📧 <code>{html.escape(short_email)}</code>\n"
+        
+        if steam_id:
+            text += f"   👤 <code>{steam_id[-8:]}</code>  <i>(Steam ID)</i>\n"
+        
+        text += "\n"
 
         buttons.append([
             InlineKeyboardButton(
@@ -104,17 +123,45 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             )
         ])
 
-    # FIXED: Proper back button
+    # Back buttons (unchanged)
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
+    markup = InlineKeyboardMarkup(buttons)
+
+    # ── SEND WITH HERO IMAGE ──
     try:
+        # If this came from a callback, clean up the old message first
         if query_obj and query_obj.message:
-            await query_obj.message.edit_text(text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+            try:
+                await query_obj.message.delete()
+            except Exception:
+                pass  # message might already be deleted
+
+        if hero_image:
+            await tg_app.bot.send_photo(
+                chat_id=chat_id,
+                photo=hero_image,
+                caption=text.strip(),
+                parse_mode="HTML",
+                reply_markup=markup
+            )
         else:
-            await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+            # Fallback to text-only (rare case)
+            await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text=text.strip(),
+                parse_mode="HTML",
+                reply_markup=markup
+            )
     except Exception:
-        await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        # Ultimate safety net
+        await tg_app.bot.send_message(
+            chat_id=chat_id,
+            text=text.strip(),
+            parse_mode="HTML",
+            reply_markup=markup
+        )
 
 # ──────────────────────────────────────────────
 # NEW: Get the exact display name the user saw during search
