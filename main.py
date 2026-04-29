@@ -12541,7 +12541,7 @@ async def process_update(update_data: dict):
             return
         
         parts = text.split()
-        if len(parts) <b 2:
+        if len(parts) < 2:
             await tg_app.bot.send_message(
                 chat_id,
                 "🔧 <b>Usage:</b> <code>/testdaily &lt;user_id&gt;</code>\n\n"
