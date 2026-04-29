@@ -501,6 +501,405 @@ async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
 
 async def get_forest_patrons() -> list:
     """Fetch visible patrons from Supabase (cached 1 hour)"""
+    cached = await redis_clien        ])
+
+    # FIXED: Proper back button
+    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
+    buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+
+    try:
+        if query_obj and query_obj.message:
+            await query_obj.message.edit_text(text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+    except Exception:
+        await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+
+# ──────────────────────────────────────────────
+# NEW: Get the exact display name the user saw during search
+# ──────────────────────────────────────────────
+async def get_display_name_for_claim(chat_id: int, group_key: str = None, fallback_email: str = None) -> str:
+    """Returns the nice display name shown in search (especially important for bundles)"""
+    if group_key:
+        raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
+        if raw:
+            try:
+                data = json.loads(raw)
+                game_name = data.get("game_name")
+                if game_name:
+                    return game_name
+            except Exception:
+                pass
+
+    # Fallback: fetch from database
+    if fallback_email:
+        acc_data = await _sb_get(
+            "steamCredentials",
+            **{"email": f"eq.{fallback_email}", "select": "game_name"}
+        ) or []
+        if acc_data:
+            return acc_data[0].get("game_name", "Steam Account")
+
+    return "Steam Account"
+
+# ──────────────────────────────────────────────
+# NEW STEAM SEARCH + COOLDOWN SYSTEM
+# ──────────────────────────────────────────────
+STEAM_COOLDOWN_HOURS = {
+    1: 29, 2: 27, 3: 25, 4: 23, 5: 20,
+    6: 18, 7: 15, 8: 12, 9:  8, 10:  4,
+}
+
+def get_steam_cooldown_hours(level: int) -> int:
+    """Returns cooldown in hours based on user level"""
+    level = min(max(int(level), 1), 10)
+    return STEAM_COOLDOWN_HOURS.get(level, 4)
+
+def get_colored_progress_bar(percentage: int, width: int = 10) -> str:
+    """Beautiful color-coded progress bar: empty → red → yellow → green"""
+    if percentage == 0:
+        return "⬛" * width + f" <b>0%</b> ⚫"
+
+    filled = int(width * percentage / 100)
+    empty = width - filled
+
+    if percentage < 40:
+        bar_color = "🟥"      # Red - early stage
+        indicator = "🔴"
+    elif percentage < 75:
+        bar_color = "🟨"      # Yellow - good progress
+        indicator = "🟡"
+    else:
+        bar_color = "🟩"      # Green - almost done
+        indicator = "🟢"
+
+    bar = bar_color * filled + "⬜" * empty
+    return f"{bar} <b>{percentage}%</b> {indicator}"
+
+def clean_image_url(url: str) -> str:
+    """Smart cleaner for any image URL (Steam + general)"""
+    if not url or not url.startswith(('http://', 'https://')):
+        return url.strip()
+
+    original_url = url.strip()
+
+    # 1. Remove query parameters (?...) and fragments (#...)
+    if "?" in url:
+        url = url.split("?", 1)[0]
+    if "#" in url:
+        url = url.split("#", 1)[0]
+
+    # 2. Special handling for Steam URLs (very common case)
+    if "steamstatic.com" in url or "steamusercontent.com" in url:
+        # Ensure it ends with /header.jpg
+        if "/header." in url and not url.lower().endswith(('.jpg', '.jpeg', '.png')):
+            url = url.split("/header.")[0] + "/header.jpg"
+        # Remove any extra parameters that might remain
+        if "?" in url:
+            url = url.split("?", 1)[0]
+
+    # 3. Final safety: If it doesn't look like an image, try to find last image extension
+    lower_url = url.lower()
+    image_exts = ('.jpg', '.jpeg', '.png', '.webp', '.gif')
+    
+    if not any(lower_url.endswith(ext) for ext in image_exts):
+        for ext in image_exts:
+            pos = lower_url.rfind(ext)
+            if pos != -1:
+                url = url[:pos + len(ext)]
+                break
+
+    # 4. Final cleanup
+    cleaned = url.strip()
+    
+    # Log if we changed something (helpful for debugging)
+    if cleaned != original_url:
+        print(f"🧹 Cleaned URL: {original_url[:100]}... → {cleaned}")
+
+    return cleaned
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
+# ══════════════════════════════════════════════════════════════════════════════
+BOT_READY = False  # global flag
+
+ACHIEVEMENTS_CACHE: dict = {}
+
+async def load_achievements_cache():
+    global ACHIEVEMENTS_CACHE
+    data = await _sb_get("achievements", select="*", order="id.asc") or []
+   
+    ACHIEVEMENTS_CACHE = {ach["code"]: ach for ach in data}
+   
+    try:
+        await redis_client.setex("achievements_cache", 3600, json.dumps(ACHIEVEMENTS_CACHE))
+    except Exception as e:
+        print(f"⚠️ Redis cache set failed: {e}")
+   
+    print(f"✅ Loaded {len(ACHIEVEMENTS_CACHE)} achievements. Codes: {list(ACHIEVEMENTS_CACHE.keys())[:15]}...")
+    return len(ACHIEVEMENTS_CACHE)
+
+async def get_user_achievements(chat_id: int) -> list:
+    """Get all achievements for a user (unlocked + in-progress)"""
+    data = await _sb_get(
+        "user_achievements",
+        **{"chat_id": f"eq.{chat_id}", "select": "*"}
+    ) or []
+    return data
+
+async def get_user_telegram_photo(chat_id: int) -> str | None:
+    """Fetch user's Telegram profile photo file_id"""
+    try:
+        photos = await tg_app.bot.get_user_profile_photos(user_id=chat_id, limit=1)
+        if not photos or photos.total_count == 0:
+            return None
+        return photos.photos[0][-1].file_id  # highest res, file_id doesn't expire
+    except Exception as e:
+        print(f"⚠️ Could not fetch profile photo for {chat_id}: {e}")
+        return None
+
+async def get_gif_enabled(chat_id: int) -> bool:
+    val = await redis_client.get(f"setting:gifs:{chat_id}")
+    return val != "0"  # default ON
+
+async def toggle_gif_setting(chat_id: int) -> bool:
+    current = await get_gif_enabled(chat_id)
+    new_state = not current
+    await redis_client.set(f"setting:gifs:{chat_id}", "1" if new_state else "0")
+    return new_state
+
+async def check_and_award_achievements(chat_id: int, first_name: str, action: str = None):
+    if not ACHIEVEMENTS_CACHE:
+        await load_achievements_cache()
+
+    profile = await get_user_profile(chat_id)
+    if not profile:
+        return
+
+    user_achs = await get_user_achievements(chat_id)
+    unlocked_codes = {u["achievement_code"] for u in user_achs if u.get("unlocked_at")}
+
+    awarded_count = 0
+    newly_awarded = [] 
+
+    pending_column_updates: dict = {}
+
+    for code, ach in ACHIEVEMENTS_CACHE.items():
+        if code in unlocked_codes:
+            continue
+        if ach.get("condition", {}).get("type") == "manual":
+            continue
+
+        condition = ach.get("condition", {})
+        cond_type = condition.get("type")
+        should_unlock = False
+
+        try:
+            if cond_type == "count":
+                field = condition.get("field")
+                required = condition.get("required", 0)
+
+                if field == "windows_views":
+                    current = (profile.get("windows_views", 0) or 0) + \
+                              (profile.get("office_views", 0) or 0)
+                else:
+                    current = profile.get(field, 0) or 0
+
+                if current >= required:
+                    should_unlock = True
+
+            elif cond_type == "streak" and action == "daily_bonus":
+                streak = await calculate_streak(chat_id)
+                if streak >= condition.get("days", 0):
+                    should_unlock = True
+
+            elif cond_type == "level":
+                if profile.get("level", 1) >= condition.get("required_level", 1):
+                    should_unlock = True
+
+            elif cond_type == "level_streak":
+                level_ok = profile.get("level", 1) >= condition.get("required_level", 1)
+                streak = await calculate_streak(chat_id)
+                streak_ok = streak >= condition.get("required_streak", 1)
+                if level_ok and streak_ok:
+                    should_unlock = True
+
+            elif cond_type == "reveal_netflix":
+                if profile.get("netflix_reveals", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "reveal_prime":
+                if profile.get("prime_reveals", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type in ("view_windows", "view_office"):
+                views = (profile.get("windows_views", 0) or 0) + \
+                        (profile.get("office_views", 0) or 0)
+                if views >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "wheel_spin":
+                if profile.get("total_wheel_spins", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "legendary_spin":
+                if profile.get("legendary_spins", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "steam_claim":
+                if profile.get("steam_claims_count", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "referral_total":
+                if profile.get("referral_count", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            elif cond_type == "daily_xp":
+                if profile.get("total_xp_earned", 0) >= condition.get("required", 0):
+                    should_unlock = True
+
+            if should_unlock:
+                progress_value = 100 if cond_type in ("level", "level_streak") else \
+                                profile.get(condition.get("field"), 0)
+
+                await _sb_post("user_achievements", {
+                    "chat_id": chat_id,
+                    "achievement_code": code,
+                    "progress": progress_value,
+                    "unlocked_at": datetime.now(pytz.utc).isoformat(),
+                    "tier": 4 if ach.get("rarity") in ["legendary", "mythic"] else 3
+                })
+
+                # ── BUG 2 FIX: accumulate instead of patching immediately ──
+                reward = ach.get("reward", {})
+                if reward.get("type") == "permanent_slot":
+                    col = reward.get("column")
+                    amount = reward.get("amount", 0)
+                    if col and amount:
+                        pending_column_updates[col] = \
+                            pending_column_updates.get(col, 0) + amount
+
+                newly_awarded.append(ach)
+                awarded_count += 1
+
+        except Exception as e:
+            print(f"🔴 Error checking achievement {code} for {chat_id}: {e}")
+
+    # ── BUG 2 FIX: apply all column bonuses in one pass after the loop ──
+    for col, total_amount in pending_column_updates.items():
+        current_val = profile.get(col) or 0
+        await _sb_patch(f"user_profiles?chat_id=eq.{chat_id}", {
+            col: current_val + total_amount
+        })
+        print(f"✅ Applied +{total_amount} to {col} for {chat_id} (was {current_val})")
+
+    # ── Send unlock notifications after all DB writes are done ──
+    for ach in newly_awarded:
+        await send_achievement_unlock(chat_id, ach, first_name)
+
+    if awarded_count > 0:
+        print(f"🎉 Awarded {awarded_count} new achievements to {chat_id}")
+
+async def handle_award_beta_guardian(chat_id: int, target_id: int):
+    """Manually award the Beta Guardian achievement"""
+    if chat_id != OWNER_ID:
+        await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can award this.")
+        return
+
+    # Check if already unlocked
+    user_achs = await get_user_achievements(target_id)
+    if any(u["achievement_code"] == "beta_guardian" and u.get("unlocked_at") for u in user_achs):
+        await tg_app.bot.send_message(chat_id, f"⚠️ User {target_id} already has <b>Beta Guardian</b>.")
+        return
+
+    # Award it
+    success = await _sb_post("user_achievements", {
+        "chat_id": target_id,
+        "achievement_code": "beta_guardian",
+        "progress": 100,
+        "unlocked_at": datetime.now(pytz.utc).isoformat(),
+        "tier": 4  # mythic tier
+    })
+
+    if success:
+        profile = await get_user_profile(target_id)
+        first_name = profile.get("first_name", "Wanderer") if profile else "Wanderer"
+
+        # Apply the permanent_slot reward for beta_guardian
+        ach_data = ACHIEVEMENTS_CACHE.get("beta_guardian", {})
+        reward = ach_data.get("reward", {})
+        if reward.get("type") == "permanent_slot":
+            col = reward.get("column")
+            amount = reward.get("amount", 0)
+            if col and amount:
+                await _sb_patch(f"user_profiles?chat_id=eq.{target_id}", {
+                    col: (profile.get(col) or 0) + amount
+                })
+
+        await tg_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Beta Guardian</b> successfully awarded to user `{target_id}` ({first_name})"
+        )
+
+        # Send epic unlock to the user
+        ach = ACHIEVEMENTS_CACHE.get("beta_guardian")
+        if ach:
+            await send_achievement_unlock(target_id, ach, first_name)
+    else:
+        await tg_app.bot.send_message(chat_id, "❌ Failed to award. Check logs.")
+
+async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
+    rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
+    emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
+
+    is_manual = ach.get("condition", {}).get("type") == "manual"
+    manual_note = "\n\n🌟 <i>This is a special manual achievement awarded by the Forest Caretaker.</i>" if is_manual else ""
+
+    # ── BUILD REWARD LINE ──
+    reward = ach.get("reward", {})
+    reward_line = ""
+    perk_text = ""
+    if reward.get("type") == "permanent_slot":
+        amount = reward.get("amount", 0)
+        column = reward.get("column", "")
+        column_labels = {
+            "all_slots_bonus":       "ALL daily slots",
+            "netflix_reveals_bonus": "Netflix reveals/day",
+            "prime_reveals_bonus":   "Prime reveals/day",
+            "crunchyroll_reveals_bonus": "Crunchyroll reveals/day",
+            "windows_views_bonus":   "Windows/Office views/day",
+            "daily_reveals_bonus":   "cookie reveals/day",
+        }
+        label = column_labels.get(column, column)
+        reward_line = f"\n\n🎁 <b>Perk Unlocked:</b> +{amount} {label} <b>permanently!</b>"
+        perk_text = f"🎁 Perk Unlocked: +{amount} {label} permanently!"
+
+    caption = (
+        f"{emoji} <b>A HIDDEN ACHIEVEMENT WAS REVEALED!</b>\n\n"
+        f"🏆 <b>{ach['name']}</b>\n"
+        f"{ach['description']}"
+        f"{reward_line}"
+        f"{manual_note}\n\n"
+        f"<i>The ancient forest spirits have recognized you, {html.escape(first_name)}!</i> 🌲✨"
+    )
+
+    msg = await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=ach.get("gif_url") or "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXB3ZW45ZTRzdmdlMmhreTczOXVzNjd3MWM5cDFpOGtzMXo1YWZwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JwcakAq5WbVPdOap7F/giphy.gif",
+        caption=caption,
+    )
+
+    await _remember(chat_id, msg.message_id)
+
+    # ── TEMP PERK REMINDER (3 seconds delay so it appears after the animation) ──
+    if perk_text:
+        async def _delayed_perk():
+            await asyncio.sleep(3)
+            await send_temporary_message(chat_id, perk_text, duration=3)
+        asyncio.create_task(_delayed_perk())
+
+async def get_forest_patrons() -> list:
+    """Fetch visible patrons from Supabase (cached 1 hour)"""
     cached = await redis_client.get("patrons_cache")
     if cached:
         return json.loads(cached)
