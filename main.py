@@ -5571,7 +5571,7 @@ async def show_steam_claim_detail(
     has_feedback = len(fb_data) > 0
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
-    sid_line = f"🆔 Steam ID: <tg-spoiler>{steam_id}</tg-spoiler>\n\n" if steam_id else ""
+    sid_line = f"🆔 Steam ID: <tg-spoiler>{steam_id}</tg-spoiler>\n\n"
 
     extra_line = ""
     if extra_games:
@@ -11344,7 +11344,7 @@ async def handle_callback(update: Update):
                 )
             caption += (
                 f"<blockquote expandable=\"true\">"
-                f"⚠️ <b>Important Notice</b>\n\n"
+                f"⚠️ <b>Important Notice</b>\n"
                 f"<i>Steam may show a warning on first login — this is completely normal.</i>\n\n"
                 f"• Do not change the password or email\n"
                 f"• Do not enable Steam Guard / 2FA on this account\n"
@@ -11353,6 +11353,11 @@ async def handle_callback(update: Update):
                 f"🕐 <b>We'll check back in 2 hours</b> to see if it worked. 🍃\n\n"
                 f"🌲 <i>Enjoy your game, wanderer!</i>"
             )
+
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
 
             if final_image_url:
                 try:
