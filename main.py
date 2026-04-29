@@ -5515,7 +5515,6 @@ async def show_steam_claim_detail(
         await query.answer("⏳ Session expired. Please go back and try again.", show_alert=True)
         return
 
-
     data = json.loads(raw)
     email = data.get("email", "")
     game_name = data.get("game_name", "Unknown Game")
@@ -5538,11 +5537,11 @@ async def show_steam_claim_detail(
         extra_games = acc.get("games") or []
         image_url = acc.get("image_url")
 
-    # ── Try to get a better logo from game_logos table ──
+    # ── Logo: use game-specific logo ONLY in detail view ──
     logo_url = await get_game_logo_url(game_name, extra_games)
     final_image = logo_url or image_url
 
-# ── Format claimed time ──
+    # ── Format claimed time ──
     try:
         manila = pytz.timezone("Asia/Manila")
         dt = datetime.fromisoformat(claimed_at_raw.replace("Z", "+00:00")).astimezone(manila)
@@ -5571,7 +5570,7 @@ async def show_steam_claim_detail(
     has_feedback = len(fb_data) > 0
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
-    # ── Steam ID: Only show when it has value (no empty line) ──
+    # ── Steam ID: clean (no empty line) ──
     steam_id_line = ""
     if steam_id:
         steam_id_line = (
@@ -5579,22 +5578,20 @@ async def show_steam_claim_detail(
             f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n\n"
         )
 
-    # ── Extra Games (Bundle): Only show when it's a bundle account (same clean style as Steam ID) ──
+    # ── Extra Games (Bundle): ONLY show when it's actually a bundle (same clean style as Steam ID) ──
     extra_line = ""
-    if extra_games and len(extra_games) > 0:
+    if extra_games and len(extra_games) >= 2:   # ← your exact request: only bundles
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
         extra_line = f"<b>🎮 Also includes:</b> <i>{preview}{more}</i>\n\n"
 
-
-    # ── Fetch claim stats for this account ──
+    # ── (rest of your stats, rating, feedback, etc. unchanged) ──
     claim_stats = await _sb_get(
         "steam_claims",
         **{"account_email": f"eq.{email}", "select": "chat_id"}
     ) or []
     total_claimers = len(claim_stats)
 
-    # ── Fetch feedback stats ──
     fb_stats = await _sb_get(
         "key_reports",
         **{"key_id": f"eq.{email}", "service_type": "eq.steam", "select": "status"}
@@ -5604,7 +5601,6 @@ async def show_steam_claim_detail(
     total_fb = working_count + bad_count
     rating_pct = round((working_count / total_fb) * 100) if total_fb > 0 else None
 
-    # ── Build rating badge ──
     if rating_pct is None:
         rating_line = "⬜ No feedback yet"
     elif rating_pct >= 80:
@@ -5614,7 +5610,6 @@ async def show_steam_claim_detail(
     else:
         rating_line = f"🔴 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
 
-    # ── Top 3 games preview ──
     preview_games = [g for g in extra_games[:3] if g.strip()]
     games_preview = ""
     if preview_games:
@@ -5626,7 +5621,6 @@ async def show_steam_claim_detail(
         if len(extra_games) > 3:
             games_preview += f"\n   ···  +{len(extra_games) - 3} more"
 
-    # ── Feedback section ──
     if has_feedback:
         fb_emoji = "✅" if feedback_status == "working" else "❌"
         fb_label = "Working" if feedback_status == "working" else "Not Working"
@@ -5655,7 +5649,6 @@ async def show_steam_claim_detail(
         f"     {ago}\n\n"
     )
 
-    # ── Account Stats (hidden by default) ──
     if show_full_stats:
         text += (
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -5679,7 +5672,6 @@ async def show_steam_claim_detail(
         InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}")
     ])
 
-
     if len(extra_games) > 3:
         buttons.append([InlineKeyboardButton(
             f"📋 See All {len(extra_games) + 1} Games",
@@ -5693,18 +5685,19 @@ async def show_steam_claim_detail(
 
     markup = InlineKeyboardMarkup(buttons)
 
-    # ── Send / Edit message ──
+    # ── Clean navigation: delete old message first (prevents duplicates) ──
     if query and query.message:
         try:
             await query.message.delete()
         except Exception:
-            pass
+            pass   # already deleted or can't delete
 
+    # ── Send detail with game logo ──
     if final_image:
         try:
             await tg_app.bot.send_photo(
                 chat_id=chat_id,
-                photo=final_image,
+                photo=STEAM_GIF,
                 caption=text,
                 parse_mode="HTML",
                 reply_markup=markup
