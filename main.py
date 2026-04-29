@@ -5571,7 +5571,13 @@ async def show_steam_claim_detail(
     has_feedback = len(fb_data) > 0
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
-    sid_line = f"🆔 Steam ID: <tg-spoiler>{steam_id}</tg-spoiler>\n\n"
+    # ── Steam ID: Only show when it has value (no empty line) ──
+    steam_id_line = ""
+    if steam_id:
+        steam_id_line = (
+            f"🆔 <b>Steam ID:</b>\n"
+            f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n\n"
+        )
 
     extra_line = ""
     if extra_games:
@@ -5641,7 +5647,7 @@ async def show_steam_claim_detail(
         f"<tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
         f"🔑 Password:\n"
         f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
-        f"{sid_line}"
+        f"{steam_id_line}"
         f"{extra_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
         f"     {ago}\n\n"
@@ -5679,7 +5685,7 @@ async def show_steam_claim_detail(
         )])
 
     buttons.append([InlineKeyboardButton(
-        "◀ Back to My Claims",
+        "↼ Back to My Claims",
         callback_data=f"myclaims_page_{back_page}"
     )])
 
