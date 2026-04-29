@@ -1018,39 +1018,45 @@ async def get_steam_claims_today(chat_id: int) -> int:
 async def claim_steam_account(
     chat_id: int, first_name: str, account_email: str, game_name: str = None
 ) -> bool:
-    # Check if already claimed by this user
-    existing_claim = await _sb_get(
-        "steam_claims",
-        **{
-            "chat_id": f"eq.{chat_id}",
-            "account_email": f"eq.{account_email}",
-            "select": "id",
-        }
-    ) or []
-
-    if existing_claim:
-        print(f"ℹ️ User {chat_id} tried to claim already-owned account: {account_email}")
+    # ── Atomic lock prevents concurrent claims ──
+    lock_key = f"claiming:{chat_id}:{account_email}"
+    acquired = await redis_client.set(lock_key, 1, ex=15, nx=True)
+    if not acquired:
         return False
-
-    success = await _sb_post("steam_claims", {
-        "chat_id": chat_id,
-        "first_name": first_name,
-        "account_email": account_email,
-        "game_name": game_name or "Steam Account",   # ← now uses nice name
-    })
-
-    if success:
-        await redis_client.setex(
-            f"steam_claimed:{chat_id}:{account_email}",
-            90000,
-            "1"
-        )
-        asyncio.create_task(
-            check_and_award_achievements(chat_id, first_name, action="steam_claim")
-        )
-
-    return success
     
+    try:
+        existing_claim = await _sb_get(
+            "steam_claims",
+            **{
+                "chat_id": f"eq.{chat_id}",
+                "account_email": f"eq.{account_email}",
+                "select": "id",
+            }
+        ) or []
+
+        if existing_claim:
+            return False
+
+        success = await _sb_post("steam_claims", {
+            "chat_id": chat_id,
+            "first_name": first_name,
+            "account_email": account_email,
+            "game_name": game_name or "Steam Account",
+        })
+
+        if success:
+            await redis_client.setex(
+                f"steam_claimed:{chat_id}:{account_email}",
+                90000, "1"
+            )
+            asyncio.create_task(
+                check_and_award_achievements(chat_id, first_name, action="steam_claim")
+            )
+
+        return success
+    finally:
+        await redis_client.delete(lock_key)
+
 # ──────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────
@@ -11137,6 +11143,13 @@ async def handle_callback(update: Update):
         account_email = parts[1]
         group_key = parts[2] if len(parts) > 2 else None
 
+        # ── ATOMIC LOCK: prevent double-tap duplicates ──
+        lock_key = f"claim_lock:{chat_id}:{account_email}"
+        acquired = await redis_client.set(lock_key, 1, ex=30, nx=True)
+        if not acquired:
+            await query.answer("⏳ Already processing your claim...", show_alert=True)
+            return
+
         # === NEW: Get the exact display name user saw in search ===
         display_name = await get_display_name_for_claim(
             chat_id=chat_id,
@@ -11246,7 +11259,7 @@ async def handle_callback(update: Update):
                 asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
         else:
-            await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
+            await query.answer("🌿 You already claimed this Steam account!", show_alert=False)
 
     # ── INVENTORY FILTERS ──
     elif data.startswith("vamt_filter_"):
