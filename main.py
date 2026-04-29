@@ -5027,6 +5027,43 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
+async def _auto_expire_steam_search_prompt(chat_id: int, prompt_message_id: int):
+    """Wait 5s — if user still hasn't typed, delete the prompt and send a polite follow-up."""
+    await asyncio.sleep(5)
+
+    # Check if the searching state is still active (user hasn't typed yet)
+    still_searching = await redis_client.get(f"steam_searching:{chat_id}")
+    if not still_searching:
+        return  # User already typed — don't interfere
+
+    # Clean up
+    await redis_client.delete(f"steam_searching:{chat_id}")
+    await redis_client.delete(f"steam_search_prompt:{chat_id}")
+
+    # Delete the prompt message
+    try:
+        await tg_app.bot.delete_message(chat_id, prompt_message_id)
+    except Exception:
+        pass
+
+    # Polite follow-up
+    attempts_used = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+    attempts_left = 3 - attempts_used
+
+    await tg_app.bot.send_message(
+        chat_id,
+        "⏳ <b>Search prompt expired!</b>\n\n"
+        "No game name was typed within 5 seconds,\n"
+        "so the search was cancelled automatically. 🌿\n\n"
+        f"🎯 You still have <b>{attempts_left}/3</b> attempts left.\n"
+        f"{make_attempts_bar(attempts_left)}",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+        ])
+    )
+
 async def send_delayed_feedback_buttons(
     chat_id: int,
     account_email: str,
@@ -11160,16 +11197,21 @@ async def handle_callback(update: Update):
 
             if query and query.message:
                 try:
-                    await query.message.edit_caption(caption=guide, parse_mode="HTML")
-                    await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
+                    if query and query.message:
+                        await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                        await redis_client.setex(f"steam_search_prompt:{chat_id}", 5, str(query.message.message_id))
+                        asyncio.create_task(_auto_expire_steam_search_prompt(chat_id, query.message.message_id))
                 except Exception:
-                    try:
-                        await query.message.edit_text(text=guide, parse_mode="HTML")
-                        await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
-                    except Exception:
-                        pass
+                        try:
+                            await query.message.edit_text(text=guide, parse_mode="HTML")
+                            await redis_client.setex(f"steam_search_prompt:{chat_id}", 5, str(query.message.message_id))
+                            asyncio.create_task(_auto_expire_steam_search_prompt(chat_id, query.message.message_id))
+                        except Exception:
+                            pass
             else:
-                await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+                sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+                await redis_client.setex(f"steam_search_prompt:{chat_id}", 5, str(sent.message_id))
+                asyncio.create_task(_auto_expire_steam_search_prompt(chat_id, sent.message_id))
             return
     
     # ── BACK TO RESULTS (after opening bundle)
@@ -11224,17 +11266,21 @@ async def handle_callback(update: Update):
 
             if query and query.message:
                 try:
-                    await query.message.edit_caption(caption=guide, parse_mode="HTML")
-                    await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
+                    if query and query.message:
+                        await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                        await redis_client.setex(f"steam_search_prompt:{chat_id}", 5, str(query.message.message_id))
+                        asyncio.create_task(_auto_expire_steam_search_prompt(chat_id, query.message.message_id))
                 except Exception:
-                    try:
-                        await query.message.edit_text(text=guide, parse_mode="HTML")
-                        await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(query.message.message_id))
-
-                    except Exception:
-                        await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+                        try:
+                            await query.message.edit_text(text=guide, parse_mode="HTML")
+                            await redis_client.setex(f"steam_search_prompt:{chat_id}", 5, str(query.message.message_id))
+                            asyncio.create_task(_auto_expire_steam_search_prompt(chat_id, query.message.message_id))
+                        except Exception:
+                            pass
             else:
-                await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+                sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+                await redis_client.setex(f"steam_search_prompt:{chat_id}", 5, str(sent.message_id))
+                asyncio.create_task(_auto_expire_steam_search_prompt(chat_id, sent.message_id))
             return
 
     elif data.startswith("claim_steam|"):
