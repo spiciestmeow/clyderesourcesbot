@@ -156,6 +156,27 @@ def get_steam_cooldown_hours(level: int) -> int:
     level = min(max(int(level), 1), 10)
     return STEAM_COOLDOWN_HOURS.get(level, 4)
 
+def get_colored_progress_bar(percentage: int, width: int = 20) -> str:
+    """Beautiful color-coded progress bar: empty → red → yellow → green"""
+    if percentage == 0:
+        return "⬛" * width + f" <b>0%</b> ⚫"
+
+    filled = int(width * percentage / 100)
+    empty = width - filled
+
+    if percentage < 40:
+        bar_color = "🟥"      # Red - early stage
+        indicator = "🔴"
+    elif percentage < 75:
+        bar_color = "🟨"      # Yellow - good progress
+        indicator = "🟡"
+    else:
+        bar_color = "🟩"      # Green - almost done
+        indicator = "🟢"
+
+    bar = bar_color * filled + "⬜" * empty
+    return f"{bar} <b>{percentage}%</b> {indicator}"
+
 def clean_image_url(url: str) -> str:
     """Smart cleaner for any image URL (Steam + general)"""
     if not url or not url.startswith(('http://', 'https://')):
@@ -665,24 +686,25 @@ async def handle_add_game_logo(chat_id: int, raw_text: str):
         await tg_app.bot.send_message(chat_id, "❌ No valid game logos found.", parse_mode="HTML")
 
 async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str = "logos.txt"):
-    """Process game logo upload from .txt file with nice progress"""
+    """Process game logo upload from .txt file with beautiful color-coded progress"""
     lines = [line.strip() for line in content.splitlines() 
              if line.strip() and not line.strip().startswith('#')]
 
     total_entries = len(lines) // 2
     added = 0
     duplicates = 0
-    duplicate_list = []
     errors = []
+    duplicate_list = []
     i = 0
 
-    # Initial nice loading message
+    # Initial loading message
     loading = await tg_app.bot.send_message(
         chat_id, 
-        f"🌿 <b>Processing Game Logos</b>\n\n"
+        f"🌿 <b>Processing Game Logos</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📄 <code>{filename}</code>\n"
         f"🔍 Found <b>{total_entries}</b> potential entries...\n\n"
-        f"⏳ Starting import...",
+        f"⏳ Starting import into the forest...",
         parse_mode="HTML"
     )
 
@@ -704,20 +726,22 @@ async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str 
             processed += 1
             percentage = int((processed / max(total_entries, 1)) * 100)
 
-            # Update progress every 8 entries (smooth but not too spammy)
+            # Update progress every 8 entries (or at the end)
             if processed % 8 == 0 or processed == total_entries:
-                progress_bar = "█" * (percentage // 5) + "░" * (20 - percentage // 5)
+                progress_bar = get_colored_progress_bar(percentage)
+
                 await loading.edit_text(
-                    f"🌿 <b>Processing Game Logos</b>\n\n"
+                    f"🌿 <b>Processing Game Logos</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"📄 <code>{filename}</code>\n"
-                    f"📊 <b>{processed}/{total_entries}</b> entries • <b>{percentage}%</b>\n"
-                    f"[{progress_bar}]\n\n"
-                    f"✅ Added: <b>{added}</b>\n"
-                    f"⚠️ Duplicates: <b>{duplicates}</b>",
+                    f"📊 <b>{processed}/{total_entries}</b> entries • <b>{percentage}%</b>\n\n"
+                    f"{progress_bar}\n\n"
+                    f"✅ <b>Added:</b> {added}\n"
+                    f"⚠️ <b>Duplicates:</b> {duplicates}\n"
+                    f"❌ <b>Errors:</b> {len(errors)}",
                     parse_mode="HTML"
                 )
 
-            # Check duplicate
             existing = await _sb_get(
                 "game_logos", 
                 **{"game_name": f"eq.{game_name}", "select": "game_name", "limit": 1}
@@ -743,19 +767,26 @@ async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str 
         else:
             i += 1
 
-    # Final beautiful result
-    result = f"✅ <b>Game Logo Import Complete!</b>\n━━━━━━━━━━━━━━━━━━\n\n"
-    result += f"📄 <b>File:</b> <code>{filename}</code>\n"
-    result += f"🌱 <b>Successfully added:</b> {added} new logos\n"
-    result += f"⚠️ <b>Duplicates skipped:</b> {duplicates}\n"
+    # ── Final beautiful result ──
+    result = (
+        f"✅ <b>Game Logo Import Complete!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📄 <b>File:</b> <code>{filename}</code>\n"
+        f"🌱 <b>Successfully added:</b> {added} new logos\n"
+        f"⚠️ <b>Duplicates skipped:</b> {duplicates}\n"
+    )
 
     if errors:
         result += f"❌ <b>Failed:</b> {len(errors)}\n"
 
     if duplicate_list:
-        result += f"\n<b>Duplicates:</b>\n" + "\n".join(f"• {html.escape(name)}" for name in duplicate_list[:15])
+        result += f"\n<b>📋 Duplicate games (skipped):</b>\n"
+        result += "\n".join(f"• <code>{html.escape(name)}</code>" for name in duplicate_list[:15])
 
-    result += "\n\n🧹 All Redis caches cleared — new logos are now live in the forest! 🌲"
+    result += (
+        f"\n\n🧹 All Redis caches cleared — new logos are now live in the forest! 🌲\n"
+        f"<i>The ancient trees have memorized the new paths.</i>"
+    )
 
     await loading.edit_text(result, parse_mode="HTML")
     
