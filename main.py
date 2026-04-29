@@ -5638,9 +5638,9 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📧 Email:\n"
-        f"<tg-spoiler><code>{html.escape(email)}</code></tg-spoiler>\n\n"
+        f"<code><tg-spoiler>{html.escape(email)}</tg-spoiler></code>\n\n"
         f"🔑 Password:\n"
-        f"<tg-spoiler><code>{html.escape(password)}</code></tg-spoiler>\n\n"
+        f"<code><tg-spoiler>{html.escape(password)}</tg-spoiler></code>\n\n"
         f"{sid_line}"
         f"{extra_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
@@ -10956,7 +10956,7 @@ async def handle_callback(update: Update):
 
         claim_data = json.loads(raw)
         email = claim_data.get("email", "")
-        game_name = claim_data.get("game_name", "Unknown")
+        game_name = claim_data.get("game_name", "Unknown")   # this is the display name user saw
 
         acc_data = await _sb_get(
             "steamCredentials",
@@ -10969,25 +10969,55 @@ async def handle_callback(update: Update):
 
         acc = acc_data[0]
         all_games = [acc.get("game_name", "")] + (acc.get("games") or [])
-        all_games = [g for g in all_games if g.strip()]
+        all_games = [g.strip() for g in all_games if g and str(g).strip()]
+        
+        # Sort alphabetically for better UX
+        all_games = sorted(set(all_games), key=str.lower)
 
-        lines = "\n".join(
-            f"{'🎮' if i == 0 else '•'} {html.escape(g)}"
-            for i, g in enumerate(all_games)
-        )
+        total_games = len(all_games)
+
+        # Pagination
+        page = int(data.split("|")[2]) if len(data.split("|")) > 2 else 0
+        games_per_page = 25
+        start = page * games_per_page
+        end = start + games_per_page
+        page_games = all_games[start:end]
+
+        # Build message
         text = (
-            f"📋 All Games in Bundle\n"
+            f"📋 <b>All Games in Bundle</b>\n"
             f"{html.escape(game_name)}\n"
-            f"{len(all_games)} games total\n"
+            f"<b>{total_games}</b> games total\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"{lines}"
         )
 
-        if len(text) > 4000:
-            text = text[:3950] + "\n\n...and more"
+        # Highlight the main/searched game if it's in the list
+        for i, g in enumerate(page_games):
+            prefix = "🎮 " if g.lower() == game_name.lower() else "• "
+            text += f"{prefix}{html.escape(g)}\n"
 
-        await query.answer()
-        await tg_app.bot.send_message(chat_id, text, parse_mode="HTML")
+        text += f"\n📄 Page <b>{page+1}</b> of <b>{(total_games-1)//games_per_page + 1}</b>"
+
+        # Buttons
+        buttons = []
+        nav = []
+
+        if page > 0:
+            nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"show_all_games|{short_key}|{page-1}"))
+        if end < total_games:
+            nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"show_all_games|{short_key}|{page+1}"))
+
+        if nav:
+            buttons.append(nav)
+
+        buttons.append([InlineKeyboardButton("⬅️ Back to Account", callback_data=f"steam_detail|{short_key}|0")])
+        buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+
+        await query.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
 
     # ── OWNER: Restore account to Available ──
     elif data.startswith("owner_restore|"):
@@ -11264,9 +11294,9 @@ async def handle_callback(update: Update):
                 f"🎮 <b>{html.escape(display_name)} — Successfully Claimed!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
                 f"📧 <b>Login Email:</b>\n"
-                f"<tg-spoiler><code>{html.escape(account_email)}</code></tg-spoiler>\n\n"
+                f"<code><tg-spoiler>{html.escape(account_email)}</tg-spoiler></code>\n\n"
                 f"🔑 <b>Password:</b>\n"
-                f"<tg-spoiler><code>{html.escape(password)}</code></tg-spoiler>\n\n"
+                f"<code><tg-spoiler>{html.escape(password)}</tg-spoiler></code>\n\n"
             )
             if steam_id:
                 caption += (
