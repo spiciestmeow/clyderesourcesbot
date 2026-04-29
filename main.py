@@ -86,35 +86,16 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
 
-    # ── HERO IMAGE (Priority: Game Logo → Account Image) ──
-    hero_image = await get_game_logo_url(
-        game_name=game_name,
-        preferred_name=game_name   # This is what the user actually saw in search
-    )
-
-    # Fallback to Steam header image if no game logo exists
-    if not hero_image and accounts:
-        raw_image = accounts[0].get("image_url")
-        if raw_image:
-            hero_image = clean_image_url(raw_image)
-
-    # ── BUILD RICH CAPTION ──
     text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
-
     buttons = []
+
     for i, acc in enumerate(accounts, 1):
         email = acc.get("email", "")
-        short_email = email[:18] + "..." if len(email) > 18 else email
+        short_email = email[:15] + "..." if len(email) > 15 else email
         bundle_note = " ← <b>Big Bundle</b>" if is_bundle_account(acc) else ""
-        steam_id = str(acc.get("steam_id", "")).strip()
 
         text += f"{i}️⃣ <b>Account {i}</b>{bundle_note}\n"
-        text += f"   📧 <code>{html.escape(short_email)}</code>\n"
-        
-        if steam_id:
-            text += f"   👤 <code>{steam_id[-8:]}</code>  <i>(Steam ID)</i>\n"
-        
-        text += "\n"
+        text += f"   📧 <code>{html.escape(short_email)}</code>\n\n"
 
         buttons.append([
             InlineKeyboardButton(
@@ -123,45 +104,17 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             )
         ])
 
-    # Back buttons (unchanged)
+    # FIXED: Proper back button
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
-    markup = InlineKeyboardMarkup(buttons)
-
-    # ── SEND WITH HERO IMAGE ──
     try:
-        # If this came from a callback, clean up the old message first
         if query_obj and query_obj.message:
-            try:
-                await query_obj.message.delete()
-            except Exception:
-                pass  # message might already be deleted
-
-        if hero_image:
-            await tg_app.bot.send_photo(
-                chat_id=chat_id,
-                photo=hero_image,
-                caption=text.strip(),
-                parse_mode="HTML",
-                reply_markup=markup
-            )
+            await query_obj.message.edit_text(text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            # Fallback to text-only (rare case)
-            await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text=text.strip(),
-                parse_mode="HTML",
-                reply_markup=markup
-            )
+            await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
     except Exception:
-        # Ultimate safety net
-        await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=text.strip(),
-            parse_mode="HTML",
-            reply_markup=markup
-        )
+        await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
 
 # ──────────────────────────────────────────────
 # NEW: Get the exact display name the user saw during search
@@ -9002,10 +8955,6 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         if not still_there:
             return
         await redis_client.delete(f"steam_search_result:{chat_id}")
-    
-        # ── mark as "already penalized" so claim handler skips charge ──
-        await redis_client.setex(f"steam_expired:{chat_id}", 300, "1")
-
         new_count = int(await redis_client.get(attempts_key) or 0) + 1
         await redis_client.setex(attempts_key, cooldown_seconds, new_count)
 
@@ -11310,19 +11259,13 @@ async def handle_callback(update: Update):
         # ── CHECK 10-MINUTE EXPIRATION ──
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
-            already_penalized = await redis_client.get(f"steam_expired:{chat_id}")
-            if not already_penalized:
-                # Only charge if _expire_result hasn't already done it
-                current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-                await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
-                remaining = 3 - (current + 1)
-            else:
-                current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-                remaining = 3 - current
-                await redis_client.delete(f"steam_expired:{chat_id}")
-            
+            current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
+            remaining = 3 - (current + 1)
             expired_text = (
                 f"⏳ <b>This search has expired.</b>\n\n"
+                f"The results are no longer valid.\n"
+                f"(10 minutes have passed without claiming)\n\n"
                 f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
                 f"{make_attempts_bar(remaining)}\n\n"
                 f"🌲 You can search again right now!"
@@ -11371,7 +11314,8 @@ async def handle_callback(update: Update):
         success = await claim_steam_account(chat_id, first_name, account_email, display_name)
 
         if success:
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, "3")
+            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current_attempts + 1))
 
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
@@ -12147,6 +12091,7 @@ async def process_update(update_data: dict):
             term = raw.lower().strip()
 
             attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(attempts + 1))
             
             if attempts + 1 >= 3:
                 await redis_client.delete(f"steam_searching:{chat_id}")
