@@ -9002,6 +9002,10 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         if not still_there:
             return
         await redis_client.delete(f"steam_search_result:{chat_id}")
+    
+        # ── mark as "already penalized" so claim handler skips charge ──
+        await redis_client.setex(f"steam_expired:{chat_id}", 300, "1")
+
         new_count = int(await redis_client.get(attempts_key) or 0) + 1
         await redis_client.setex(attempts_key, cooldown_seconds, new_count)
 
@@ -11306,13 +11310,19 @@ async def handle_callback(update: Update):
         # ── CHECK 10-MINUTE EXPIRATION ──
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
-            current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
-            remaining = 3 - (current + 1)
+            already_penalized = await redis_client.get(f"steam_expired:{chat_id}")
+            if not already_penalized:
+                # Only charge if _expire_result hasn't already done it
+                current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
+                remaining = 3 - (current + 1)
+            else:
+                current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                remaining = 3 - current
+                await redis_client.delete(f"steam_expired:{chat_id}")
+            
             expired_text = (
                 f"⏳ <b>This search has expired.</b>\n\n"
-                f"The results are no longer valid.\n"
-                f"(10 minutes have passed without claiming)\n\n"
                 f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
                 f"{make_attempts_bar(remaining)}\n\n"
                 f"🌲 You can search again right now!"
@@ -11361,8 +11371,7 @@ async def handle_callback(update: Update):
         success = await claim_steam_account(chat_id, first_name, account_email, display_name)
 
         if success:
-            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current_attempts + 1))
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, "3")
 
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
@@ -12138,7 +12147,6 @@ async def process_update(update_data: dict):
             term = raw.lower().strip()
 
             attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(attempts + 1))
             
             if attempts + 1 >= 3:
                 await redis_client.delete(f"steam_searching:{chat_id}")
