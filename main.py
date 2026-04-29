@@ -5642,7 +5642,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"🔑 Password:\n"
         f"<tg-spoiler><code>{html.escape(password)}</code></tg-spoiler>\n\n"
         f"{sid_line}"
-        f"<blockquote">"
+        f"<blockquote>"
         f"{extra_line}"
         f"</blockquote>\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
