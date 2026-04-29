@@ -10979,7 +10979,7 @@ async def handle_callback(update: Update):
         # Pagination
         parts = data.split("|")
         page = int(parts[2]) if len(parts) > 2 else 0
-        games_per_page = 25
+        games_per_page = 35
         start = page * games_per_page
         end = start + games_per_page
         page_games = all_games[start:end]
@@ -11012,7 +11012,6 @@ async def handle_callback(update: Update):
             buttons.append(nav)
 
         buttons.append([InlineKeyboardButton("⬅️ Back to Account", callback_data=f"steam_detail|{short_key}|0")])
-        buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
         # === FIXED: Use edit_caption for photo messages ===
         try:
