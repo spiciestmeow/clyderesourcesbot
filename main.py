@@ -5638,9 +5638,9 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📧 Email:\n"
-        f"<code><tg-spoiler>{html.escape(email)}</tg-spoiler></code>\n\n"
+        f"<tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
         f"🔑 Password:\n"
-        f"<code><tg-spoiler>{html.escape(password)}</tg-spoiler></code>\n\n"
+        f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
         f"{sid_line}"
         f"{extra_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
@@ -10956,7 +10956,7 @@ async def handle_callback(update: Update):
 
         claim_data = json.loads(raw)
         email = claim_data.get("email", "")
-        game_name = claim_data.get("game_name", "Unknown")   # this is the display name user saw
+        game_name = claim_data.get("game_name", "Unknown")   # display name user saw
 
         acc_data = await _sb_get(
             "steamCredentials",
@@ -10977,7 +10977,8 @@ async def handle_callback(update: Update):
         total_games = len(all_games)
 
         # Pagination
-        page = int(data.split("|")[2]) if len(data.split("|")) > 2 else 0
+        parts = data.split("|")
+        page = int(parts[2]) if len(parts) > 2 else 0
         games_per_page = 25
         start = page * games_per_page
         end = start + games_per_page
@@ -10991,8 +10992,8 @@ async def handle_callback(update: Update):
             f"━━━━━━━━━━━━━━━━━━\n\n"
         )
 
-        # Highlight the main/searched game if it's in the list
-        for i, g in enumerate(page_games):
+        # Highlight the main/searched game
+        for g in page_games:
             prefix = "🎮 " if g.lower() == game_name.lower() else "• "
             text += f"{prefix}{html.escape(g)}\n"
 
@@ -11013,11 +11014,20 @@ async def handle_callback(update: Update):
         buttons.append([InlineKeyboardButton("⬅️ Back to Account", callback_data=f"steam_detail|{short_key}|0")])
         buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
-        await query.message.edit_text(
-            text=text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+        # === FIXED: Use edit_caption for photo messages ===
+        try:
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        except Exception:
+            # Fallback if it's a text-only message
+            await query.message.edit_text(
+                text=text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
 
     # ── OWNER: Restore account to Available ──
     elif data.startswith("owner_restore|"):
@@ -11294,9 +11304,9 @@ async def handle_callback(update: Update):
                 f"🎮 <b>{html.escape(display_name)} — Successfully Claimed!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
                 f"📧 <b>Login Email:</b>\n"
-                f"<code><tg-spoiler>{html.escape(account_email)}</tg-spoiler></code>\n\n"
+                f"<tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n\n"
                 f"🔑 <b>Password:</b>\n"
-                f"<code><tg-spoiler>{html.escape(password)}</tg-spoiler></code>\n\n"
+                f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
             )
             if steam_id:
                 caption += (
