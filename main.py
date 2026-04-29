@@ -5501,8 +5501,15 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
     
-async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str, back_page: int, query=None):
-
+async def show_steam_claim_detail(
+    chat_id: int, 
+    first_name: str, 
+    short_key: str, 
+    back_page: int, 
+    query=None,
+    show_full_stats: bool = False
+):
+    
     raw = await redis_client.get(f"cd:{short_key}")
     if not raw:
         await query.answer("⏳ Session expired. Please go back and try again.", show_alert=True)
@@ -5533,10 +5540,9 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
 
     # ── Try to get a better logo from game_logos table ──
     logo_url = await get_game_logo_url(game_name, extra_games)
-    final_image = logo_url or image_url  # prefer logo table, fallback to account banner
+    final_image = logo_url or image_url
 
-
-    # ── Format claimed time ──
+# ── Format claimed time ──
     try:
         manila = pytz.timezone("Asia/Manila")
         dt = datetime.fromisoformat(claimed_at_raw.replace("Z", "+00:00")).astimezone(manila)
@@ -5565,12 +5571,13 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
     has_feedback = len(fb_data) > 0
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
-    sid_line = f"\n🆔 Steam ID: <code>{steam_id}</code>" if steam_id else ""
+    sid_line = f"🆔 Steam ID: <tg-spoiler>{steam_id}</tg-spoiler>\n\n" if steam_id else ""
+
     extra_line = ""
     if extra_games:
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
-        extra_line = f"\n<b>🎮 Also includes:</b> <i>{preview}{more}</i>"
+        extra_line = f"<b>🎮 Also includes:</b> <i>{preview}{more}</i>\n\n"
 
     # ── Fetch claim stats for this account ──
     claim_stats = await _sb_get(
@@ -5611,6 +5618,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         if len(extra_games) > 3:
             games_preview += f"\n   ···  +{len(extra_games) - 3} more"
 
+    # ── Feedback section ──
     if has_feedback:
         fb_emoji = "✅" if feedback_status == "working" else "❌"
         fb_label = "Working" if feedback_status == "working" else "Not Working"
@@ -5619,20 +5627,12 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
             f"{fb_emoji} <b>Your feedback: {fb_label}</b>\n"
             f"<i>Changed your mind? Tap below to update.</i>"
         )
-        feedback_buttons = [[
-            InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
-            InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}"),
-        ]]
     else:
         feedback_section = (
             f"━━━━━━━━━━━━━━━━━━\n"
             f"<b>Did this account work?</b>\n"
             f"<i>Tap below to let the Caretaker know 🍃</i>"
         )
-        feedback_buttons = [[
-            InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
-            InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}"),
-        ]]
 
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
@@ -5645,29 +5645,47 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         f"{extra_line}\n\n"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
         f"     {ago}\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>Account Stats</b>\n"
-        f"👥 Claimed by: <b>{total_claimers}</b> user{'s' if total_claimers != 1 else ''}\n"
-        f"⭐ Rating: {rating_line}\n"
-        f"{games_preview}\n"
-        f"{feedback_section}"
     )
 
-    see_all_btn = []
+    # ── Account Stats (hidden by default) ──
+    if show_full_stats:
+        text += (
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>Account Stats</b>\n"
+            f"👥 Claimed by: <b>{total_claimers}</b> user{'s' if total_claimers != 1 else ''}\n"
+            f"⭐ Rating: {rating_line}\n"
+            f"{games_preview}\n"
+            f"{feedback_section}"
+        )
+    else:
+        text += "📊 <i>Tap the button below to see full account stats</i>\n\n"
+
+    # ── Buttons ──
+    buttons = []
+
+    if not show_full_stats:
+        buttons.append([InlineKeyboardButton("📊 Show Account Stats", callback_data=f"show_stats|{short_key}")])
+
+    buttons.append([
+        InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
+        InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}")
+    ])
+
+
     if len(extra_games) > 3:
-        see_all_btn = [[InlineKeyboardButton(
+        buttons.append([InlineKeyboardButton(
             f"📋 See All {len(extra_games) + 1} Games",
             callback_data=f"show_all_games|{short_key}"
-        )]]
+        )])
 
-    back_button = [[InlineKeyboardButton(
+    buttons.append([InlineKeyboardButton(
         "◀ Back to My Claims",
         callback_data=f"myclaims_page_{back_page}"
-    )]]
+    )])
 
-    markup = InlineKeyboardMarkup(feedback_buttons + see_all_btn + back_button)
+    markup = InlineKeyboardMarkup(buttons)
 
-    # ── Delete old message then send with game image ──
+    # ── Send / Edit message ──
     if query and query.message:
         try:
             await query.message.delete()
@@ -5687,7 +5705,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         except Exception:
             pass
 
-    # Fallback: no image available
+    # Fallback
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -9778,6 +9796,18 @@ async def handle_callback(update: Update):
             pass
         await send_onboarding_step(chat_id, first_name, step=step)
         return
+    
+    elif data.startswith("show_stats|"):
+        short_key = data.split("|")[1]
+        await show_steam_claim_detail(
+            chat_id=chat_id,
+            first_name=first_name,
+            short_key=short_key,
+            back_page=0,
+            query=query,
+            show_full_stats=True
+        )
+        return
 
     elif data.startswith("profile_page_"):
         try:
@@ -10990,7 +11020,7 @@ async def handle_callback(update: Update):
             f"{html.escape(game_name)}\n"
             f"<b>{total_games}</b> games total\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-        )
+        )   
 
         # Highlight the main/searched game
         for g in page_games:
