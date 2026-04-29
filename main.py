@@ -5591,7 +5591,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         fb_emoji = "✅" if feedback_status == "working" else "❌"
         fb_label = "Working" if feedback_status == "working" else "Not Working"
         feedback_section = (
-            f"\n━━━━━━━━━━━━━━━━━━\n"
+            f"┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
             f"{fb_emoji} <b>Your feedback: {fb_label}</b>\n"
             f"<i>Changed your mind? Tap below to update.</i>"
         )
@@ -5601,7 +5601,7 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
         ]]
     else:
         feedback_section = (
-            f"\n━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"<b>Did this account work?</b>\n"
             f"<i>Tap below to let the Caretaker know 🍃</i>"
         )
@@ -11232,16 +11232,23 @@ async def handle_callback(update: Update):
 
             # === FINAL SUCCESS MESSAGE WITH CORRECT NAME ===
             caption = (
-                f"🎮 <b>{html.escape(display_name)} — Claimed!</b>\n"
+                f"🎮 <b>{html.escape(display_name)} — Successfully Claimed!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
-                f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
-                f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
-                f"{'🆔 Steam ID: <code>' + str(steam_id) + '</code>\n' if steam_id else ''}\n\n"
-                f"⚠️ <b>Important Notice:</b>\n"
-                f"<i>Steam may show a warning on first login — this is normal, just proceed.</i>\n"
-                f"• Do not change password or email.\n\n"
-                f"🕐 We'll check back in <b>2 hours</b> to see if it worked. 🍃\n\n"
-                f"<i>Enjoy your game, wanderer!</i>"
+                f"📧 <b>Login Email:</b>\n"
+                f"<tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n\n"
+                f"🔑 <b>Password:</b>\n"
+                f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
+                f"{f'🆔 <b>Steam ID:</b>\n<code>{steam_id}</code>\n\n' if steam_id else ''}"
+                # ── Beautiful Blockquote for Important Notice ──
+                f"<blockquote expandable=\"true\">"
+                f"⚠️ <b>Important Notice</b>\n\n"
+                f"<i>Steam may show a warning on first login — this is completely normal.</i>\n\n"
+                f"• Do not change the password or email\n"
+                f"• Do not enable Steam Guard / 2FA on this account\n"
+                f"• Use it within the next 48 hours for best results"
+                f"</blockquote>\n\n"
+                f"🕐 <b>We'll check back in 2 hours</b> to see if it worked. 🍃\n\n"
+                f"🌲 <i>Enjoy your game, wanderer!</i>"
             )
 
             if final_image_url:
