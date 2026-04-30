@@ -8982,102 +8982,46 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
         json.dumps({"email": first_email, "game_name": first_game})
     )
 
-    async def _expire_steam_result(chat_id: int, account_email: str, game_name: str, group_key: str, attempts_key: str, cooldown_hours: int):
-        await asyncio.sleep(5)
-
-        # If already claimed, do nothing
-        if await redis_client.get(f"steam_claimed:{chat_id}:{account_email}"):
-            return
-        if not await redis_client.get(f"steam_search_result:{chat_id}"):
-            return
-
-        # Clean up
-        await redis_client.delete(f"steam_search_result:{chat_id}")
-        await redis_client.delete(f"steam_group:{chat_id}:{group_key}")
-
-        # Deduct attempt
-        current = int(await redis_client.get(attempts_key) or 0)
-        new_count = current + 1
-        remaining = max(0, 3 - new_count)
-        await redis_client.setex(attempts_key, cooldown_hours * 3600, str(new_count))
-
-        if remaining <= 0:
-            await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_hours * 3600, "1")
-            await redis_client.delete(attempts_key)
-            msg = (
-                "⏳ <b>Claim window expired.</b>\n\n"
-                "🌿 You didn't claim the account in time and have used all 3 attempts.\n"
-                f"Your <b>{cooldown_hours}h</b> cooldown has now started.\n\n"
-                "<i>Rest for now, wanderer. The forest will welcome you back. 🍃</i>"
-            )
-            buttons = [[InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]]
-        else:
-            msg = (
-                f"⏳ <b>Claim window expired.</b>\n\n"
-                f"🎮 <b>{html.escape(game_name)}</b> was not claimed in time.\n\n"
-                f"🎯 Attempts remaining: <b>{remaining}/3</b>\n"
-                f"{make_attempts_bar(3 - remaining)}\n\n"
-                "<i>No worries — try again. 🍃</i>"
-            )
-            buttons = [
-                [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-            ]
-
-        try:
-            await tg_app.bot.send_message(chat_id, msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception:
-            pass
-
     # ── Schedule result expiry ──
-    # async def _expire_result():
-    #     await asyncio.sleep(610)
-    #     still_there = await redis_client.get(f"steam_search_result:{chat_id}")
-    #     if not still_there:
-    #         return
-    #     await redis_client.delete(f"steam_search_result:{chat_id}")
-    #     new_count = int(await redis_client.get(attempts_key) or 0) + 1
-    #     await redis_client.setex(attempts_key, cooldown_seconds, new_count)
+    async def _expire_result():
+        await asyncio.sleep(610)
+        still_there = await redis_client.get(f"steam_search_result:{chat_id}")
+        if not still_there:
+            return
+        await redis_client.delete(f"steam_search_result:{chat_id}")
+        new_count = int(await redis_client.get(attempts_key) or 0) + 1
+        await redis_client.setex(attempts_key, cooldown_seconds, new_count)
 
-    #     if new_count >= 3:
-    #         await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
-    #         await redis_client.delete(attempts_key)
-    #         try:
-    #             await tg_app.bot.send_message(
-    #                 chat_id,
-    #                 f"⏳ <b>Result expired and attempts used up.</b>\n\n"
-    #                 f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
-    #                 parse_mode="HTML"
-    #             )
-    #         except Exception:
-    #             pass
-    #     else:
-    #         remaining = 3 - new_count
-    #         try:
-    #             await tg_app.bot.send_message(
-    #                 chat_id,
-    #                 f"⏳ <b>Claim window expired!</b>\n\n"
-    #                 f"🔍 <b>{remaining} attempt(s) remaining.</b>\n\n"
-    #                 f"<i>Tap below to search again. 🍃</i>",
-    #                 parse_mode="HTML",
-    #                 reply_markup=InlineKeyboardMarkup([
-    #                     [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-    #                     [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-    #                 ])
-    #             )
-    #         except Exception:
-    #             pass
+        if new_count >= 3:
+            await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
+            await redis_client.delete(attempts_key)
+            try:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    f"⏳ <b>Result expired and attempts used up.</b>\n\n"
+                    f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+        else:
+            remaining = 3 - new_count
+            try:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    f"⏳ <b>Claim window expired!</b>\n\n"
+                    f"🔍 <b>{remaining} attempt(s) remaining.</b>\n\n"
+                    f"<i>Tap below to search again. 🍃</i>",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
+                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    ])
+                )
+            except Exception:
+                pass
 
-    for game_name_key, accounts in grouped.items():
-        safe_key_for_expiry = abs(hash(f"{chat_id}:{game_name_key}")) % 999999
-        asyncio.create_task(_expire_steam_result(
-            chat_id=chat_id,
-            account_email=accounts[0].get("email", ""),
-            game_name=game_name_key,
-            group_key=str(safe_key_for_expiry),
-            attempts_key=attempts_key,
-            cooldown_hours=cooldown_seconds // 3600,
-        ))
+    asyncio.create_task(_expire_result())
 
     # ── Build result message ──
     total_accounts = len(unclaimed)
@@ -11313,40 +11257,25 @@ async def handle_callback(update: Update):
         # ── CHECK 10-MINUTE EXPIRATION ──
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
-            profile_temp = await get_user_profile(chat_id)
-            level_temp = profile_temp.get("level", 1) if profile_temp else 1
-            cd_hours = get_steam_cooldown_hours(level_temp)
-            ak = f"steam_search_attempts:{chat_id}"
-
-            current = int(await redis_client.get(ak) or 0)
-            new_count = current + 1
-            remaining = max(0, 3 - new_count)
-            await redis_client.setex(ak, cd_hours * 3600, str(new_count))
-
-            if remaining <= 0:
-                await redis_client.setex(f"steam_search_cd:{chat_id}", cd_hours * 3600, "1")
-                await redis_client.delete(ak)
-                expired_text = (
-                    "⏳ <b>This claim has already expired.</b>\n\n"
-                    "🌿 You've used all 3 attempts for today.\n"
-                    f"Your <b>{cd_hours}h</b> cooldown has started.\n\n"
-                    "<i>Rest for now, wanderer. 🍃</i>"
-                )
-                buttons = [[InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]]
-            else:
-                expired_text = (
-                    "⏳ <b>This claim has already expired.</b>\n\n"
-                    "🌿 The account window closed before you tapped claim.\n\n"
-                    f"🎯 Attempts remaining: <b>{remaining}/3</b>\n"
-                    f"{make_attempts_bar(3 - remaining)}\n\n"
-                    "<i>No worries — try searching again. 🍃</i>"
-                )
-                buttons = [
-                    [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
-                ]
-
-            await tg_app.bot.send_message(chat_id, expired_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+            current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
+            remaining = 3 - (current + 1)
+            expired_text = (
+                f"⏳ <b>This search has expired.</b>\n\n"
+                f"The results are no longer valid.\n"
+                f"(10 minutes have passed without claiming)\n\n"
+                f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                f"{make_attempts_bar(remaining)}\n\n"
+                f"🌲 You can search again right now!"
+            )
+            buttons = [
+                [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+            ]
+            await tg_app.bot.send_message(
+                chat_id, expired_text, parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
             return
 
         await query.answer("🔑 Claiming account...", show_alert=False)
@@ -11383,8 +11312,7 @@ async def handle_callback(update: Update):
         success = await claim_steam_account(chat_id, first_name, account_email, display_name)
 
         if success:
-            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current_attempts + 1))
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, "3")
 
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
@@ -12142,7 +12070,7 @@ async def process_update(update_data: dict):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(
                 chat_id,
-                "🌿 <b>Steam accounts are currently in testing mode.</b>",
+                "🌿 <b>Steam accounts are currently in testing mode.</b>\n\n",
                 parse_mode="HTML"
             )
             await redis_client.delete(f"steam_searching:{chat_id}")
@@ -12167,15 +12095,14 @@ async def process_update(update_data: dict):
 
             term = raw.lower().strip()
 
-            attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(attempts + 1))
-            
-            if attempts + 1 >= 3:
+            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+
+            if current_attempts >= 3:
                 await redis_client.delete(f"steam_searching:{chat_id}")
                 await tg_app.bot.send_message(
                     chat_id,
-                    "🚫 <b>You have used all 3 search attempts today.</b>\n\n"
-                    "Come back tomorrow (Manila midnight) for fresh attempts 🍃",
+                    "🚫 <b>You have used all 3 search attempts.</b>\n\n"
+                    "Come back after your level-based cooldown for fresh attempts 🍃",
                     parse_mode="HTML"
                 )
                 return
@@ -12208,7 +12135,9 @@ async def process_update(update_data: dict):
                     matching_accounts.append(acc)
 
             if not matching_accounts:
-                remaining_attempts = 3 - (attempts + 1)
+                new_attempts = 3 - (current_attempts + 1)
+                await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+                remaining_attempts = 3 - new_attempts
 
                 no_result_text = (
                     f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
