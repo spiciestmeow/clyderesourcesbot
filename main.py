@@ -86,13 +86,10 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
 
-    # === CONSUME EXACTLY 1 ATTEMPT ONLY WHEN OPENING VIEW ALL ===
+    # === IMMEDIATELY CONSUME 1 ATTEMPT WHEN OPENING "VIEW ALL" ===
     current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
     new_attempts = min(current + 1, 3)
     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
-
-    # ←←← NEW: Prevent the original search timer from double-counting
-    await redis_client.setex(f"steam_viewall_opened:{chat_id}", 20, "1")
 
     # Build text and buttons
     text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
@@ -113,10 +110,11 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             )
         ])
 
+    # Back buttons
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
-    # Get logo + send page (unchanged)
+    # Get logo
     logo_url = None
     if accounts:
         first_acc = accounts[0]
@@ -128,12 +126,14 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
+    # Delete original "Found accounts" page immediately
     if query_obj and query_obj.message:
         try:
             await query_obj.message.delete()
         except:
             pass
 
+    # Send claim page (with logo or without)
     try:
         if logo_url:
             msg = await tg_app.bot.send_photo(
@@ -154,6 +154,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         print(f"🔴 Error sending claim page: {e}")
         return
 
+    # Auto-expire the claim page (uses rich message)
     async def auto_expire_claim_page():
         await asyncio.sleep(10)
         try:
@@ -12348,17 +12349,12 @@ async def process_update(update_data: dict):
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             async def auto_expire_result():
                 await asyncio.sleep(10)
-                
-                # NEW SAFETY CHECK: If user already opened "View all", skip this timer
-                # (prevents double deduction)
-                if await redis_client.get(f"steam_viewall_opened:{chat_id}"):
-                    await redis_client.delete(f"steam_viewall_opened:{chat_id}")
-                    return
-
                 try:
                     current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
                     new_attempts = min(current + 1, 3)
                     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+
+                    remaining = 3 - new_attempts
 
                     if remaining > 0:
                         expired_text = (
@@ -12374,6 +12370,7 @@ async def process_update(update_data: dict):
                             [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
                         ]
                     else:
+                        # ← This is the clean message you want when attempts = 0
                         expired_text = (
                             f"🚫 <b>No search attempts remaining.</b>\n\n"
                             f"Please wait for your cooldown to expire before searching again. 🍃"
