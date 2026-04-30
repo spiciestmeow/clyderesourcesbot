@@ -11198,7 +11198,8 @@ async def handle_callback(update: Update):
                 ])
             )
             return
-
+        
+        # Still has attempts → proceed to search prompt
         attempts_left = 3 - current_attempts
 
         # Clear old result if searching again (no attempt charge)
@@ -12272,29 +12273,45 @@ async def process_update(update_data: dict):
             )
 
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
+            result_msg = await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text=text.strip(),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             async def auto_expire_result():
                 await asyncio.sleep(10)
                 try:
-                    current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-                    new_attempts = min(current_attempts + 1, 3)
+                    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                    new_attempts = min(current + 1, 3)
                     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
 
                     remaining = 3 - new_attempts
 
-                    expired_text = (
-                        f"⏳ <b>This search has expired.</b>\n\n"
-                        f"The results are no longer valid.\n"
-                        f"(10 seconds have passed without claiming)\n\n"
-                        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
-                        f"{make_attempts_bar(new_attempts)}\n\n"
-                        f"🌲 <i>You can search again right now!</i>"
-                    )
-
-                    buttons_expired = [
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-                    ]
                     if remaining > 0:
-                        buttons_expired.insert(0, [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")])
+                        expired_text = (
+                            f"⏳ <b>This search has expired.</b>\n\n"
+                            f"The results are no longer valid.\n"
+                            f"(10 seconds have passed without claiming)\n\n"
+                            f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                            f"{make_attempts_bar(new_attempts)}\n\n"
+                            f"🌲 <i>You can search again right now!</i>"
+                        )
+                        buttons_expired = [
+                            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        ]
+                    else:
+                        # ← This is the clean message you want when attempts = 0
+                        expired_text = (
+                            f"🚫 <b>No search attempts remaining.</b>\n\n"
+                            f"Please wait for your cooldown to expire before searching again. 🍃"
+                        )
+                        buttons_expired = [
+                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        ]
 
                     await result_msg.edit_text(
                         expired_text,
@@ -12302,7 +12319,7 @@ async def process_update(update_data: dict):
                         reply_markup=InlineKeyboardMarkup(buttons_expired)
                     )
                 except Exception:
-                    pass  # message may have been deleted already
+                    pass  # message may have been deleted by user
 
             asyncio.create_task(auto_expire_result())
             return
