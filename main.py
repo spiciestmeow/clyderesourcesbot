@@ -8075,14 +8075,20 @@ async def handle_steam_feedback(
     is_working: bool,
     query
 ):
+    # ── Idempotency guard (extra safety even if somehow duplicate reaches here) ──
+    processed_key = f"steam_feedback_processed:{chat_id}:{account_email}"
+    if await redis_client.exists(processed_key):
+        return  # already handled
+    await redis_client.setex(processed_key, 86400, "1")  # 24h
+
     fb_key = f"steam_fb:{chat_id}:{account_email}"
-    await redis_client.setex(fb_key, 90000, "1") 
+    await redis_client.setex(fb_key, 90000, "1")
 
     status = "working" if is_working else "not_working"
     emoji  = "✅" if is_working else "❌"
     label  = "Working" if is_working else "Not Working"
 
-    # With this (upsert on chat_id + key_id + service_type combo):
+    # Upsert to reports
     await _sb_upsert("key_reports", {
         "chat_id": chat_id,
         "first_name": first_name,
@@ -8092,17 +8098,11 @@ async def handle_steam_feedback(
         "updated_at": datetime.now(pytz.utc).isoformat(),
     }, on_conflict="chat_id,key_id,service_type")
 
-    # ── Only notify owner — NO auto status change yet ──
+    # Notify owner (only for not_working we give action buttons)
     owner_kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(
-                "🔁 Restore to Available",
-                callback_data=f"owner_restore|{account_email}|{game_name[:25]}"
-            ),
-            InlineKeyboardButton(
-                "🗑 Mark Unavailable",
-                callback_data=f"owner_keep|{account_email}|{game_name[:25]}"
-            ),
+            InlineKeyboardButton("🔁 Restore to Available", callback_data=f"owner_restore|{account_email}|{game_name[:25]}"),
+            InlineKeyboardButton("🗑 Mark Unavailable", callback_data=f"owner_keep|{account_email}|{game_name[:25]}"),
         ]
     ]) if not is_working else None
 
@@ -8110,8 +8110,7 @@ async def handle_steam_feedback(
         OWNER_ID,
         f"🎮 <b>Steam Account Feedback</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"👤 <b>User:</b> {html.escape(str(first_name))} "
-        f"(<code>{chat_id}</code>)\n"
+        f"👤 <b>User:</b> {html.escape(str(first_name))} (<code>{chat_id}</code>)\n"
         f"🎮 <b>Game:</b> {html.escape(game_name)}\n"
         f"📧 <b>Email:</b> <code>{html.escape(account_email)}</code>\n\n"
         f"Status: {emoji} <b>{label}</b>\n"
@@ -8123,25 +8122,16 @@ async def handle_steam_feedback(
         reply_markup=owner_kb
     )
 
-    # ── Show undo button to user (only for not working) ──
-    undo_kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "↩️ Undo — I made a mistake!",
-                callback_data=f"stfb_undo|{account_email}|{game_name[:30]}"
-            )
-        ]
-    ]) if not is_working else None
-
+    # ── Confirmation to user (now safe because we already answered in handler) ──
     await query.answer(
         "✅ Thanks! Feedback sent." if is_working else
         "❌ Reported! You have 30 seconds to undo.",
         show_alert=True,
     )
 
-    # ── Edit claim message to show feedback result ──
+    # ── Edit the original claim message to reflect feedback ──
     try:
-        current_caption = query.message.caption or query.message.text or ""
+        current_caption = getattr(query.message, 'caption', '') or getattr(query.message, 'text', '')
         new_caption = (
             f"{current_caption}\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -8151,35 +8141,31 @@ async def handle_steam_feedback(
                "<i>Thank you for your feedback! 🍃</i>")
         )
 
-        # Always keep the back button + optional undo
-        back_button = [[InlineKeyboardButton(
-            "◀ Back to My Claims",
-            callback_data=f"my_steam_claims"   # goes to page 0, user can navigate
-        )]]
+        back_button = [[InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")]]
 
         final_markup = InlineKeyboardMarkup(
-            ([[InlineKeyboardButton(
-                "↩️ Undo — I made a mistake!",
-                callback_data=f"stfb_undo|{account_email}|{game_name[:30]}"
-            )]] if not is_working else []) + back_button
+            ([[InlineKeyboardButton("↩️ Undo — I made a mistake!", callback_data=f"stfb_undo|{account_email}|{game_name[:30]}")]]
+             if not is_working else []) + back_button
         )
-        
+
         await query.message.edit_caption(
             caption=new_caption,
             parse_mode="HTML",
             reply_markup=final_markup
         )
     except Exception:
-        pass
+        pass  # message might be text-only or already deleted
 
     # ── Auto-remove undo button after 30 seconds ──
     if not is_working:
         async def remove_undo():
             await asyncio.sleep(30)
             try:
-                await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")
-                ]]))
+                await query.message.edit_reply_markup(
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")
+                    ]])
+                )
             except Exception:
                 pass
         asyncio.create_task(remove_undo())
@@ -10867,51 +10853,45 @@ async def handle_callback(update: Update):
                 await query.answer("Error loading details", show_alert=True)
             return
 
-    # ── STEAM FEEDBACK: Working ──
-    elif data.startswith("stfb_ok|"):
+    # ── STEAM FEEDBACK: Working / Not Working ──
+    elif data.startswith("stfb_ok|") or data.startswith("stfb_bad|"):
+        await query.answer()
+
         parts = data.split("|")
-        if len(parts) == 3:
-            _, account_email, game_name = parts
+        if len(parts) != 3:
+            return
 
-            fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
-            if await redis_client.exists(fb_cooldown_key):
-                ttl = await redis_client.ttl(fb_cooldown_key)
-                await query.answer(
-                    f"⏳ Please wait {ttl}s before changing your feedback again.",
-                    show_alert=True
-                )
-                return
-            await redis_client.setex(fb_cooldown_key, 300, "1")
+        _, account_email, game_name = parts
+        is_working = data.startswith("stfb_ok|")
 
-            await handle_steam_feedback(
-                chat_id, first_name,
-                account_email, game_name,
-                is_working=True,
-                query=query
-            )
+        # Ultra-strict lock (prevents any duplicate processing)
+        lock_key = f"steam_fb_lock:{chat_id}:{account_email}"
+        acquired = await redis_client.set(lock_key, "1", ex=30, nx=True)
+        if not acquired:
+            await query.answer("⏳ Already processing your feedback...", show_alert=True)
+            return
 
-    # ── STEAM FEEDBACK: Not Working ──
-    elif data.startswith("stfb_bad|"):
-        parts = data.split("|")
-        if len(parts) == 3:
-            _, account_email, game_name = parts
+        # 5-minute cooldown (user can't spam)
+        fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
+        if await redis_client.exists(fb_cooldown_key):
+            ttl = await redis_client.ttl(fb_cooldown_key)
+            await query.answer(f"⏳ Please wait {ttl}s before changing feedback.", show_alert=True)
+            await redis_client.delete(lock_key)
+            return
 
-            fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
-            if await redis_client.exists(fb_cooldown_key):
-                ttl = await redis_client.ttl(fb_cooldown_key)
-                await query.answer(
-                    f"⏳ Please wait {ttl}s before changing your feedback again.",
-                    show_alert=True
-                )
-                return
-            await redis_client.setex(fb_cooldown_key, 300, "1")
+        await redis_client.setex(fb_cooldown_key, 300, "1")
 
-            await handle_steam_feedback(
-                chat_id, first_name,
-                account_email, game_name,
-                is_working=False,
-                query=query
-            )
+        # Now safe to process
+        await handle_steam_feedback(
+            chat_id=chat_id,
+            first_name=first_name,
+            account_email=account_email,
+            game_name=game_name,
+            is_working=is_working,
+            query=query
+        )
+
+        await redis_client.delete(lock_key)   # cleanup
 
     # ── STEAM FEEDBACK: User Undo ──
     elif data.startswith("stfb_undo|"):
