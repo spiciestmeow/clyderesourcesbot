@@ -5575,7 +5575,7 @@ async def show_steam_claim_detail(
     logo_url = await get_game_logo_url(game_name, extra_games)
     final_image = logo_url or image_url
 
-# ── Format claimed time ──
+    # ── Format claimed time ──
     try:
         manila = pytz.timezone("Asia/Manila")
         dt = datetime.fromisoformat(claimed_at_raw.replace("Z", "+00:00")).astimezone(manila)
@@ -5626,25 +5626,26 @@ async def show_steam_claim_detail(
     ) or []
     total_claimers = len(claim_stats)
 
-    # ── Fetch feedback stats ──
+    # ── Aggregate rating (only real feedback from all users) ──
     fb_stats = await _sb_get(
         "key_reports",
         **{"key_id": f"eq.{email}", "service_type": "eq.steam", "select": "status"}
     ) or []
-    working_count = sum(1 for f in fb_stats if f.get("status") == "working")
-    bad_count = sum(1 for f in fb_stats if f.get("status") == "not_working")
-    total_fb = working_count + bad_count
-    rating_pct = round((working_count / total_fb) * 100) if total_fb > 0 else None
 
-    # ── Build rating badge ──
-    if rating_pct is None:
-        rating_line = "⬜ No feedback yet"
-    elif rating_pct >= 80:
-        rating_line = f"🟢 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
-    elif rating_pct >= 50:
-        rating_line = f"🟡 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+    working_count = sum(1 for f in fb_stats if f.get("status") == "working")
+    bad_count = len(fb_stats) - working_count
+    total_fb = len(fb_stats)
+
+    if total_fb > 0:
+        rating_pct = round((working_count / total_fb) * 100)
+        if rating_pct >= 80:
+            rating_line = f"🟢 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+        elif rating_pct >= 50:
+            rating_line = f"🟡 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+        else:
+            rating_line = f"🔴 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
     else:
-        rating_line = f"🔴 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+        rating_line = "⬜ No feedback yet"
 
     # ── Top 3 games preview ──
     preview_games = [g for g in extra_games[:3] if g.strip()]
@@ -5658,20 +5659,21 @@ async def show_steam_claim_detail(
         if len(extra_games) > 3:
             games_preview += f"\n   ···  +{len(extra_games) - 3} more"
 
-    # ── Feedback section ──
-    if has_feedback:
-        fb_emoji = "✅" if feedback_status == "working" else "❌"
-        fb_label = "Working" if feedback_status == "working" else "Not Working"
+    # ── Feedback section — NEVER auto-set to "Working" ──
+    if has_feedback and feedback_status == "working":
         feedback_section = (
-            f"┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
-            f"{fb_emoji} <b>Your feedback: {fb_label}</b>\n"
+            f"✅ <b>Your feedback: Working</b>\n"
+            f"<i>Changed your mind? Tap below to update.</i>"
+        )
+    elif has_feedback and feedback_status == "not_working":
+        feedback_section = (
+            f"❌ <b>Your feedback: Not Working</b>\n"
             f"<i>Changed your mind? Tap below to update.</i>"
         )
     else:
         feedback_section = (
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"<b>Did this account work?</b>\n"
-            f"<i>Tap below to let the Caretaker know 🍃</i>"
+            f"⬜ <b>No feedback yet</b>\n"
+            f"<i>Help the forest — tap the buttons below!</i>"
         )
 
     text = (
