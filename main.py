@@ -91,6 +91,9 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     new_attempts = min(current + 1, 3)
     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
 
+    # Mark that the detailed claim page was opened (prevents double deduction)
+    await redis_client.setex(f"steam_result_consumed:{chat_id}", 600, "1")
+
     # Build text and buttons
     text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
     buttons = []
@@ -12159,15 +12162,18 @@ async def process_update(update_data: dict):
     # ── FINAL SMART SEARCH RESULT LOGIC (Combined game_name + games[] + Clean Display) ──
     if await redis_client.get(f"steam_searching:{chat_id}"):
         if chat_id != OWNER_ID:
-            await tg_app.bot.send_message(
-                chat_id,
-                "🌿 <b>Steam accounts are currently in testing mode.</b>\n\n",
-                parse_mode="HTML"
-            )
+            await tg_app.bot.send_message(...)
             await redis_client.delete(f"steam_searching:{chat_id}")
             return
+
         if not is_real_command:
             await redis_client.delete(f"steam_searching:{chat_id}")
+            
+            # ── NEW: Clear the "View All opened" flag for a fresh new search
+            await redis_client.delete(f"steam_result_consumed:{chat_id}")
+            
+            # Also clear the old search result (you probably already have this line)
+            await redis_client.delete(f"steam_search_result:{chat_id}")
 
             # DELETE the user's typed message
             try:
@@ -12175,7 +12181,7 @@ async def process_update(update_data: dict):
             except Exception:
                 pass
 
-            # DELETE the search prompt message (stored in Redis)
+            # DELETE the old search prompt
             search_prompt_id = await redis_client.get(f"steam_search_prompt:{chat_id}")
             if search_prompt_id:
                 try:
@@ -12350,6 +12356,13 @@ async def process_update(update_data: dict):
             async def auto_expire_result():
                 await asyncio.sleep(10)
                 try:
+                    # === CRITICAL FIX: Prevent double deduction when View All was opened ===
+                    consumed_key = f"steam_result_consumed:{chat_id}"
+                    if await redis_client.get(consumed_key):
+                        await redis_client.delete(consumed_key)
+                        return  # User already paid the attempt when opening "View All"
+
+                    # Original logic continues only if View All was NOT opened
                     current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
                     new_attempts = min(current + 1, 3)
                     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
