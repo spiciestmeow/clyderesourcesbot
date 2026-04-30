@@ -11166,16 +11166,26 @@ async def handle_callback(update: Update):
             )
 
     # ── TEMPORARILY DISABLE STEAM FOR REGULAR USERS (OWNER still has full access) ──
-    elif data == "steam_do_search":
-        attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+    elif data in ("steam_do_search", "search_different_game"):
+        current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         
-        await redis_client.setex(f"steam_searching:{chat_id}", 10, "1")   # ← changed to 5 minutes
+        if current_attempts >= 3:
+            await query.answer("🚫 No search attempts remaining!", show_alert=True)
+            await handle_steam_landing(chat_id, first_name, query)
+            return
+
+        attempts_left = 3 - current_attempts
+
+        # Clear old result if searching again (no attempt charge)
+        await redis_client.delete(f"steam_search_result:{chat_id}")
+        await redis_client.setex(f"steam_searching:{chat_id}", 10, "1")
+        await query.answer("🔍 Ready to search", show_alert=False)
 
         guide = (
             "🔍 <b>Search for a Steam Game</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-            f"{make_attempts_bar(3 - attempts_left)}\n\n" 
+            f"{make_attempts_bar(3 - attempts_left)}\n\n"
             "📌 <b>Tips for better results:</b>\n"
             "• Use the exact game title\n"
             "• Short names work too (e.g. <code>batman</code>)\n"
@@ -11204,10 +11214,9 @@ async def handle_callback(update: Update):
 
         if prompt_msg_id:
             await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
-            # ←←← THIS IS THE IMPORTANT LINE THAT MAKES AUTO-EXPIRE WORK ←←←
             asyncio.create_task(auto_expire_search_prompt(chat_id, prompt_msg_id))
         return
-    
+   
     # ── BACK TO RESULTS (after opening bundle)
     elif data.startswith("steam_back_to_results|"):
         try:
@@ -11224,60 +11233,6 @@ async def handle_callback(update: Update):
             await handle_searchsteam_command(chat_id, "", query=query)
         else:
             await query.answer("⏳ Search expired. Please search again.", show_alert=True)
-        return
-
-    elif data == "search_different_game":
-        current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-        if current_attempts >= 3:
-            await query.answer("🚫 No search attempts remaining!", show_alert=True)
-            await handle_steam_landing(chat_id, first_name, query)
-            return
-
-        attempts_left = 3 - current_attempts
-
-        # Delete old result — won't charge an attempt
-        await redis_client.delete(f"steam_search_result:{chat_id}")
-
-        # Set searching state
-        await redis_client.setex(f"steam_searching:{chat_id}", 10, "1")   # ← changed to 5 minutes
-
-        await query.answer("🔍 Ready for a new search", show_alert=False)
-
-        guide = (
-            "🔍 <b>Search for a Steam Game</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-            f"{make_attempts_bar(3 - attempts_left)}\n\n" 
-            "📌 <b>Tips for better results:</b>\n"
-            "• Use the exact game title\n"
-            "• Short names work too (e.g. <code>batman</code>)\n"
-            "• Partial names are supported\n\n"
-            "⏰ <b>You have 5 seconds</b> to type the game name\n"
-            "📌 Results expire in <b>10 minutes</b> after search\n"
-            "⚠️ Expired without claiming = attempt used\n\n"
-            "✏️ <b>Type the game name now:</b> 🍃"
-        )
-
-        prompt_msg_id = None
-        if query and query.message:
-            try:
-                await query.message.edit_caption(caption=guide, parse_mode="HTML")
-                prompt_msg_id = query.message.message_id
-            except Exception:
-                try:
-                    await query.message.edit_text(text=guide, parse_mode="HTML")
-                    prompt_msg_id = query.message.message_id
-                except Exception:
-                    sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
-                    prompt_msg_id = sent.message_id
-        else:
-            sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
-            prompt_msg_id = sent.message_id
-
-        if prompt_msg_id:
-            await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
-            # ←←← THIS IS THE IMPORTANT LINE THAT MAKES AUTO-EXPIRE WORK ←←←
-            asyncio.create_task(auto_expire_search_prompt(chat_id, prompt_msg_id))
         return
 
     elif data.startswith("claim_steam|"):
