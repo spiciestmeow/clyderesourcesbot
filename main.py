@@ -11169,7 +11169,7 @@ async def handle_callback(update: Update):
     elif data == "steam_do_search":
         attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         
-        await redis_client.setex(f"steam_searching:{chat_id}", 5, "1")   # ← changed to 5 minutes
+        await redis_client.setex(f"steam_searching:{chat_id}", 10, "1")   # ← changed to 5 minutes
 
         guide = (
             "🔍 <b>Search for a Steam Game</b>\n"
@@ -11239,7 +11239,7 @@ async def handle_callback(update: Update):
         await redis_client.delete(f"steam_search_result:{chat_id}")
 
         # Set searching state
-        await redis_client.setex(f"steam_searching:{chat_id}", 5, "1")   # ← changed to 5 minutes
+        await redis_client.setex(f"steam_searching:{chat_id}", 10, "1")   # ← changed to 5 minutes
 
         await query.answer("🔍 Ready for a new search", show_alert=False)
 
