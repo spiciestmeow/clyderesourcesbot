@@ -11282,36 +11282,7 @@ async def handle_callback(update: Update):
         # ── CHECK 10-MINUTE EXPIRATION ──
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
-            # Replace with level-aware cooldown:
-            profile = await get_user_profile(chat_id)
-            level = profile.get("level", 1) if profile else 1
-            cooldown_seconds = get_steam_cooldown_hours(level) * 3600
-            current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            new_count = current + 1
-            if new_count >= 3:
-                await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
-                await redis_client.delete(f"steam_search_attempts:{chat_id}")
-            else:
-                await redis_client.setex(f"steam_search_attempts:{chat_id}", cooldown_seconds, new_count)
-
-            remaining = 3 - (current + 1)
-            used = current + 1
-            expired_text = (
-                f"⏳ <b>This search has expired.</b>\n\n"
-                f"The results are no longer valid.\n"
-                f"(10 minutes have passed without claiming)\n\n"
-                f"🎯 <b>Search Attempts:</b> {used}/3 remaining\n"
-                f"{make_attempts_bar(remaining)}\n\n"
-                f"🌲 You can search again right now!"
-            )
-            buttons = [
-                [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-            ]
-            await tg_app.bot.send_message(
-                chat_id, expired_text, parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+            await query.answer("⏳ Result expired. Please search again.", show_alert=True)
             return
 
         await query.answer("🔑 Claiming account...", show_alert=False)
@@ -12293,12 +12264,47 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
 
-            await tg_app.bot.send_message(
+            result_msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text.strip(),
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
+
+            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
+            async def auto_expire_result():
+                await asyncio.sleep(10)
+                try:
+                    current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                    new_attempts = min(current_attempts + 1, 3)
+                    await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+
+                    remaining = 3 - new_attempts
+
+                    expired_text = (
+                        f"⏳ <b>This search has expired.</b>\n\n"
+                        f"The results are no longer valid.\n"
+                        f"(10 seconds have passed without claiming)\n\n"
+                        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                        f"{make_attempts_bar(new_attempts)}\n\n"
+                        f"🌲 <i>You can search again right now!</i>"
+                    )
+
+                    buttons_expired = [
+                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    ]
+                    if remaining > 0:
+                        buttons_expired.insert(0, [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")])
+
+                    await result_msg.edit_text(
+                        expired_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons_expired)
+                    )
+                except Exception:
+                    pass  # message may have been deleted already
+
+            asyncio.create_task(auto_expire_result())
             return
         
     # ── Command dispatch ──
