@@ -104,33 +104,24 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             )
         ])
 
-    # FIXED: Proper back button
+    # Back buttons
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
-    # ── ADD THIS BLOCK ──
+    # === NEW: Fetch game logo (same smart logic used in search) ===
     logo_url = None
     if accounts:
         first_acc = accounts[0]
-        games_list = first_acc.get("games") or []
-        # Use the exact same preferred_name logic you already have in search
         logo_url = await get_game_logo_url(
             game_name=game_name,
-            games_list=games_list,
-            preferred_name=game_name   # this is the key for bundles
+            games_list=first_acc.get("games") or [],
+            preferred_name=game_name   # crucial for bundles
         )
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # ── Send with image (much nicer UX) ──
+    # === Send with logo (new photo) or fallback to text ===
     try:
-        if query_obj and query_obj.message:
-            # Editing text → photo is unreliable, safer to delete + send new
-            try:
-                await query_obj.message.delete()
-            except:
-                pass
-
         if logo_url:
             await tg_app.bot.send_photo(
                 chat_id=chat_id,
@@ -140,20 +131,27 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         else:
-            # fallback for games without logo
-            await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text=text.strip(),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+            # No logo → keep original behavior
+            if query_obj and query_obj.message:
+                await query_obj.message.edit_text(
+                    text=text.strip(), 
+                    parse_mode="HTML", 
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            else:
+                await tg_app.bot.send_message(
+                    chat_id, 
+                    text=text.strip(), 
+                    parse_mode="HTML", 
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
     except Exception as e:
-        print(f"🔴 Error showing logo in account selection: {e}")
-        # safe fallback
+        print(f"🔴 Error showing account selection with logo: {e}")
+        # Safe fallback
         await tg_app.bot.send_message(
-            chat_id=chat_id,
-            text=text.strip(),
-            parse_mode="HTML",
+            chat_id, 
+            text=text.strip(), 
+            parse_mode="HTML", 
             reply_markup=InlineKeyboardMarkup(buttons)
         )
 
