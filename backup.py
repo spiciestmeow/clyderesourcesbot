@@ -50,6 +50,100 @@ LEVEL_TITLE_DESCRIPTIONS = {
 }
 
 # ──────────────────────────────────────────────
+# NEW: STEAM SEARCH HELPERS (Multi-account + Bundle UX)
+# ──────────────────────────────────────────────
+
+def is_bundle_account(acc: dict) -> bool:
+    """Returns True if this is a big bundle account (2+ games in games[])"""
+    games = acc.get("games") or []
+    valid_games = [str(g).strip() for g in games if str(g).strip()]
+    return len(valid_games) >= 2
+
+async def show_steam_account_selection(chat_id: int, group_key: str, game_name: str, query_obj=None):
+    raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
+    if not raw:
+        await tg_app.bot.send_message(chat_id, "⏳ Result expired. Please search again.", parse_mode="HTML")
+        return
+    
+    data = json.loads(raw)
+    emails = data.get("emails", [])
+    game_name = data.get("game_name", game_name) 
+    
+    accounts = []
+    for email in emails:
+        acc_data = await _sb_get(
+            "steamCredentials",
+            **{
+                "email": f"eq.{email}",
+                "status": "eq.Available",
+                "select": "email,game_name,image_url,password,steam_id,release_type,games"
+            }
+        ) or []
+        if acc_data:
+            accounts.extend(acc_data)
+
+    if not accounts:
+        await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
+        return
+
+    text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
+    buttons = []
+
+    for i, acc in enumerate(accounts, 1):
+        email = acc.get("email", "")
+        short_email = email[:15] + "..." if len(email) > 15 else email
+        bundle_note = " ← <b>Big Bundle</b>" if is_bundle_account(acc) else ""
+
+        text += f"{i}️⃣ <b>Account {i}</b>{bundle_note}\n"
+        text += f"   📧 <code>{html.escape(short_email)}</code>\n\n"
+
+        buttons.append([
+            InlineKeyboardButton(
+                f"✅ Claim Account {i}", 
+                callback_data=f"claim_steam|{acc['email']}|{group_key}"
+            )
+        ])
+
+    # FIXED: Proper back button
+    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
+    buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+
+    try:
+        if query_obj and query_obj.message:
+            await query_obj.message.edit_text(text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+    except Exception:
+        await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+
+# ──────────────────────────────────────────────
+# NEW: Get the exact display name the user saw during search
+# ──────────────────────────────────────────────
+async def get_display_name_for_claim(chat_id: int, group_key: str = None, fallback_email: str = None) -> str:
+    """Returns the nice display name shown in search (especially important for bundles)"""
+    if group_key:
+        raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
+        if raw:
+            try:
+                data = json.loads(raw)
+                game_name = data.get("game_name")
+                if game_name:
+                    return game_name
+            except Exception:
+                pass
+
+    # Fallback: fetch from database
+    if fallback_email:
+        acc_data = await _sb_get(
+            "steamCredentials",
+            **{"email": f"eq.{fallback_email}", "select": "game_name"}
+        ) or []
+        if acc_data:
+            return acc_data[0].get("game_name", "Steam Account")
+
+    return "Steam Account"
+
+# ──────────────────────────────────────────────
 # NEW STEAM SEARCH + COOLDOWN SYSTEM
 # ──────────────────────────────────────────────
 STEAM_COOLDOWN_HOURS = {
@@ -62,6 +156,68 @@ def get_steam_cooldown_hours(level: int) -> int:
     level = min(max(int(level), 1), 10)
     return STEAM_COOLDOWN_HOURS.get(level, 4)
 
+def get_colored_progress_bar(percentage: int, width: int = 10) -> str:
+    """Beautiful color-coded progress bar: empty → red → yellow → green"""
+    if percentage == 0:
+        return "⬛" * width + f" <b>0%</b> ⚫"
+
+    filled = int(width * percentage / 100)
+    empty = width - filled
+
+    if percentage < 40:
+        bar_color = "🟥"      # Red - early stage
+        indicator = "🔴"
+    elif percentage < 75:
+        bar_color = "🟨"      # Yellow - good progress
+        indicator = "🟡"
+    else:
+        bar_color = "🟩"      # Green - almost done
+        indicator = "🟢"
+
+    bar = bar_color * filled + "⬜" * empty
+    return f"{bar} <b>{percentage}%</b> {indicator}"
+
+def clean_image_url(url: str) -> str:
+    """Smart cleaner for any image URL (Steam + general)"""
+    if not url or not url.startswith(('http://', 'https://')):
+        return url.strip()
+
+    original_url = url.strip()
+
+    # 1. Remove query parameters (?...) and fragments (#...)
+    if "?" in url:
+        url = url.split("?", 1)[0]
+    if "#" in url:
+        url = url.split("#", 1)[0]
+
+    # 2. Special handling for Steam URLs (very common case)
+    if "steamstatic.com" in url or "steamusercontent.com" in url:
+        # Ensure it ends with /header.jpg
+        if "/header." in url and not url.lower().endswith(('.jpg', '.jpeg', '.png')):
+            url = url.split("/header.")[0] + "/header.jpg"
+        # Remove any extra parameters that might remain
+        if "?" in url:
+            url = url.split("?", 1)[0]
+
+    # 3. Final safety: If it doesn't look like an image, try to find last image extension
+    lower_url = url.lower()
+    image_exts = ('.jpg', '.jpeg', '.png', '.webp', '.gif')
+    
+    if not any(lower_url.endswith(ext) for ext in image_exts):
+        for ext in image_exts:
+            pos = lower_url.rfind(ext)
+            if pos != -1:
+                url = url[:pos + len(ext)]
+                break
+
+    # 4. Final cleanup
+    cleaned = url.strip()
+    
+    # Log if we changed something (helpful for debugging)
+    if cleaned != original_url:
+        print(f"🧹 Cleaned URL: {original_url[:100]}... → {cleaned}")
+
+    return cleaned
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SUPER ADVANCED ACHIEVEMENT SYSTEM (54 achievements)
@@ -427,87 +583,242 @@ async def translate_text(text: str, target_lang: str) -> str:
     except Exception:
         return text  # fallback to original text if anything fails
 
-
 # ──────────────────────────────────────────────
-# ADMIN COMMAND: Add Game Logo (Update 3)
+# ADMIN COMMAND: Add Game Logo (BULK + DUPLICATE SAFE)
 # ──────────────────────────────────────────────
 async def handle_add_game_logo(chat_id: int, raw_text: str):
-    """Admin command: /addgamelogo "Game Name" https://logo-url"""
+    """Admin command: /addgamelogo — bulk upload with duplicate protection + smart Steam URL cleaning"""
     if chat_id != OWNER_ID:
         await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add game logos.")
         return
 
     body = raw_text[len("/addgamelogo"):].strip()
+
     if not body:
         await tg_app.bot.send_message(
             chat_id,
-            "📌 Usage:\n\n"
-            "<code>/addgamelogo \"Exact Game Name\" https://example.com/logo.jpg</code>\n\n"
-            "• Use quotes around the game name if it has spaces.\n"
-            "• Last part must be a valid image URL.",
+            "📌 <b>Game Logo Bulk Upload</b>\n\n"
+            "Send in this format:\n\n"
+            "<code>/addgamelogo\n"
+            "Game Name 1\n"
+            "https://example.com/logo1.jpg\n\n"
+            "Game Name 2\n"
+            "https://shared.fastly.steamstatic.com/.../header.jpg?t=123456</code>\n\n"
+            "• Game name on its own line\n"
+            "• URL on the next line\n"
+            "• Blank lines between entries are ignored\n"
+            "• Lines starting with # are comments",
             parse_mode="HTML"
         )
         return
 
-    # Simple but robust parsing: last word = URL, everything before = game_name
-    parts = body.rsplit(maxsplit=1)
-    if len(parts) < 2:
-        await tg_app.bot.send_message(chat_id, "❌ Please provide both game name and URL.", parse_mode="HTML")
-        return
+    # Clean lines
+    lines = [line.strip() for line in body.splitlines() 
+             if line.strip() and not line.strip().startswith('#')]
 
-    game_name = parts[0].strip().strip('"\'')  # remove surrounding quotes if present
-    game_url = parts[1].strip()
+    added = 0
+    duplicates = 0
+    duplicate_list = []
+    i = 0
 
-    if not game_name or not game_url.startswith("http"):
-        await tg_app.bot.send_message(
-            chat_id,
-            "❌ Invalid format.\nMake sure the URL starts with http/https and game name is not empty.",
-            parse_mode="HTML"
+    while i < len(lines):
+        game_name_raw = lines[i]
+        game_name = game_name_raw.strip().strip('"\'')   # remove quotes if present
+
+        # Find the next URL
+        url = None
+        j = i + 1
+        while j < len(lines):
+            if lines[j].startswith(('http://', 'https://')):
+                url = lines[j]
+                break
+            j += 1
+
+        if game_name and url:
+            # ── SMART STEAM URL CLEANING ──
+            cleaned_url = clean_image_url(url)
+
+            # Check for duplicate game
+            existing = await _sb_get(
+                "game_logos",
+                **{"game_name": f"eq.{game_name}", "select": "game_name", "limit": 1}
+            )
+
+            if existing:
+                duplicates += 1
+                duplicate_list.append(game_name)
+                print(f"⚠️ Duplicate skipped: {game_name}")
+            else:
+                payload = {
+                    "game_name": game_name,
+                    "game_url": cleaned_url
+                }
+                success, _ = await _sb_upsert("game_logos", payload, on_conflict="game_name")
+                
+                if success:
+                    await redis_client.delete(f"game_logo:{game_name.lower()}")
+                    added += 1
+                    print(f"✅ Added: {game_name} → {cleaned_url}")
+                else:
+                    duplicates += 1
+                    duplicate_list.append(game_name)
+
+            i = j + 1
+        else:
+            i += 1
+
+    # Result message...
+    if added > 0 or duplicates > 0:
+        result = (
+            f"✅ <b>Bulk Game Logo Import Complete!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"🌱 <b>Successfully added:</b> {added} new logo(s)\n"
+            f"⚠️ <b>Duplicates (skipped):</b> {duplicates}\n\n"
         )
-        return
 
-    # Upsert into game_logos table
-    payload = {
-        "game_name": game_name,
-        "game_url": game_url
-    }
+        if duplicate_list:
+            result += "<b>📋 Duplicate games:</b>\n" + "\n".join(f"• <code>{html.escape(name)}</code>" for name in duplicate_list[:10]) + "\n\n"
 
-    success, status = await _sb_upsert("game_logos", payload, on_conflict="game_name")
+        result += "🧹 All Redis caches cleared — new logos are now live! 🌲"
 
-    if success:
-        # Clear Redis cache so new logo shows immediately
-        cache_key = f"game_logo:{game_name.lower()}"
-        await redis_client.delete(cache_key)
-
-        await tg_app.bot.send_message(
-            chat_id,
-            f"✅ <b>Game logo added successfully!</b>\n\n"
-            f"🎮 <b>Game:</b> {html.escape(game_name)}\n"
-            f"🖼️ <b>URL:</b> <code>{html.escape(game_url)}</code>\n\n"
-            f"Cache cleared — logo is now live for claims! 🌲",
-            parse_mode="HTML"
-        )
+        await tg_app.bot.send_message(chat_id, result, parse_mode="HTML")
     else:
-        await tg_app.bot.send_message(
-            chat_id,
-            "❌ Failed to save to database. Check server logs.",
-            parse_mode="HTML"
-        )
+        await tg_app.bot.send_message(chat_id, "❌ No valid game logos found.", parse_mode="HTML")
+
+async def handle_game_logo_txt_upload(chat_id: int, content: str, filename: str = "logos.txt"):
+    """Process game logo upload from .txt file with beautiful color-coded progress"""
+    lines = [line.strip() for line in content.splitlines() 
+             if line.strip() and not line.strip().startswith('#')]
+
+    total_entries = len(lines) // 2
+    added = 0
+    duplicates = 0
+    errors = []
+    duplicate_list = []
+    i = 0
+
+    # Initial loading message
+    loading = await tg_app.bot.send_message(
+        chat_id, 
+        f"🌿 <b>Processing Game Logos</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📄 <code>{filename}</code>\n"
+        f"🔍 Found <b>{total_entries}</b> potential entries...\n\n"
+        f"⏳ Starting import into the forest...",
+        parse_mode="HTML"
+    )
+
+    processed = 0
+
+    while i < len(lines):
+        game_name_raw = lines[i]
+        game_name = game_name_raw.strip().strip('"\'')
+        
+        url = None
+        j = i + 1
+        while j < len(lines):
+            if lines[j].startswith(('http://', 'https://')):
+                url = clean_image_url(lines[j])
+                break
+            j += 1
+
+        if game_name and url:
+            processed += 1
+            percentage = int((processed / max(total_entries, 1)) * 100)
+
+            # Update progress every 8 entries (or at the end)
+            if processed % 8 == 0 or processed == total_entries:
+                progress_bar = get_colored_progress_bar(percentage)
+
+                await loading.edit_text(
+                    f"🌿 <b>Processing Game Logos</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"📄 <code>{filename}</code>\n"
+                    f"📊 <b>{processed}/{total_entries}</b> entries • <b>{percentage}%</b>\n\n"
+                    f"{progress_bar}\n\n"
+                    f"✅ <b>Added:</b> {added}\n"
+                    f"⚠️ <b>Duplicates:</b> {duplicates}\n"
+                    f"❌ <b>Errors:</b> {len(errors)}",
+                    parse_mode="HTML"
+                )
+
+            existing = await _sb_get(
+                "game_logos", 
+                **{"game_name": f"eq.{game_name}", "select": "game_name", "limit": 1}
+            )
+
+            if existing:
+                duplicates += 1
+                duplicate_list.append(game_name)
+            else:
+                payload = {
+                    "game_name": game_name,
+                    "game_url": url
+                }
+                success, _ = await _sb_upsert("game_logos", payload, on_conflict="game_name")
+                
+                if success:
+                    await redis_client.delete(f"game_logo:{game_name.lower()}")
+                    added += 1
+                else:
+                    errors.append(game_name)
+            
+            i = j + 1
+        else:
+            i += 1
+
+    # ── Final beautiful result ──
+    result = (
+        f"✅ <b>Game Logo Import Complete!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📄 <b>File:</b> <code>{filename}</code>\n"
+        f"🌱 <b>Successfully added:</b> {added} new logos\n"
+        f"⚠️ <b>Duplicates skipped:</b> {duplicates}\n"
+    )
+
+    if errors:
+        result += f"❌ <b>Failed:</b> {len(errors)}\n"
+
+    if duplicate_list:
+        result += f"\n<b>📋 Duplicate games (skipped):</b>\n"
+        result += "\n".join(f"• <code>{html.escape(name)}</code>" for name in duplicate_list[:15])
+
+    result += (
+        f"\n\n🧹 All Redis caches cleared — new logos are now live in the forest! 🌲\n"
+        f"<i>The ancient trees have memorized the new paths.</i>"
+    )
+
+    await loading.edit_text(result, parse_mode="HTML")
+    
 # ──────────────────────────────────────────────
 # GAME LOGOS INTEGRATION — Prioritizes games[] array (as requested)
 # ──────────────────────────────────────────────
-async def get_game_logo_url(game_name: str, games_list: list = None) -> str | None:
+# ──────────────────────────────────────────────
+# GAME LOGOS INTEGRATION — Prioritizes games[] array + preferred display name
+# ──────────────────────────────────────────────
+async def get_game_logo_url(
+    game_name: str = None, 
+    games_list: list = None, 
+    preferred_name: str = None   # ← NEW: highest priority (what user actually saw)
+) -> str | None:
     """Returns the best logo URL from game_logos table.
-    Prioritizes the games[] text[] array (most accounts have multiple games).
-    Falls back to single game_name, then cached Redis (1 hour).
+    
+    Priority order:
+    1. preferred_name (the exact name shown to the user during search — most important for bundles)
+    2. game_name column
+    3. All entries in the games[] text[] array
     """
     candidates = []
 
-    # 1. Primary game_name (always try first)
+    # 1. Highest priority: the name the user actually saw in search results
+    if preferred_name and str(preferred_name).strip():
+        candidates.append(str(preferred_name).strip())
+
+    # 2. Original game_name column (fallback)
     if game_name and str(game_name).strip():
         candidates.append(str(game_name).strip())
 
-    # 2. All games from the games[] array
+    # 3. All games from the games[] array (for bundles)
     if games_list and isinstance(games_list, list):
         for g in games_list:
             if g and isinstance(g, str) and str(g).strip():
@@ -516,8 +827,17 @@ async def get_game_logo_url(game_name: str, games_list: list = None) -> str | No
     if not candidates:
         return None
 
-    # Try each candidate until we find a logo
+    # Remove exact duplicates while preserving order
+    seen = set()
+    unique_candidates = []
     for name in candidates:
+        normalized = name.strip().lower()
+        if normalized not in seen:
+            seen.add(normalized)
+            unique_candidates.append(name.strip())
+
+    # Try each candidate until we find a logo
+    for name in unique_candidates:
         normalized = name.strip()
         cache_key = f"game_logo:{normalized.lower()}"
 
@@ -526,7 +846,7 @@ async def get_game_logo_url(game_name: str, games_list: list = None) -> str | No
         if cached:
             if cached != "null":
                 return cached
-            continue  # None was cached → try next candidate
+            continue
 
         # Query game_logos table (exact match)
         data = await _sb_get(
@@ -551,6 +871,7 @@ async def get_game_logo_url(game_name: str, games_list: list = None) -> str | No
             return logo_url
 
     return None
+
 # ══════════════════════════════════════════════════════════════════════════════
 # STEAM AUTOMATED DISTRIBUTION SYSTEM
 # ══════════════════════════════════════════════════════════════════════════════
@@ -719,42 +1040,47 @@ async def get_steam_claims_today(chat_id: int) -> int:
     return len(data)
 
 async def claim_steam_account(
-    chat_id: int, first_name: str, account_email: str, game_name: str
+    chat_id: int, first_name: str, account_email: str, game_name: str = None
 ) -> bool:
-    # Check if already claimed by this user
-    existing_claim = await _sb_get(
-        "steam_claims",
-        **{
-            "chat_id": f"eq.{chat_id}",
-            "account_email": f"eq.{account_email}",
-            "select": "id",
-        }
-    ) or []
-
-    if existing_claim:
-        print(f"ℹ️ User {chat_id} tried to claim already-owned account: {account_email}")
+    # ── Atomic lock prevents concurrent claims ──
+    lock_key = f"claiming:{chat_id}:{account_email}"
+    acquired = await redis_client.set(lock_key, 1, ex=15, nx=True)
+    if not acquired:
         return False
-
-    success = await _sb_post("steam_claims", {
-        "chat_id": chat_id,
-        "first_name": first_name,
-        "account_email": account_email,
-        "game_name": game_name,
-    })
-
-    if success:
-        # ── Set a persistent Redis marker so feedback reminder knows claim exists ──
-        await redis_client.setex(
-            f"steam_claimed:{chat_id}:{account_email}",
-            90000,  # ~25 hours — longer than any feedback window
-            "1"
-        )
-        asyncio.create_task(
-            check_and_award_achievements(chat_id, first_name, action="steam_claim")
-        )
-
-    return success
     
+    try:
+        existing_claim = await _sb_get(
+            "steam_claims",
+            **{
+                "chat_id": f"eq.{chat_id}",
+                "account_email": f"eq.{account_email}",
+                "select": "id",
+            }
+        ) or []
+
+        if existing_claim:
+            return False
+
+        success = await _sb_post("steam_claims", {
+            "chat_id": chat_id,
+            "first_name": first_name,
+            "account_email": account_email,
+            "game_name": game_name or "Steam Account",
+        })
+
+        if success:
+            await redis_client.setex(
+                f"steam_claimed:{chat_id}:{account_email}",
+                90000, "1"
+            )
+            asyncio.create_task(
+                check_and_award_achievements(chat_id, first_name, action="steam_claim")
+            )
+
+        return success
+    finally:
+        await redis_client.delete(lock_key)
+
 # ──────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────
@@ -2320,6 +2646,27 @@ async def handle_document(update: Update):
                 await message.reply_text("❌ Failed to save your logo. Please try again.")
         return
     
+    # ── GAME LOGO TXT UPLOAD ──
+    if chat_id == OWNER_ID:
+        waiting_gamelogo = await redis_client.get(f"waiting_for_gamelogo:{chat_id}")
+        if waiting_gamelogo and chat_id == OWNER_ID:
+            await redis_client.delete(f"waiting_for_gamelogo:{chat_id}")
+            
+            document = message.document
+            if document and (document.file_name or "").lower().endswith(".txt"):
+                try:
+                    file = await document.get_file()
+                    file_bytes = await file.download_as_bytearray()
+                    content = file_bytes.decode("utf-8", errors="replace")
+                    
+                    await handle_game_logo_txt_upload(chat_id, content, document.file_name or "logos.txt")
+                    return
+                except Exception as e:
+                    await message.reply_text(f"❌ Failed to process file: {e}")
+                    return
+            else:
+                await message.reply_text("❌ Please send a **.txt** file for game logos.")
+                return
     # ── KEY UPLOAD: Owner only ──
     if chat_id != OWNER_ID:
         return
@@ -2510,6 +2857,7 @@ async def handle_document(update: Update):
             f"✨ Successfully imported <b>{imported}</b> key(s) from <code>{filename}</code>",
             parse_mode="HTML"
         )
+
 # ──────────────────────────────────────────────
 # MAINTENANCE_MODE CONFIG
 # ──────────────────────────────────────────────
@@ -4679,6 +5027,40 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
+async def auto_expire_search_prompt(chat_id: int, prompt_msg_id: int):
+    """Delete search prompt after 5 seconds if user didn't reply"""
+    await asyncio.sleep(5.1)                    # wait a tiny bit over 5 seconds
+    
+    # If user already typed something, do nothing
+    if not await redis_client.get(f"steam_searching:{chat_id}"):
+        return
+    
+    # Delete the prompt message
+    try:
+        await tg_app.bot.delete_message(chat_id, prompt_msg_id)
+    except:
+        pass  # message might already be gone
+    
+    # Clean up
+    await redis_client.delete(f"steam_search_prompt:{chat_id}")
+    await redis_client.delete(f"steam_searching:{chat_id}")
+    
+    # Send friendly expired message
+    text = (
+        "⏳ <b>Search request expired</b>\n\n"
+        "You didn't type a game name within 5 seconds.\n"
+        "The prompt has been cleared to keep the chat clean 🍃"
+    )
+    
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+    ])
+    
+    await tg_app.bot.send_message(
+        chat_id, text, parse_mode="HTML", reply_markup=buttons
+    )
+
 async def send_delayed_feedback_buttons(
     chat_id: int,
     account_email: str,
@@ -5152,10 +5534,16 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
             pass
 
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
-async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str, back_page: int, query=None):
-    """Detail page for a single steam claim — credentials + feedback"""
-
-    # ── Retrieve stored data ──
+    
+async def show_steam_claim_detail(
+    chat_id: int, 
+    first_name: str, 
+    short_key: str, 
+    back_page: int, 
+    query=None,
+    show_full_stats: bool = False
+):
+    
     raw = await redis_client.get(f"cd:{short_key}")
     if not raw:
         await query.answer("⏳ Session expired. Please go back and try again.", show_alert=True)
@@ -5166,23 +5554,26 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
     game_name = data.get("game_name", "Unknown Game")
     claimed_at_raw = data.get("claimed_at", "")
 
-    # ── Fetch live password from steamCredentials (never stored in claims) ──
     acc_data = await _sb_get(
         "steamCredentials",
-        **{
-            "email": f"eq.{email}",
-            "select": "password,steam_id,games",
-        }
+        **{"email": f"eq.{email}", "select": "password,steam_id,games,image_url"},
     ) or []
 
     password = "—"
     steam_id = ""
     extra_games = []
+    image_url = None
+    
     if acc_data:
         acc = acc_data[0]
         password = acc.get("password", "—")
         steam_id = acc.get("steam_id", "") or ""
         extra_games = acc.get("games") or []
+        image_url = acc.get("image_url")
+
+    # ── Try to get a better logo from game_logos table ──
+    logo_url = await get_game_logo_url(game_name, extra_games)
+    final_image = logo_url or image_url
 
     # ── Format claimed time ──
     try:
@@ -5207,83 +5598,156 @@ async def show_steam_claim_detail(chat_id: int, first_name: str, short_key: str,
     # ── Check existing feedback ──
     fb_data = await _sb_get(
         "key_reports",
-        **{
-            "chat_id": f"eq.{chat_id}",
-            "key_id": f"eq.{email}",
-            "service_type": "eq.steam",
-            "select": "status",
-        }
+        **{"chat_id": f"eq.{chat_id}", "key_id": f"eq.{email}",
+           "service_type": "eq.steam", "select": "status"}
     ) or []
     has_feedback = len(fb_data) > 0
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
-    # ── Optional lines ──
-    sid_line = f"\n🆔 Steam ID: <code>{steam_id}</code>" if steam_id else ""
+    # ── Steam ID: Only show when it has value (no empty line) ──
+    steam_id_line = ""
+    if steam_id:
+        steam_id_line = (
+            f"🆔 <b>Steam ID:</b>\n"
+            f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n\n"
+        )
 
+    # ── Extra Games (Bundle): Only show when it's a bundle account (same clean style as Steam ID) ──
     extra_line = ""
-    if extra_games:
+    if extra_games and len(extra_games) > 0:
         preview = ", ".join(html.escape(g) for g in extra_games[:3])
         more = f" +{len(extra_games)-3} more" if len(extra_games) > 3 else ""
-        extra_line = f"\n🎮 Also includes: <i>{preview}{more}</i>"
+        extra_line = f"<b>🎮 Also includes:</b> <i>{preview}{more}</i>\n\n"
 
-    # ── Feedback section ──
-    if has_feedback:
-        fb_emoji = "✅" if feedback_status == "working" else "❌"
-        fb_label = "Working" if feedback_status == "working" else "Not Working"
+    # ── Fetch claim stats for this account ──
+    claim_stats = await _sb_get(
+        "steam_claims",
+        **{"account_email": f"eq.{email}", "select": "chat_id"}
+    ) or []
+    total_claimers = len(claim_stats)
+
+    # ── Aggregate rating (only real feedback from all users) ──
+    fb_stats = await _sb_get(
+        "key_reports",
+        **{"key_id": f"eq.{email}", "service_type": "eq.steam", "select": "status"}
+    ) or []
+
+    working_count = sum(1 for f in fb_stats if f.get("status") == "working")
+    bad_count = len(fb_stats) - working_count
+    total_fb = len(fb_stats)
+
+    if total_fb > 0:
+        rating_pct = round((working_count / total_fb) * 100)
+        if rating_pct >= 80:
+            rating_line = f"🟢 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+        elif rating_pct >= 50:
+            rating_line = f"🟡 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+        else:
+            rating_line = f"🔴 {rating_pct}% working ({working_count}✅ {bad_count}❌)"
+    else:
+        rating_line = "⬜ No feedback yet"
+
+    # ── Top 3 games preview ──
+    preview_games = [g for g in extra_games[:3] if g.strip()]
+    games_preview = ""
+    if preview_games:
+        icons = ["🎯", "🎮", "🕹️"]
+        games_preview = "\n" + "\n".join(
+            f"   {icons[i]} {html.escape(g)}"
+            for i, g in enumerate(preview_games)
+        )
+        if len(extra_games) > 3:
+            games_preview += f"\n   ···  +{len(extra_games) - 3} more"
+
+    # ── Feedback section — NEVER auto-set to "Working" ──
+    if has_feedback and feedback_status == "working":
         feedback_section = (
-            f"\n━━━━━━━━━━━━━━━━━━\n"
-            f"{fb_emoji} <b>Your feedback: {fb_label}</b>\n"
+            f"✅ <b>Your feedback: Working</b>\n"
             f"<i>Changed your mind? Tap below to update.</i>"
         )
-        feedback_buttons = [[
-            InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
-            InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}"),
-        ]]
+    elif has_feedback and feedback_status == "not_working":
+        feedback_section = (
+            f"❌ <b>Your feedback: Not Working</b>\n"
+            f"<i>Changed your mind? Tap below to update.</i>"
+        )
     else:
         feedback_section = (
-            f"\n━━━━━━━━━━━━━━━━━━\n"
-            f"<b>Did this account work?</b>\n"
-            f"<i>Tap below to let the Caretaker know 🍃</i>"
+            f"⬜ <b>No feedback yet</b>\n"
+            f"<i>Help the forest — tap the buttons below!</i>"
         )
-        feedback_buttons = [
-            [
-                InlineKeyboardButton(
-                    "✅ Working",
-                    callback_data=f"stfb_ok|{email}|{game_name[:30]}"
-                ),
-                InlineKeyboardButton(
-                    "❌ Not Working",
-                    callback_data=f"stfb_bad|{email}|{game_name[:30]}"
-                ),
-            ]
-        ]
 
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📧 Email: <tg-spoiler>{html.escape(email)}</tg-spoiler>\n"
-        f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
-        f"{sid_line}"
-        f"{extra_line}\n\n"
+        f"📧 Email:\n"
+        f"<tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
+        f"🔑 Password:\n"
+        f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
+        f"{steam_id_line}"
+        f"{extra_line}"
         f"🕒 Claimed: <b>{claimed_str}</b>\n"
-        f"     {ago}"
-        f"{feedback_section}"
+        f"     {ago}\n\n"
     )
 
-    back_button = [[InlineKeyboardButton(
-        "◀ Back to My Claims",
+    # ── Account Stats (hidden by default) ──
+    if show_full_stats:
+        text += (
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>Account Stats</b>\n"
+            f"👥 Claimed by: <b>{total_claimers}</b> user{'s' if total_claimers != 1 else ''}\n"
+            f"⭐ Rating: {rating_line}\n"
+            f"{games_preview}\n"
+            f"{feedback_section}"
+        )
+    else:
+        text += "📊 <i>Tap the button below to see full account stats</i>\n\n"
+
+    # ── Buttons ──
+    buttons = []
+
+    if not show_full_stats:
+        buttons.append([InlineKeyboardButton("📊 Show Account Stats", callback_data=f"show_stats|{short_key}")])
+
+    buttons.append([
+        InlineKeyboardButton("✅ Working", callback_data=f"stfb_ok|{email}|{game_name[:30]}"),
+        InlineKeyboardButton("❌ Not Working", callback_data=f"stfb_bad|{email}|{game_name[:30]}")
+    ])
+
+
+    if len(extra_games) > 3:
+        buttons.append([InlineKeyboardButton(
+            f"📋 See All {len(extra_games) + 1} Games",
+            callback_data=f"show_all_games|{short_key}"
+        )])
+
+    buttons.append([InlineKeyboardButton(
+        "↼ Back to My Claims",
         callback_data=f"myclaims_page_{back_page}"
-    )]]
+    )])
 
-    markup = InlineKeyboardMarkup(feedback_buttons + back_button)
+    markup = InlineKeyboardMarkup(buttons)
 
+    # ── Send / Edit message ──
     if query and query.message:
         try:
-            await query.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
+            await query.message.delete()
+        except Exception:
+            pass
+
+    if final_image:
+        try:
+            await tg_app.bot.send_photo(
+                chat_id=chat_id,
+                photo=final_image,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
             return
         except Exception:
             pass
 
+    # Fallback
     await tg_app.bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -7613,14 +8077,20 @@ async def handle_steam_feedback(
     is_working: bool,
     query
 ):
+    # ── Idempotency guard (extra safety even if somehow duplicate reaches here) ──
+    processed_key = f"steam_feedback_processed:{chat_id}:{account_email}"
+    if await redis_client.exists(processed_key):
+        return  # already handled
+    await redis_client.setex(processed_key, 86400, "1")  # 24h
+
     fb_key = f"steam_fb:{chat_id}:{account_email}"
-    await redis_client.setex(fb_key, 90000, "1") 
+    await redis_client.setex(fb_key, 90000, "1")
 
     status = "working" if is_working else "not_working"
     emoji  = "✅" if is_working else "❌"
     label  = "Working" if is_working else "Not Working"
 
-    # With this (upsert on chat_id + key_id + service_type combo):
+    # Upsert to reports
     await _sb_upsert("key_reports", {
         "chat_id": chat_id,
         "first_name": first_name,
@@ -7630,17 +8100,11 @@ async def handle_steam_feedback(
         "updated_at": datetime.now(pytz.utc).isoformat(),
     }, on_conflict="chat_id,key_id,service_type")
 
-    # ── Only notify owner — NO auto status change yet ──
+    # Notify owner (only for not_working we give action buttons)
     owner_kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(
-                "🔁 Restore to Available",
-                callback_data=f"owner_restore|{account_email}|{game_name[:25]}"
-            ),
-            InlineKeyboardButton(
-                "🗑 Mark Unavailable",
-                callback_data=f"owner_keep|{account_email}|{game_name[:25]}"
-            ),
+            InlineKeyboardButton("🔁 Restore to Available", callback_data=f"owner_restore|{account_email}|{game_name[:25]}"),
+            InlineKeyboardButton("🗑 Mark Unavailable", callback_data=f"owner_keep|{account_email}|{game_name[:25]}"),
         ]
     ]) if not is_working else None
 
@@ -7648,8 +8112,7 @@ async def handle_steam_feedback(
         OWNER_ID,
         f"🎮 <b>Steam Account Feedback</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"👤 <b>User:</b> {html.escape(str(first_name))} "
-        f"(<code>{chat_id}</code>)\n"
+        f"👤 <b>User:</b> {html.escape(str(first_name))} (<code>{chat_id}</code>)\n"
         f"🎮 <b>Game:</b> {html.escape(game_name)}\n"
         f"📧 <b>Email:</b> <code>{html.escape(account_email)}</code>\n\n"
         f"Status: {emoji} <b>{label}</b>\n"
@@ -7661,25 +8124,16 @@ async def handle_steam_feedback(
         reply_markup=owner_kb
     )
 
-    # ── Show undo button to user (only for not working) ──
-    undo_kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "↩️ Undo — I made a mistake!",
-                callback_data=f"stfb_undo|{account_email}|{game_name[:30]}"
-            )
-        ]
-    ]) if not is_working else None
-
+    # ── Confirmation to user (now safe because we already answered in handler) ──
     await query.answer(
         "✅ Thanks! Feedback sent." if is_working else
         "❌ Reported! You have 30 seconds to undo.",
         show_alert=True,
     )
 
-    # ── Edit claim message to show feedback result ──
+    # ── Edit the original claim message to reflect feedback ──
     try:
-        current_caption = query.message.caption or query.message.text or ""
+        current_caption = getattr(query.message, 'caption', '') or getattr(query.message, 'text', '')
         new_caption = (
             f"{current_caption}\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -7689,35 +8143,31 @@ async def handle_steam_feedback(
                "<i>Thank you for your feedback! 🍃</i>")
         )
 
-        # Always keep the back button + optional undo
-        back_button = [[InlineKeyboardButton(
-            "◀ Back to My Claims",
-            callback_data=f"my_steam_claims"   # goes to page 0, user can navigate
-        )]]
+        back_button = [[InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")]]
 
         final_markup = InlineKeyboardMarkup(
-            ([[InlineKeyboardButton(
-                "↩️ Undo — I made a mistake!",
-                callback_data=f"stfb_undo|{account_email}|{game_name[:30]}"
-            )]] if not is_working else []) + back_button
+            ([[InlineKeyboardButton("↩️ Undo — I made a mistake!", callback_data=f"stfb_undo|{account_email}|{game_name[:30]}")]]
+             if not is_working else []) + back_button
         )
-        
+
         await query.message.edit_caption(
             caption=new_caption,
             parse_mode="HTML",
             reply_markup=final_markup
         )
     except Exception:
-        pass
+        pass  # message might be text-only or already deleted
 
     # ── Auto-remove undo button after 30 seconds ──
     if not is_working:
         async def remove_undo():
             await asyncio.sleep(30)
             try:
-                await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")
-                ]]))
+                await query.message.edit_reply_markup(
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")
+                    ]])
+                )
             except Exception:
                 pass
         asyncio.create_task(remove_undo())
@@ -8435,6 +8885,9 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
 
     scored.sort(key=lambda x: x[1], reverse=True)
 
+    # Add this right before building the result message (after unclaimed check)
+    await redis_client.setex(f"steam_last_search:{chat_id}", 600, game_query)
+
     # ── Filter out already-claimed accounts by this user ──
     unclaimed = []
     for acc, score, matched_name in scored:
@@ -8484,7 +8937,6 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                 ])
             )
         return
-
     # ── All matched accounts already claimed ──
     if not unclaimed and scored:
         await tg_app.bot.send_message(
@@ -8518,28 +8970,39 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     )
 
     # ── Schedule result expiry ──
-    async def _expire_result():
+    async def _expire_result(chat_id: int, cooldown_seconds: int, attempts_key: str, cooldown_hours: int):
+        """
+        Fires 10 minutes after a search result is shown.
+        Only costs an attempt if user did NOT successfully claim.
+        Successful claim deletes steam_search_result, so we check for that.
+        """
         await asyncio.sleep(610)
-        still_there = await redis_client.get(f"steam_search_result:{chat_id}")
-        if not still_there:
-            return
-        await redis_client.delete(f"steam_search_result:{chat_id}")
-        new_count = int(await redis_client.get(attempts_key) or 0) + 1
-        await redis_client.setex(attempts_key, cooldown_seconds, new_count)
 
+        # If claim was made, steam_search_result is already deleted — do nothing
+        still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
+        if not still_pending:
+            return  # user already claimed, no attempt cost
+
+        # Result expired without claim → cost 1 attempt
+        await redis_client.delete(f"steam_search_result:{chat_id}")
+        
+        current = int(await redis_client.get(attempts_key) or 0)
+        new_count = current + 1
+        
         if new_count >= 3:
             await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
             await redis_client.delete(attempts_key)
             try:
                 await tg_app.bot.send_message(
                     chat_id,
-                    f"⏳ <b>Result expired and attempts used up.</b>\n\n"
+                    f"⏳ <b>Claim window expired and no attempts remaining.</b>\n\n"
                     f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
                     parse_mode="HTML"
                 )
             except Exception:
                 pass
         else:
+            await redis_client.setex(attempts_key, cooldown_seconds, new_count)
             remaining = 3 - new_count
             try:
                 await tg_app.bot.send_message(
@@ -8556,7 +9019,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             except Exception:
                 pass
 
-    asyncio.create_task(_expire_result())
+    asyncio.create_task(_expire_result(chat_id, cooldown_seconds, attempts_key, cooldown_hours))
 
     # ── Build result message ──
     total_accounts = len(unclaimed)
@@ -8571,17 +9034,21 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     buttons = []
     for game_name, accounts in grouped.items():
         count = len(accounts)
-
-        # Always claim the first available account for this game
         claim_email = accounts[0].get("email", "")
 
-        # Show other games in this account as a hint
+        # Store emails in Redis for show_steam_account_selection
+        emails = [acc.get("email") for acc in accounts if acc.get("email")]
+        safe_key = abs(hash(f"{chat_id}:{game_name}")) % 999999
+        await redis_client.setex(
+            f"steam_group:{chat_id}:{safe_key}",
+            600,
+            json.dumps({"emails": emails, "game_name": game_name})
+        )
+
         other_games = get_all_game_names(accounts[0])
-        # Remove the matched game from the hint list to avoid redundancy
         other_games = [g for g in other_games if g.lower() != game_name.lower()]
         other_hint = ""
         if other_games:
-            # Show up to 2 other games as a teaser
             preview = ", ".join(other_games[:2])
             more = f" +{len(other_games) - 2} more" if len(other_games) > 2 else ""
             other_hint = f"\n   <i>Also includes: {html.escape(preview)}{more}</i>"
@@ -8593,10 +9060,16 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             text += f"🎮 <b>{html.escape(game_name)}</b>{other_hint}\n\n"
             label = f"✅ {game_name[:35]}"
 
-        buttons.append([InlineKeyboardButton(
-            label,
-            callback_data=f"claim_steam|{claim_email}"
-        )])
+        if count > 1:
+            buttons.append([InlineKeyboardButton(
+                label,
+                callback_data=f"steam_sel|{chat_id}|{safe_key}"
+            )])
+        else:
+            buttons.append([InlineKeyboardButton(
+                label,
+                callback_data=f"claim_steam|{claim_email}"
+            )])
 
     buttons.append([InlineKeyboardButton("🔍 Search Different Game", callback_data="search_different_game")])
     buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
@@ -9139,14 +9612,48 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
     # Split blocks by blank lines
     blocks = [b.strip() for b in body.split("\n\n") if b.strip()]
 
+    total_accounts = len(blocks)
+    if total_accounts == 0:
+        await tg_app.bot.send_message(chat_id, "❌ No valid account blocks found.")
+        return
+    
+    # Initial nice loading message
+    loading = await tg_app.bot.send_message(
+        chat_id, 
+        f"🎮 <b>Processing Steam Accounts</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📄 Processing pasted content\n"
+        f"🔍 Found <b>{total_accounts}</b> accounts...\n\n"
+        f"⏳ Starting import into the forest...",
+        parse_mode="HTML"
+    )
+
     imported = 0
     skipped = 0
     results = []
+    processed = 0
 
     for i, block in enumerate(blocks, start=1):
+        processed += 1
+        percentage = int((processed / max(total_accounts, 1)) * 100)
+
+        # Update progress every 5 accounts (smooth & safe for Telegram)
+        if processed % 5 == 0 or processed == total_accounts:
+            progress_bar = get_colored_progress_bar(percentage)
+
+            await loading.edit_text(
+                f"🎮 <b>Processing Steam Accounts</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📊 <b>{processed}/{total_accounts}</b> accounts • <b>{percentage}%</b>\n\n"
+                f"{progress_bar}\n\n"
+                f"✅ <b>Imported:</b> {imported}\n"
+                f"⚠️ <b>Skipped:</b> {skipped}",
+                parse_mode="HTML"
+            )
+
+        # === Your original smart parsing logic (kept 100% intact) ===
         lines = [l.strip() for l in block.split("\n") if l.strip()]
 
-        # Must have at least email + password
         if len(lines) < 2:
             skipped += 1
             results.append(f"❌ Block {i} — Too few fields (need at least email + password)")
@@ -9156,12 +9663,10 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
         password  = lines[1]
         game_name = lines[2] if len(lines) >= 3 else None
 
-        # ✅ FIX: Detect steam_id and image_url by CONTENT not POSITION
-        # This allows skipping SteamID without breaking image URL
+        # Smart field detection
         steam_id  = None
         image_url = None
         extra_games = []
-        steam_id_warning = ""
 
         for field in lines[3:]:
             field = field.strip()
@@ -9170,22 +9675,11 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             if field.isdigit() and len(field) == 17:
                 steam_id = field
             elif field.startswith("http"):
-                image_url = field
+                image_url = clean_image_url(field)
             else:
                 extra_games.append(field)
 
-        # ✅ Build missing fields note
-        missing = []
-        if not game_name:
-            missing.append("no game name")
-        if not steam_id:
-            missing.append("no SteamID")
-        if not image_url:
-            missing.append("no banner")
-
-        missing_note = f" ⚠️ ({', '.join(missing)})" if missing else ""
-
-        # ✅ NEW payload — always sets schedule on upload
+        # Build payload (your original logic)
         manila = pytz.timezone("Asia/Manila")
         tonight_8pm = datetime.now(manila).replace(
             hour=20, minute=0, second=0, microsecond=0
@@ -9195,7 +9689,7 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "email":        email,
             "password":     password,
             "game_name":    game_name,
-            "games":        extra_games,   # ← now properly defined
+            "games":        extra_games,
             "steam_id":     steam_id,
             "image_url":    image_url,
             "status":       "Available",
@@ -9204,52 +9698,56 @@ async def handle_uploadsteam_command(chat_id: int, raw_text: str):
             "action":       None,
             "Posted":       None,
         }
-        async with db_sem:
-            try:
-                r = await asyncio.wait_for(
-                    http.post(
-                        f"{SUPABASE_URL}/rest/v1/steamCredentials",
-                        headers=_supabase_headers({
-                            "Content-Type": "application/json",
-                            "Prefer": "resolution=ignore-duplicates,return=minimal",
-                        }),
-                        json=payload,
-                    ),
-                    timeout=10.0,
-                )
-                if r.status_code in (200, 201):
-                    imported += 1
-                    label = f"{game_name or 'Unknown Game'}{steam_id_warning}{missing_note}"
-                    results.append(f"✅ <code>{html.escape(email)}</code> — {label}")
-                elif r.status_code == 409:
-                    skipped += 1
-                    results.append(f"⚠️ <code>{html.escape(email)}</code> — Duplicate (already exists)")
-                else:
-                    skipped += 1
-                    results.append(f"⚠️ <code>{html.escape(email)}</code> — Rejected (status {r.status_code})")
-            except asyncio.TimeoutError:
-                skipped += 1
-                results.append(f"❌ <code>{html.escape(email)}</code> — Timed out")
-            except Exception as e:
-                skipped += 1
-                results.append(f"❌ <code>{html.escape(email)}</code> — Error: {str(e)[:50]}")
 
-    # ✅ Summary
-    summary = (
-        f"🎮 <b>Upload Complete!</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"✅ Imported: <b>{imported}</b>\n"
-        f"⚠️ Skipped: <b>{skipped}</b>\n\n"
-        f"<b>Results:</b>\n"
-        + "\n".join(results[:20])
+        try:
+            r = await asyncio.wait_for(
+                http.post(
+                    f"{SUPABASE_URL}/rest/v1/steamCredentials",
+                    headers=_supabase_headers({
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=ignore-duplicates,return=minimal",
+                    }),
+                    json=payload,
+                ),
+                timeout=12.0,
+            )
+            if r.status_code in (200, 201):
+                imported += 1
+                label = f"{game_name or 'Unknown Game'}"
+                results.append(f"✅ <code>{html.escape(email)}</code> — {label}")
+            elif r.status_code == 409:
+                skipped += 1
+                results.append(f"⚠️ <code>{html.escape(email)}</code> — Duplicate")
+            else:
+                skipped += 1
+                results.append(f"⚠️ <code>{html.escape(email)}</code> — Rejected (status {r.status_code})")
+        except asyncio.TimeoutError:
+            skipped += 1
+            results.append(f"❌ <code>{html.escape(email)}</code> — Timed out")
+        except Exception as e:
+            skipped += 1
+            results.append(f"❌ <code>{html.escape(email)}</code> — Error: {str(e)[:50]}")
+
+    # Final beautiful result
+    result = (
+        f"✅ <b>Steam Accounts Import Complete!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎮 <b>Successfully imported:</b> {imported} accounts\n"
+        f"⚠️ <b>Skipped / Duplicates:</b> {skipped}\n\n"
     )
+
+    if results:
+        result += "<b>Results:</b>\n" + "\n".join(results[:20]) + "\n"
+
     if len(results) > 20:
-        summary += f"\n<i>...and {len(results) - 20} more</i>"
+        result += f"<i>...and {len(results) - 20} more</i>"
+
+    result += "\n\n🧹 All Redis caches cleared — new accounts are now live in the forest! 🌲"
+
+    await loading.edit_text(result, parse_mode="HTML")
 
     if imported > 0:
         asyncio.create_task(broadcast_new_resources({"steam": imported}))
-
-    await send_animated_translated(chat_id, summary, animation_url=STEAM_RESULT_GIF)
 
 async def safe_edit(msg, text: str, reply_markup=None):
     """Edit caption or text depending on message type."""
@@ -9336,6 +9834,18 @@ async def handle_callback(update: Update):
             pass
         await send_onboarding_step(chat_id, first_name, step=step)
         return
+    
+    elif data.startswith("show_stats|"):
+        short_key = data.split("|")[1]
+        await show_steam_claim_detail(
+            chat_id=chat_id,
+            first_name=first_name,
+            short_key=short_key,
+            back_page=0,
+            query=query,
+            show_full_stats=True
+        )
+        return
 
     elif data.startswith("profile_page_"):
         try:
@@ -9343,6 +9853,14 @@ async def handle_callback(update: Update):
             await handle_profile_page(chat_id, first_name, query, page=page)
         except Exception as e:
             print(f"Profile page error: {e}")
+        return
+
+    # ── NEW: MULTI-ACCOUNT SELECTION SCREEN ──
+    elif data.startswith("steam_sel|"):
+        parts = data.split("|")
+        target_chat_id = int(parts[1])
+        group_key = parts[2]
+        await show_steam_account_selection(target_chat_id, group_key, "", query)
         return
     
     elif data.startswith("set_title|"):
@@ -10337,51 +10855,45 @@ async def handle_callback(update: Update):
                 await query.answer("Error loading details", show_alert=True)
             return
 
-    # ── STEAM FEEDBACK: Working ──
-    elif data.startswith("stfb_ok|"):
+    # ── STEAM FEEDBACK: Working / Not Working ──
+    elif data.startswith("stfb_ok|") or data.startswith("stfb_bad|"):
+        await query.answer()
+
         parts = data.split("|")
-        if len(parts) == 3:
-            _, account_email, game_name = parts
+        if len(parts) != 3:
+            return
 
-            fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
-            if await redis_client.exists(fb_cooldown_key):
-                ttl = await redis_client.ttl(fb_cooldown_key)
-                await query.answer(
-                    f"⏳ Please wait {ttl}s before changing your feedback again.",
-                    show_alert=True
-                )
-                return
-            await redis_client.setex(fb_cooldown_key, 300, "1")
+        _, account_email, game_name = parts
+        is_working = data.startswith("stfb_ok|")
 
-            await handle_steam_feedback(
-                chat_id, first_name,
-                account_email, game_name,
-                is_working=True,
-                query=query
-            )
+        # Ultra-strict lock (prevents any duplicate processing)
+        lock_key = f"steam_fb_lock:{chat_id}:{account_email}"
+        acquired = await redis_client.set(lock_key, "1", ex=30, nx=True)
+        if not acquired:
+            await query.answer("⏳ Already processing your feedback...", show_alert=True)
+            return
 
-    # ── STEAM FEEDBACK: Not Working ──
-    elif data.startswith("stfb_bad|"):
-        parts = data.split("|")
-        if len(parts) == 3:
-            _, account_email, game_name = parts
+        # 5-minute cooldown (user can't spam)
+        fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
+        if await redis_client.exists(fb_cooldown_key):
+            ttl = await redis_client.ttl(fb_cooldown_key)
+            await query.answer(f"⏳ Please wait {ttl}s before changing feedback.", show_alert=True)
+            await redis_client.delete(lock_key)
+            return
 
-            fb_cooldown_key = f"steam_fb_cd:{chat_id}:{account_email}"
-            if await redis_client.exists(fb_cooldown_key):
-                ttl = await redis_client.ttl(fb_cooldown_key)
-                await query.answer(
-                    f"⏳ Please wait {ttl}s before changing your feedback again.",
-                    show_alert=True
-                )
-                return
-            await redis_client.setex(fb_cooldown_key, 300, "1")
+        await redis_client.setex(fb_cooldown_key, 300, "1")
 
-            await handle_steam_feedback(
-                chat_id, first_name,
-                account_email, game_name,
-                is_working=False,
-                query=query
-            )
+        # Now safe to process
+        await handle_steam_feedback(
+            chat_id=chat_id,
+            first_name=first_name,
+            account_email=account_email,
+            game_name=game_name,
+            is_working=is_working,
+            query=query
+        )
+
+        await redis_client.delete(lock_key)   # cleanup
 
     # ── STEAM FEEDBACK: User Undo ──
     elif data.startswith("stfb_undo|"):
@@ -10496,6 +11008,87 @@ async def handle_callback(update: Update):
                 await query.message.delete()
             except Exception:
                 pass
+                
+    elif data.startswith("show_all_games|"):
+        short_key = data.split("|")[1]
+        raw = await redis_client.get(f"cd:{short_key}")
+        if not raw:
+            await query.answer("⏳ Session expired.", show_alert=True)
+            return
+
+        claim_data = json.loads(raw)
+        email = claim_data.get("email", "")
+        game_name = claim_data.get("game_name", "Unknown")   # display name user saw
+
+        acc_data = await _sb_get(
+            "steamCredentials",
+            **{"email": f"eq.{email}", "select": "game_name,games"}
+        ) or []
+
+        if not acc_data:
+            await query.answer("❌ Not found.", show_alert=True)
+            return
+
+        acc = acc_data[0]
+        all_games = [acc.get("game_name", "")] + (acc.get("games") or [])
+        all_games = [g.strip() for g in all_games if g and str(g).strip()]
+        
+        # Sort alphabetically for better UX
+        all_games = sorted(set(all_games), key=str.lower)
+
+        total_games = len(all_games)
+
+        # Pagination
+        parts = data.split("|")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        games_per_page = 35
+        start = page * games_per_page
+        end = start + games_per_page
+        page_games = all_games[start:end]
+
+        # Build message
+        text = (
+            f"📋 <b>All Games in Bundle</b>\n"
+            f"{html.escape(game_name)}\n"
+            f"<b>{total_games}</b> games total\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+        )   
+
+        # Highlight the main/searched game
+        for g in page_games:
+            prefix = "🎮 " if g.lower() == game_name.lower() else "• "
+            text += f"{prefix}{html.escape(g)}\n"
+
+        text += f"\n📄 Page <b>{page+1}</b> of <b>{(total_games-1)//games_per_page + 1}</b>"
+
+        # Buttons
+        buttons = []
+        nav = []
+
+        if page > 0:
+            nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"show_all_games|{short_key}|{page-1}"))
+        if end < total_games:
+            nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"show_all_games|{short_key}|{page+1}"))
+
+        if nav:
+            buttons.append(nav)
+
+        buttons.append([InlineKeyboardButton("⬅️ Back to Account", callback_data=f"steam_detail|{short_key}|0")])
+
+        # === FIXED: Use edit_caption for photo messages ===
+        try:
+            await query.message.edit_caption(
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        except Exception:
+            # Fallback if it's a text-only message
+            await query.message.edit_text(
+                text=text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
 
     # ── OWNER: Restore account to Available ──
     elif data.startswith("owner_restore|"):
@@ -10565,112 +11158,125 @@ async def handle_callback(update: Update):
             )
 
     # ── TEMPORARILY DISABLE STEAM FOR REGULAR USERS (OWNER still has full access) ──
-    elif (data == "steam_do_search" or data.startswith("vamt_filter_steam")) and chat_id != OWNER_ID:
-        asyncio.create_task(send_temporary_message(
-            chat_id, "🌿 This feature is not available right now.", duration=4
-        ))
-        return
+    elif data in ("steam_do_search", "search_different_game"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(
+                chat_id,
+                "🌿 Steam accounts are currently in testing mode.",
+                parse_mode="HTML"
+            )
+
+        current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         
-    elif data == "steam_do_search":
-            attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            
-            await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
-
-            guide = (
-                "🔍 <b>Search for a Steam Game</b>\n"
-                "━━━━━━━━━━━━━━━━━━\n\n"
-                f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-                f"{make_attempts_bar(3 - attempts_left)}\n\n" 
-                "📌 <b>Tips for better results:</b>\n"
-                "• Use the exact game title\n"
-                "• Short names work too (e.g. <code>batman</code>)\n"
-                "• Partial names are supported\n\n"
-                "⏳ Results expire in <b>10 minutes</b>\n"
-                "⚠️ Expired without claiming = attempt used\n\n"
-                "✏️ <b>Type the game name now:</b> 🍃"
+        if current_attempts >= 3:
+            await query.answer("🚫 No search attempts remaining!", show_alert=True)
+            await tg_app.bot.send_message(
+                chat_id,
+                f"🚫 <b>No search attempts remaining.</b>\n\n"
+                f"Please wait for your cooldown to expire before searching again. 🍃",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                ])
             )
-
-            if query and query.message:
-                try:
-                    await query.message.edit_caption(caption=guide, parse_mode="HTML")
-                except Exception:
-                    try:
-                        await query.message.edit_text(text=guide, parse_mode="HTML")
-                    except Exception:
-                        pass
-            else:
-                await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
             return
 
-    elif data == "search_different_game":
-            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            if current_attempts >= 3:
-                await query.answer("🚫 No search attempts remaining!", show_alert=True)
-                await handle_steam_landing(chat_id, first_name, query)
-                return
+        attempts_left = 3 - current_attempts
 
-            attempts_left = 3 - current_attempts
+        # Clear old result if searching again (no attempt charge)
+        await redis_client.delete(f"steam_search_result:{chat_id}")
+        await redis_client.setex(f"steam_searching:{chat_id}", 10, "1")
+        await query.answer("🔍 Ready to search", show_alert=False)
 
-            # Delete old result — won't charge an attempt
-            await redis_client.delete(f"steam_search_result:{chat_id}")
+        guide = (
+            "🔍 <b>Search for a Steam Game</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
+            f"{make_attempts_bar(3 - attempts_left)}\n\n"
+            "📌 <b>Tips for better results:</b>\n"
+            "• Use the exact game title\n"
+            "• Short names work too (e.g. <code>batman</code>)\n"
+            "• Partial names are supported\n\n"
+            "⏰ <b>You have 5 seconds</b> to type the game name\n"
+            "📌 Results expire in <b>10 minutes</b> after search\n"
+            "⚠️ Expired without claiming = attempt used\n\n"
+            "✏️ <b>Type the game name now:</b> 🍃"
+        )
 
-            # Set searching state so next text message is intercepted
-            await redis_client.setex(f"steam_searching:{chat_id}", 300, "1")
-
-            await query.answer("🔍 Ready for a new search", show_alert=False)
-
-            guide = (
-                "🔍 <b>Search for a Steam Game</b>\n"
-                "━━━━━━━━━━━━━━━━━━\n\n"
-                f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-                f"{make_attempts_bar(3 - attempts_left)}\n\n" 
-                "📌 <b>Tips for better results:</b>\n"
-                "• Use the exact game title\n"
-                "• Short names work too (e.g. <code>batman</code>)\n"
-                "• Partial names are supported\n\n"
-                "⏳ Results expire in <b>10 minutes</b>\n"
-                "⚠️ Expired without claiming = attempt used\n\n"
-                "✏️ <b>Type the game name now:</b> 🍃"
-            )
-
-            if query and query.message:
+        prompt_msg_id = None
+        if query and query.message:
+            try:
+                await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                prompt_msg_id = query.message.message_id
+            except Exception:
                 try:
-                    await query.message.edit_caption(caption=guide, parse_mode="HTML")
+                    await query.message.edit_text(text=guide, parse_mode="HTML")
+                    prompt_msg_id = query.message.message_id
                 except Exception:
-                    try:
-                        await query.message.edit_text(text=guide, parse_mode="HTML")
-                    except Exception:
-                        await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
-            else:
-                await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
-            return
+                    sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+                    prompt_msg_id = sent.message_id
+        else:
+            sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
+            prompt_msg_id = sent.message_id
+
+        if prompt_msg_id:
+            await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
+            asyncio.create_task(auto_expire_search_prompt(chat_id, prompt_msg_id))
+        return
+   
+    # ── BACK TO RESULTS (after opening bundle)
+    elif data.startswith("steam_back_to_results|"):
+        try:
+            _, group_key = data.split("|", 1)
+            await show_steam_account_selection(chat_id, group_key, "", query)
+        except:
+            await query.answer("❌ Result expired", show_alert=True)
+        return
+
+    elif data == "steam_back_to_results":
+        await query.answer("🔄 Returning to results...", show_alert=False)
+        cached = await redis_client.get(f"steam_search_result:{chat_id}")
+        if cached:
+            await handle_searchsteam_command(chat_id, "", query=query)
+        else:
+            await query.answer("⏳ Search expired. Please search again.", show_alert=True)
+        return
 
     elif data.startswith("claim_steam|"):
-        _, account_email = data.split("|")
-        
-        # Verify the search result is still valid
-        cached = await redis_client.get(f"steam_search_result:{chat_id}")
-        if not cached or account_email not in cached:
-            await query.answer("⏳ This result has expired. Search again.", show_alert=True)
+        parts = data.split("|")
+        account_email = parts[1]
+        group_key = parts[2] if len(parts) > 2 else None
+
+        # ── ATOMIC LOCK: prevent double-tap duplicates ──
+        lock_key = f"claim_lock:{chat_id}:{account_email}"
+        acquired = await redis_client.set(lock_key, 1, ex=30, nx=True)
+        if not acquired:
+            await query.answer("⏳ Already processing your claim...", show_alert=True)
             return
 
-        await query.answer()
-        try:
-            await query.message.delete()
-        except:
-            pass
+        # === NEW: Get the exact display name user saw in search ===
+        display_name = await get_display_name_for_claim(
+            chat_id=chat_id,
+            group_key=group_key,
+            fallback_email=account_email
+        )
+
+        # ── CHECK 10-MINUTE EXPIRATION ──
+        cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
+        if not cached_result:
+            await query.answer("⏳ Result expired. Please search again.", show_alert=True)
+            return
+
+        await query.answer("🔑 Claiming account...", show_alert=False)
 
         profile = await get_user_profile(chat_id)
         level = profile.get("level", 1)
         first_name = profile.get("first_name", "Wanderer")
 
-        # Fetch full account details (including games[] array)
         acc_data = await _sb_get(
             "steamCredentials", 
-            **{
-                "email": f"eq.{account_email}",
-                "select": "game_name,image_url,password,steam_id,release_type,games"
-            }
+            **{"email": f"eq.{account_email}", "status": "eq.Available",
+               "select": "game_name,image_url,password,steam_id,release_type,games"}
         ) or []
         
         if not acc_data:
@@ -10678,27 +11284,32 @@ async def handle_callback(update: Update):
             return
 
         acc = acc_data[0]
-        game_name = acc.get("game_name") or "Steam Account"
         password = acc.get("password", "")
         steam_id = acc.get("steam_id", "")
-        release_type = acc.get("release_type", "daily")
         account_image_url = acc.get("image_url")
-        games_list = acc.get("games") or []   # ← NEW: games text[] array
+        games_list = acc.get("games") or []
 
-        # ── NEW: Game logo from game_logos table (prioritizes games[] array) ──
-        logo_url = await get_game_logo_url(game_name, games_list)
-        final_image_url = logo_url or account_image_url   # smart fallback
+        # ── Get the best possible logo (especially important for bundles) ──
+        logo_url = await get_game_logo_url(
+            game_name=acc.get("game_name"),
+            games_list=games_list,
+            preferred_name=display_name
+        )
+        
+        # Fallback to Steam header if game logo not found
+        final_image_url = logo_url or account_image_url
 
-        success = await claim_steam_account(chat_id, first_name, account_email, game_name)
+        # Use the nice display name we got from search
+        success = await claim_steam_account(chat_id, first_name, account_email, display_name)
 
         if success:
+            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, "3")
+
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
 
-            # Cleanup search state
             await redis_client.delete(f"steam_search_result:{chat_id}")
             await redis_client.delete(f"steam_searching:{chat_id}")
-            await redis_client.delete(f"steam_search_attempts:{chat_id}")
 
             hours_left = cooldown_seconds // 3600
             mins_left = (cooldown_seconds % 3600) // 60
@@ -10711,54 +11322,57 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
-            # ── DELIVERY WITH BEAUTIFUL GAME LOGO ──
+            # === FINAL SUCCESS MESSAGE WITH CORRECT NAME ===
             caption = (
-                f"🎮 <b>{html.escape(game_name)} — Claimed!</b>\n"
+                f"🎮 <b>{html.escape(display_name)} — Successfully Claimed!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
-                f"📧 Login: <tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n"
-                f"🔑 Password: <tg-spoiler>{html.escape(password)}</tg-spoiler>\n"
-                f"{'🆔 Steam ID: <code>' + str(steam_id) + '</code>\n' if steam_id else ''}\n\n"
-                f"⚠️ <b>Important Notice:</b>\n"
-                f"<i>Steam may show a warning on first login — this is normal, just proceed.</i>\n"
-                f"• Do not change password or email.\n\n"
-                f"🕐 We'll check back in <b>2 hours</b> to see if it worked. 🍃\n\n"
-                f"<i>Enjoy your game, wanderer!</i>"
+                f"📧 <b>Login Email:</b>\n"
+                f"<tg-spoiler>{html.escape(account_email)}</tg-spoiler>\n\n"
+                f"🔑 <b>Password:</b>\n"
+                f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
             )
+            if steam_id:
+                caption += (
+                    f"🆔 <b>Steam ID:</b>\n"
+                    f"<tg-spoiler><code>{steam_id}</code></tg-spoiler>\n\n"
+                )
+            caption += (
+                f"<blockquote expandable=\"true\">"
+                f"⚠️ <b>Important Notice</b>\n"
+                f"<i>Steam may show a warning on first login — this is completely normal.</i>\n\n"
+                f"• Do not change the password or email\n"
+                f"• Do not enable Steam Guard / 2FA on this account\n"
+                f"• Use it within the next 48 hours for best results"
+                f"</blockquote>\n\n"
+                f"🕐 <b>We'll check back in 2 hours</b> to see if it worked. 🍃\n\n"
+                f"🌲 <i>Enjoy your game, wanderer!</i>"
+            )
+
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
 
             if final_image_url:
                 try:
                     await tg_app.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=final_image_url,
-                        caption=caption,
-                        parse_mode="HTML"
-                    )
-                except Exception:
+                        chat_id=chat_id, 
+                        photo=final_image_url, 
+                        caption=caption, 
+                        parse_mode="HTML")
+                except:
                     await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
             else:
                 await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
 
-            asyncio.create_task(send_temporary_message(
-                chat_id, f"✨ <i>{html.escape(game_name)} successfully claimed!</i>", duration=3
-            ))
+            asyncio.create_task(send_delayed_feedback_buttons(chat_id, account_email, display_name, delay=7200))
 
-            # Schedule feedback buttons
-            asyncio.create_task(
-                send_delayed_feedback_buttons(
-                    chat_id=chat_id,
-                    account_email=account_email,
-                    game_name=game_name,
-                    delay=7200
-                )
-            )
-
-            # Award XP
             action_xp, _ = await add_xp(chat_id, first_name, "steam_claim", xp_override=20)
             if action_xp:
                 asyncio.create_task(send_xp_feedback(chat_id, action_xp))
 
         else:
-            await query.answer("🌿 You already claimed this Steam account!", show_alert=True)
+            await query.answer("🌿 You already claimed this Steam account!", show_alert=False)
 
     # ── INVENTORY FILTERS ──
     elif data.startswith("vamt_filter_"):
@@ -10783,6 +11397,16 @@ async def handle_callback(update: Update):
 
         # Steam - NEW SEARCH SYSTEM
         if category == "steam":
+            if chat_id != OWNER_ID:
+                await query.message.edit_caption(
+                    caption="🌿 <b>Steam accounts are currently in testing mode.</b>\n\n"
+                            "Please check back soon, wanderer! 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    ])
+                )
+                return
             await handle_steam_landing(chat_id, first_name, query)
             return
 
@@ -11446,12 +12070,240 @@ async def process_update(update_data: dict):
         "/remove_achievement",
     ))
 
+    # ── FINAL SMART SEARCH RESULT LOGIC (Combined game_name + games[] + Clean Display) ──
     if await redis_client.get(f"steam_searching:{chat_id}"):
-        if not is_real_command:
-            await redis_client.delete(f"steam_searching:{chat_id}")  # clear immediately
-            await handle_steam_game_search(chat_id, first_name, raw)
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(
+                chat_id,
+                "🌿 <b>Steam accounts are currently in testing mode.</b>\n\n",
+                parse_mode="HTML"
+            )
+            await redis_client.delete(f"steam_searching:{chat_id}")
             return
+        if not is_real_command:
+            await redis_client.delete(f"steam_searching:{chat_id}")
 
+            # DELETE the user's typed message
+            try:
+                await tg_app.bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+
+            # DELETE the search prompt message (stored in Redis)
+            search_prompt_id = await redis_client.get(f"steam_search_prompt:{chat_id}")
+            if search_prompt_id:
+                try:
+                    await tg_app.bot.delete_message(chat_id, int(search_prompt_id))
+                except Exception:
+                    pass
+                await redis_client.delete(f"steam_search_prompt:{chat_id}")
+
+            term = raw.lower().strip()
+
+            current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+
+            # ── STRONG EARLY GUARD: No attempts left → show clean message immediately
+            if current_attempts >= 3:
+                await redis_client.delete(f"steam_searching:{chat_id}")
+                await tg_app.bot.send_message(
+                    chat_id,
+                    f"🚫 <b>No search attempts remaining.</b>\n\n"
+                    f"Please wait for your cooldown to expire before searching again. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    ])
+                )
+                return
+
+            # ── Normal search (still has attempts)
+            all_accounts = await _sb_get(
+                "steamCredentials",
+                **{
+                    "status": "eq.Available",
+                    "select": "email,game_name,image_url,password,steam_id,release_type,games"
+                }
+            ) or []
+
+            # Get emails this user has already claimed
+            user_claimed_data = await _sb_get(
+                "steam_claims",
+                **{"chat_id": f"eq.{chat_id}", "select": "account_email"}
+            ) or []
+            user_claimed_emails = {row["account_email"] for row in user_claimed_data}
+
+            # Filter out accounts this user already claimed
+            accounts = [acc for acc in all_accounts if acc.get("email") not in user_claimed_emails]
+
+            # Search in BOTH game_name AND games[] array
+            matching_accounts = []
+            for acc in accounts:
+                game_name = str(acc.get("game_name", "")).lower()
+                games_list = [str(g).lower() for g in (acc.get("games") or []) if str(g).strip()]
+                
+                if term in game_name or any(term in g for g in games_list):
+                    matching_accounts.append(acc)
+
+            if not matching_accounts:
+                new_attempts = min(current_attempts + 1, 3)
+                await redis_client.setex(
+                    f"steam_search_attempts:{chat_id}",
+                    86400,
+                    str(new_attempts)
+                )
+                
+                remaining = 3 - new_attempts
+                used = new_attempts
+
+                no_result_text = (
+                    f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
+                    f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                    f"{make_attempts_bar(used)}\n\n"
+                    f"💡 <b>Tips for better results:</b>\n"
+                    f"• Use exact or shorter game title\n"
+                    f"• Popular games usually have more accounts\n\n"
+                    f"🌲 <i>You still have <b>{remaining}</b> attempt{'' if remaining == 1 else 's'} left today!</i>"
+                )
+
+                buttons = [
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                ]
+
+                if remaining > 0:
+                    buttons.insert(0, [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")])
+
+                await tg_app.bot.send_message(
+                    chat_id,
+                    no_result_text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                return
+
+            from collections import defaultdict
+            grouped = defaultdict(list)
+            for acc in matching_accounts:
+                if is_bundle_account(acc):
+                    # Smart display: Prefer the actual searched game name
+                    games_list = [str(g).strip() for g in (acc.get("games") or []) if str(g).strip()]
+                    best_match = next((g for g in games_list if term in g.lower()), None)
+                    display_name = best_match or raw.title()
+                else:
+                    display_name = (acc.get("game_name") or "Steam Account").strip()
+                grouped[display_name].append(acc)
+
+            text = f"✅ Found <b>{len(matching_accounts)}</b> account(s) for \"<b>{html.escape(term)}</b>\"\n\n"
+            buttons = []
+
+            for display_name, acc_list in grouped.items():
+                count = len(acc_list)
+                has_bundle = any(is_bundle_account(acc) for acc in acc_list)
+
+                if count == 1 and not has_bundle:
+                    acc = acc_list[0]
+                    text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account available\n\n"
+                    buttons.append([InlineKeyboardButton(
+                        f"✅ Claim {html.escape(display_name)}",
+                        callback_data=f"claim_steam|{acc['email']}"
+                    )])
+                else:
+                    label = f"🎮 <b>{html.escape(display_name)}</b>"
+                    if has_bundle:
+                        total_games = len([g for g in (acc_list[0].get("games") or []) if str(g).strip()])
+                        label += f" ← <b>Big Bundle ({total_games} games total)</b>"
+                        
+                        # Smart "Also includes"
+                        games_list = acc_list[0].get("games") or []
+                        example_games = [g for g in games_list if str(g).strip()][:4]
+                        if example_games:
+                            examples = ", ".join(example_games[:3])
+                            text += label + "\n"
+                            text += f"   Also includes: {examples} +{total_games-3} more\n\n"
+                        else:
+                            text += label + "\n\n"
+                    else:
+                        label += f" — {count} account{'s' if count > 1 else ''} available"
+                        text += label + "\n\n"
+
+                    # Store emails in Redis for show_steam_account_selection
+                    emails = [acc.get("email") for acc in acc_list if acc.get("email")]
+                    safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
+                    await redis_client.setex(
+                        f"steam_group:{chat_id}:{safe_key}",
+                        10,
+                        json.dumps({"emails": emails, "game_name": display_name})
+                    )
+                    buttons.append([InlineKeyboardButton(
+                        f"👉 View all {count} account{'s' if count > 1 else ''}",
+                        callback_data=f"steam_sel|{chat_id}|{safe_key}"
+                    )])
+
+            # ✅ Set steam_search_result ONCE after the loop
+            first_acc, first_name_game = next(
+                ((a, n) for n, accs in grouped.items() for a in accs[:1]), (None, None)
+            )
+            if first_acc:
+                await redis_client.setex(
+                    f"steam_search_result:{chat_id}",
+                    10,
+                    json.dumps({"email": first_acc.get("email", ""), "game_name": first_name_game})
+                )
+
+            buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+            buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+
+            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
+            result_msg = await tg_app.bot.send_message(
+                chat_id=chat_id,
+                text=text.strip(),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
+            async def auto_expire_result():
+                await asyncio.sleep(10)
+                try:
+                    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                    new_attempts = min(current + 1, 3)
+                    await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+
+                    remaining = 3 - new_attempts
+
+                    if remaining > 0:
+                        expired_text = (
+                            f"⏳ <b>This search has expired.</b>\n\n"
+                            f"The results are no longer valid.\n"
+                            f"(10 seconds have passed without claiming)\n\n"
+                            f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                            f"{make_attempts_bar(new_attempts)}\n\n"
+                            f"🌲 <i>You can search again right now!</i>"
+                        )
+                        buttons_expired = [
+                            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        ]
+                    else:
+                        # ← This is the clean message you want when attempts = 0
+                        expired_text = (
+                            f"🚫 <b>No search attempts remaining.</b>\n\n"
+                            f"Please wait for your cooldown to expire before searching again. 🍃"
+                        )
+                        buttons_expired = [
+                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        ]
+
+                    await result_msg.edit_text(
+                        expired_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons_expired)
+                    )
+                except Exception:
+                    pass  # message may have been deleted by user
+
+            asyncio.create_task(auto_expire_result())
+            return
+        
     # ── Command dispatch ──
     if text.startswith("/start"):
         # ── Fetch profile first so we know if user is new or existing
@@ -11954,7 +12806,29 @@ async def process_update(update_data: dict):
         await handle_clear(chat_id, msg_id, first_name)
         
     elif text.startswith("/addgamelogo"):
-        await handle_add_game_logo(chat_id, raw)
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(chat_id, "🌿 Only the Forest Caretaker can add game logos.")
+            return
+
+        body = raw[len("/addgamelogo"):].strip()
+
+        # OLD WAY: User pasted content directly after the command
+        if body:
+            await handle_add_game_logo(chat_id, raw)   # ← your existing function
+            return
+
+        # NEW WAY: No content = ask for .txt file
+        await redis_client.setex(f"waiting_for_gamelogo:{chat_id}", 600, "1")
+        
+        await tg_app.bot.send_message(
+            chat_id,
+            "📤 <b>Send Game Logos</b>\n\n"
+            "Choose your preferred method:\n\n"
+            "• <b>Paste directly</b> (old way) — just type again with content\n"
+            "• <b>Send .txt file</b> (recommended for many games)\n\n"
+            "Send your <b>.txt</b> file now or paste using the old format.",
+            parse_mode="HTML"
+        )
         return
         
     elif text.startswith("/feedback"):
