@@ -159,16 +159,22 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await asyncio.sleep(10)
         try:
             await tg_app.bot.delete_message(chat_id, msg.message_id)
-            await send_steam_search_expired_message(chat_id)   # rich message
+            await send_steam_search_expired_message(chat_id, increment_attempt=False)
         except Exception:
             pass
 
     asyncio.create_task(auto_expire_claim_page())
 
-async def send_steam_search_expired_message(chat_id: int):
+async def send_steam_search_expired_message(chat_id: int, increment_attempt: bool = True):
     """Reusable rich expired message with attempts bar (same as main search)"""
-    current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-    new_attempts = min(current_attempts + 1, 3)
+    if increment_attempt:
+        current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+        new_attempts = min(current_attempts + 1, 3)
+    else:
+        # Just read current value, do NOT increment again
+        new_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+        new_attempts = min(new_attempts, 3)
+
     remaining = 3 - new_attempts
 
     expired_text = (
@@ -190,12 +196,13 @@ async def send_steam_search_expired_message(chat_id: int):
         ])
     )
 
-    # Update attempts count (same logic as main search)
-    await redis_client.setex(
-        f"steam_search_attempts:{chat_id}",
-        86400,
-        str(new_attempts)
-    )
+    # Only update Redis if we actually incremented
+    if increment_attempt:
+        await redis_client.setex(
+            f"steam_search_attempts:{chat_id}",
+            86400,
+            str(new_attempts)
+        )
 
 # ──────────────────────────────────────────────
 # NEW: Get the exact display name the user saw during search
