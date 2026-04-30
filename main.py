@@ -11173,7 +11173,7 @@ async def handle_callback(update: Update):
                 "🌿 Steam accounts are currently in testing mode.",
                 parse_mode="HTML"
             )
-            
+
         current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         
         if current_attempts >= 3:
@@ -11409,6 +11409,16 @@ async def handle_callback(update: Update):
 
         # Steam - NEW SEARCH SYSTEM
         if category == "steam":
+            if chat_id != OWNER_ID:
+                await query.message.edit_caption(
+                    caption="🌿 <b>Steam accounts are currently in testing mode.</b>\n\n"
+                            "Please check back soon, wanderer! 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    ])
+                )
+                return
             await handle_steam_landing(chat_id, first_name, query)
             return
 
