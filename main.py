@@ -12264,13 +12264,6 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
 
-            result_msg = await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text=text.strip(),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             result_msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
