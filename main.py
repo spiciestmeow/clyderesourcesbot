@@ -86,6 +86,11 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
 
+    # === IMMEDIATELY CONSUME 1 ATTEMPT WHEN OPENING "VIEW ALL" ===
+    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+    new_attempts = min(current + 1, 3)
+    await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+
     # Build text and buttons
     text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
     buttons = []
@@ -149,33 +154,14 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         print(f"🔴 Error sending claim page: {e}")
         return
 
-    # Auto-expire using the reusable rich message
+    # Auto-expire the claim page (uses rich message)
     async def auto_expire_claim_page():
         await asyncio.sleep(10)
         try:
             await tg_app.bot.delete_message(chat_id, msg.message_id)
-            await send_steam_search_expired_message(chat_id)
+            await send_steam_search_expired_message(chat_id)   # rich message
         except Exception:
             pass
-
-    asyncio.create_task(auto_expire_claim_page())
-
-    # === Auto-expire the NEW claim page after 10 seconds ===
-    async def auto_expire_claim_page():
-        await asyncio.sleep(10)
-        try:
-            await tg_app.bot.delete_message(chat_id, msg.message_id)
-            await tg_app.bot.send_message(
-                chat_id,
-                "⏳ <b>Result expired.</b>\n\nThe results are no longer valid.\n(10 seconds have passed without claiming)",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-                ])
-            )
-        except Exception:
-            pass  # message already gone
 
     asyncio.create_task(auto_expire_claim_page())
 
