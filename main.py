@@ -11287,11 +11287,12 @@ async def handle_callback(update: Update):
                 await redis_client.setex(f"steam_search_attempts:{chat_id}", cooldown_seconds, new_count)
 
             remaining = 3 - (current + 1)
+            used = current + 1
             expired_text = (
                 f"⏳ <b>This search has expired.</b>\n\n"
                 f"The results are no longer valid.\n"
                 f"(10 minutes have passed without claiming)\n\n"
-                f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                f"🎯 <b>Search Attempts:</b> {used}/3 remaining\n"
                 f"{make_attempts_bar(remaining)}\n\n"
                 f"🌲 You can search again right now!"
             )
@@ -12180,10 +12181,11 @@ async def process_update(update_data: dict):
                 )
                 if not matching_accounts:
                     remaining = 3 - new_attempts
+                    used = new_attempts
                     no_result_text = (
                         f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
                         f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
-                        f"{make_attempts_bar(remaining)}\n\n"
+                        f"{make_attempts_bar(used)}\n\n"
                         f"💡 <b>Tips for better results:</b>\n"
                         f"• Use exact or shorter game title\n"
                         f"• Popular games usually have more accounts\n\n"
@@ -12191,9 +12193,11 @@ async def process_update(update_data: dict):
                     )
 
                     buttons = [
-                        [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
                         [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
                     ]
+
+                    if remaining > 0:
+                        buttons.insert(0, [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")])
 
                     await tg_app.bot.send_message(
                         chat_id,
