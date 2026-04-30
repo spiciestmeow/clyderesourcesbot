@@ -12303,6 +12303,7 @@ async def process_update(update_data: dict):
                             [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
                         ]
                     else:
+                        # ← This is the clean message you want when attempts = 0
                         expired_text = (
                             f"🚫 <b>No search attempts remaining.</b>\n\n"
                             f"Please wait for your cooldown to expire before searching again. 🍃"
