@@ -12172,33 +12172,36 @@ async def process_update(update_data: dict):
                     matching_accounts.append(acc)
 
             if not matching_accounts:
-                new_attempts = 3 - (current_attempts + 1)
-                await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
-                remaining_attempts = 3 - new_attempts
-
-                no_result_text = (
-                    f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
-                    f"🎯 <b>Search Attempts:</b> {remaining_attempts}/3 remaining\n"
-                    f"{make_attempts_bar(remaining_attempts)}\n\n"
-                    f"💡 <b>Tips to get better results:</b>\n"
-                    f"• Try the exact or shorter game title\n"
-                    f"• Popular games usually have more accounts\n\n"
-                    # f"• Partial names work well (e.g. <code>elden</code>, <code>cyber</code>, <code>gta</code>)\n\n"
-                    f"🌲 <i>You still have <b>{remaining_attempts}</b> attempt{'' if remaining_attempts == 1 else 's'} left today!</i>"
+                new_attempts = min(current_attempts + 1, 3)
+                await redis_client.setex(
+                    f"steam_search_attempts:{chat_id}",
+                    86400,
+                    str(new_attempts)
                 )
+                if not matching_accounts:
+                    remaining = 3 - new_attempts
+                    no_result_text = (
+                        f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
+                        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                        f"{make_attempts_bar(remaining)}\n\n"
+                        f"💡 <b>Tips for better results:</b>\n"
+                        f"• Use exact or shorter game title\n"
+                        f"• Popular games usually have more accounts\n\n"
+                        f"🌲 <i>You still have <b>{remaining}</b> attempt{'' if remaining == 1 else 's'} left today!</i>"
+                    )
 
-                buttons = [
-                    [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-                ]
+                    buttons = [
+                        [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    ]
 
-                await tg_app.bot.send_message(
-                    chat_id,
-                    no_result_text,
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-                return
+                    await tg_app.bot.send_message(
+                        chat_id,
+                        no_result_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                    return
 
             from collections import defaultdict
             grouped = defaultdict(list)
