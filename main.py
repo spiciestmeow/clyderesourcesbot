@@ -11188,7 +11188,15 @@ async def handle_callback(update: Update):
         
         if current_attempts >= 3:
             await query.answer("🚫 No search attempts remaining!", show_alert=True)
-            await handle_steam_landing(chat_id, first_name, query)
+            await tg_app.bot.send_message(
+                chat_id,
+                f"🚫 <b>No search attempts remaining.</b>\n\n"
+                f"Please wait for your cooldown to expire before searching again. 🍃",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                ])
+            )
             return
 
         attempts_left = 3 - current_attempts
@@ -12135,16 +12143,21 @@ async def process_update(update_data: dict):
 
             current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
 
+            # ── STRONG EARLY GUARD: No attempts left → show clean message immediately
             if current_attempts >= 3:
                 await redis_client.delete(f"steam_searching:{chat_id}")
                 await tg_app.bot.send_message(
                     chat_id,
-                    "🚫 <b>You have used all 3 search attempts.</b>\n\n"
-                    "Come back after your level-based cooldown for fresh attempts 🍃",
-                    parse_mode="HTML"
+                    f"🚫 <b>No search attempts remaining.</b>\n\n"
+                    f"Please wait for your cooldown to expire before searching again. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    ])
                 )
                 return
 
+            # ── Normal search (still has attempts)
             all_accounts = await _sb_get(
                 "steamCredentials",
                 **{
@@ -12180,8 +12193,10 @@ async def process_update(update_data: dict):
                     str(new_attempts)
                 )
                 if not matching_accounts:
+
                     remaining = 3 - new_attempts
                     used = new_attempts
+
                     no_result_text = (
                         f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
                         f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
