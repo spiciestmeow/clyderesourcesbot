@@ -86,6 +86,16 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
 
+    # ── Fetch game logo ──
+    first_acc = accounts[0]
+    games_list = first_acc.get("games") or []
+    logo_url = await get_game_logo_url(
+        game_name=first_acc.get("game_name"),
+        games_list=games_list,
+        preferred_name=game_name
+    )
+    final_image = logo_url or first_acc.get("image_url")
+
     text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
     buttons = []
 
@@ -104,17 +114,36 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             )
         ])
 
-    # FIXED: Proper back button
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
+    markup = InlineKeyboardMarkup(buttons)
+
+    # ── Delete old message first ──
+    if query_obj and query_obj.message:
+        try:
+            await query_obj.message.delete()
+        except Exception:
+            pass
+
+    # ── Send with logo if available, else plain text ──
     try:
-        if query_obj and query_obj.message:
-            await query_obj.message.edit_text(text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        if final_image:
+            await tg_app.bot.send_photo(
+                chat_id=chat_id,
+                photo=final_image,
+                caption=text.strip(),
+                parse_mode="HTML",
+                reply_markup=markup
+            )
         else:
-            await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+            await tg_app.bot.send_message(
+                chat_id, text.strip(), parse_mode="HTML", reply_markup=markup
+            )
     except Exception:
-        await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        await tg_app.bot.send_message(
+            chat_id, text.strip(), parse_mode="HTML", reply_markup=markup
+        )
 
 # ──────────────────────────────────────────────
 # NEW: Get the exact display name the user saw during search
@@ -11289,12 +11318,14 @@ async def handle_callback(update: Update):
         account_image_url = acc.get("image_url")
         games_list = acc.get("games") or []
 
+        # ── Get the best possible logo (especially important for bundles) ──
         logo_url = await get_game_logo_url(
             game_name=acc.get("game_name"),
             games_list=games_list,
             preferred_name=display_name
         )
         
+        # Fallback to Steam header if game logo not found
         final_image_url = logo_url or account_image_url
 
         # Use the nice display name we got from search
@@ -11353,7 +11384,11 @@ async def handle_callback(update: Update):
 
             if final_image_url:
                 try:
-                    await tg_app.bot.send_photo(chat_id=chat_id, photo=final_image_url, caption=caption, parse_mode="HTML")
+                    await tg_app.bot.send_photo(
+                        chat_id=chat_id, 
+                        photo=final_image_url, 
+                        caption=caption, 
+                        parse_mode="HTML")
                 except:
                     await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML")
             else:
