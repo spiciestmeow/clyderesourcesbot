@@ -109,7 +109,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
-    # Get logo
+# Get logo
     logo_url = None
     if accounts:
         first_acc = accounts[0]
@@ -121,7 +121,14 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # === Send the Choose an account page ===
+    # === Delete original search results message (the "Found accounts" page) ===
+    if query_obj and query_obj.message:
+        try:
+            await query_obj.message.delete()
+        except:
+            pass  # already deleted or can't delete
+
+    # === Send the new "Choose an account" page ===
     try:
         if logo_url:
             msg = await tg_app.bot.send_photo(
@@ -132,31 +139,21 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         else:
-            # No logo → keep original behavior
-            if query_obj and query_obj.message:
-                msg = await query_obj.message.edit_text(
-                    text=text.strip(), 
-                    parse_mode="HTML", 
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-            else:
-                msg = await tg_app.bot.send_message(
-                    chat_id, 
-                    text=text.strip(), 
-                    parse_mode="HTML", 
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
+            msg = await tg_app.bot.send_message(
+                chat_id, 
+                text=text.strip(), 
+                parse_mode="HTML", 
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
     except Exception as e:
         print(f"🔴 Error sending claim page: {e}")
         return
 
-    # === NEW: Auto-expire THIS claim page after 10 seconds ===
+    # === Auto-expire the NEW claim page after 10 seconds ===
     async def auto_expire_claim_page():
         await asyncio.sleep(10)
         try:
-            # Delete the claim page message
             await tg_app.bot.delete_message(chat_id, msg.message_id)
-            # Show clean expired message
             await tg_app.bot.send_message(
                 chat_id,
                 "⏳ <b>Result expired.</b>\n\nThe results are no longer valid.\n(10 seconds have passed without claiming)",
@@ -167,7 +164,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
                 ])
             )
         except Exception:
-            pass  # message already deleted or error
+            pass  # message already gone
 
     asyncio.create_task(auto_expire_claim_page())
 
