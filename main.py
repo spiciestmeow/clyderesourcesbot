@@ -86,6 +86,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
 
+    # Build text and buttons
     text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
     buttons = []
 
@@ -108,21 +109,22 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
-    # === NEW: Fetch game logo (same smart logic used in search) ===
+    # ── Get logo (your existing smart system) ──
     logo_url = None
     if accounts:
         first_acc = accounts[0]
         logo_url = await get_game_logo_url(
             game_name=game_name,
             games_list=first_acc.get("games") or [],
-            preferred_name=game_name   # crucial for bundles
+            preferred_name=game_name
         )
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # === Send with logo (new photo) or fallback to text ===
+    # ── FIXED: Always send NEW message for claim page (never delete original) ──
     try:
         if logo_url:
+            # Send brand new photo message with logo
             await tg_app.bot.send_photo(
                 chat_id=chat_id,
                 photo=logo_url,
@@ -131,7 +133,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         else:
-            # No logo → keep original behavior
+            # No logo → keep original behavior (edit the search results message)
             if query_obj and query_obj.message:
                 await query_obj.message.edit_text(
                     text=text.strip(), 
@@ -146,7 +148,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
     except Exception as e:
-        print(f"🔴 Error showing account selection with logo: {e}")
+        print(f"🔴 Error in show_steam_account_selection: {e}")
         # Safe fallback
         await tg_app.bot.send_message(
             chat_id, 
@@ -12269,7 +12271,7 @@ async def process_update(update_data: dict):
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
                         f"steam_group:{chat_id}:{safe_key}",
-                        10,
+                        15,
                         json.dumps({"emails": emails, "game_name": display_name})
                     )
                     buttons.append([InlineKeyboardButton(
