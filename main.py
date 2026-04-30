@@ -109,7 +109,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
-# Get logo
+    # Get logo
     logo_url = None
     if accounts:
         first_acc = accounts[0]
@@ -121,14 +121,14 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # === Delete original search results message (the "Found accounts" page) ===
+    # Delete original "Found accounts" page immediately
     if query_obj and query_obj.message:
         try:
             await query_obj.message.delete()
         except:
-            pass  # already deleted or can't delete
+            pass
 
-    # === Send the new "Choose an account" page ===
+    # Send claim page (with logo or without)
     try:
         if logo_url:
             msg = await tg_app.bot.send_photo(
@@ -149,6 +149,17 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         print(f"🔴 Error sending claim page: {e}")
         return
 
+    # Auto-expire using the reusable rich message
+    async def auto_expire_claim_page():
+        await asyncio.sleep(10)
+        try:
+            await tg_app.bot.delete_message(chat_id, msg.message_id)
+            await send_steam_search_expired_message(chat_id)
+        except Exception:
+            pass
+
+    asyncio.create_task(auto_expire_claim_page())
+
     # === Auto-expire the NEW claim page after 10 seconds ===
     async def auto_expire_claim_page():
         await asyncio.sleep(10)
@@ -167,6 +178,38 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             pass  # message already gone
 
     asyncio.create_task(auto_expire_claim_page())
+
+async def send_steam_search_expired_message(chat_id: int):
+    """Reusable rich expired message with attempts bar (same as main search)"""
+    current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+    new_attempts = min(current_attempts + 1, 3)
+    remaining = 3 - new_attempts
+
+    expired_text = (
+        f"⏳ <b>This search has expired.</b>\n\n"
+        f"The results are no longer valid.\n"
+        f"(10 seconds have passed without claiming)\n\n"
+        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+        f"{make_attempts_bar(new_attempts)}\n\n"
+        f"🌲 <i>You can search again right now!</i>"
+    )
+
+    await tg_app.bot.send_message(
+        chat_id,
+        expired_text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+        ])
+    )
+
+    # Update attempts count (same logic as main search)
+    await redis_client.setex(
+        f"steam_search_attempts:{chat_id}",
+        86400,
+        str(new_attempts)
+    )
 
 # ──────────────────────────────────────────────
 # NEW: Get the exact display name the user saw during search
