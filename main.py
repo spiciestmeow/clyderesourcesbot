@@ -8949,7 +8949,6 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                 ])
             )
         return
-
     # ── All matched accounts already claimed ──
     if not unclaimed and scored:
         await tg_app.bot.send_message(
@@ -8983,28 +8982,39 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     )
 
     # ── Schedule result expiry ──
-    async def _expire_result():
+    async def _expire_result(chat_id: int, cooldown_seconds: int, attempts_key: str, cooldown_hours: int):
+        """
+        Fires 10 minutes after a search result is shown.
+        Only costs an attempt if user did NOT successfully claim.
+        Successful claim deletes steam_search_result, so we check for that.
+        """
         await asyncio.sleep(610)
-        still_there = await redis_client.get(f"steam_search_result:{chat_id}")
-        if not still_there:
-            return
-        await redis_client.delete(f"steam_search_result:{chat_id}")
-        new_count = int(await redis_client.get(attempts_key) or 0) + 1
-        await redis_client.setex(attempts_key, cooldown_seconds, new_count)
 
+        # If claim was made, steam_search_result is already deleted — do nothing
+        still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
+        if not still_pending:
+            return  # user already claimed, no attempt cost
+
+        # Result expired without claim → cost 1 attempt
+        await redis_client.delete(f"steam_search_result:{chat_id}")
+        
+        current = int(await redis_client.get(attempts_key) or 0)
+        new_count = current + 1
+        
         if new_count >= 3:
             await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
             await redis_client.delete(attempts_key)
             try:
                 await tg_app.bot.send_message(
                     chat_id,
-                    f"⏳ <b>Result expired and attempts used up.</b>\n\n"
+                    f"⏳ <b>Claim window expired and no attempts remaining.</b>\n\n"
                     f"Cooldown started: <b>{cooldown_hours} hours</b> 🍃",
                     parse_mode="HTML"
                 )
             except Exception:
                 pass
         else:
+            await redis_client.setex(attempts_key, cooldown_seconds, new_count)
             remaining = 3 - new_count
             try:
                 await tg_app.bot.send_message(
@@ -9021,7 +9031,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             except Exception:
                 pass
 
-    asyncio.create_task(_expire_result())
+    asyncio.create_task(_expire_result(chat_id, cooldown_seconds, attempts_key, cooldown_hours))
 
     # ── Build result message ──
     total_accounts = len(unclaimed)
@@ -11264,8 +11274,18 @@ async def handle_callback(update: Update):
         # ── CHECK 10-MINUTE EXPIRATION ──
         cached_result = await redis_client.get(f"steam_search_result:{chat_id}")
         if not cached_result:
+            # Replace with level-aware cooldown:
+            profile = await get_user_profile(chat_id)
+            level = profile.get("level", 1) if profile else 1
+            cooldown_seconds = get_steam_cooldown_hours(level) * 3600
             current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(current + 1))
+            new_count = current + 1
+            if new_count >= 3:
+                await redis_client.setex(f"steam_search_cd:{chat_id}", cooldown_seconds, "1")
+                await redis_client.delete(f"steam_search_attempts:{chat_id}")
+            else:
+                await redis_client.setex(f"steam_search_attempts:{chat_id}", cooldown_seconds, new_count)
+
             remaining = 3 - (current + 1)
             expired_text = (
                 f"⏳ <b>This search has expired.</b>\n\n"
