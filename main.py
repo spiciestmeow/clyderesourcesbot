@@ -12192,35 +12192,34 @@ async def process_update(update_data: dict):
                     86400,
                     str(new_attempts)
                 )
-                if not matching_accounts:
+                
+                remaining = 3 - new_attempts
+                used = new_attempts
 
-                    remaining = 3 - new_attempts
-                    used = new_attempts
+                no_result_text = (
+                    f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
+                    f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                    f"{make_attempts_bar(used)}\n\n"
+                    f"💡 <b>Tips for better results:</b>\n"
+                    f"• Use exact or shorter game title\n"
+                    f"• Popular games usually have more accounts\n\n"
+                    f"🌲 <i>You still have <b>{remaining}</b> attempt{'' if remaining == 1 else 's'} left today!</i>"
+                )
 
-                    no_result_text = (
-                        f"🌫️ <b>No accounts found for</b> \"<b>{html.escape(term)}</b>\"\n\n"
-                        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
-                        f"{make_attempts_bar(used)}\n\n"
-                        f"💡 <b>Tips for better results:</b>\n"
-                        f"• Use exact or shorter game title\n"
-                        f"• Popular games usually have more accounts\n\n"
-                        f"🌲 <i>You still have <b>{remaining}</b> attempt{'' if remaining == 1 else 's'} left today!</i>"
-                    )
+                buttons = [
+                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                ]
 
-                    buttons = [
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
-                    ]
+                if remaining > 0:
+                    buttons.insert(0, [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")])
 
-                    if remaining > 0:
-                        buttons.insert(0, [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")])
-
-                    await tg_app.bot.send_message(
-                        chat_id,
-                        no_result_text,
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(buttons)
-                    )
-                    return
+                await tg_app.bot.send_message(
+                    chat_id,
+                    no_result_text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                return
 
             from collections import defaultdict
             grouped = defaultdict(list)
@@ -12272,7 +12271,7 @@ async def process_update(update_data: dict):
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
                         f"steam_group:{chat_id}:{safe_key}",
-                        600,
+                        10,
                         json.dumps({"emails": emails, "game_name": display_name})
                     )
                     buttons.append([InlineKeyboardButton(
@@ -12287,7 +12286,7 @@ async def process_update(update_data: dict):
             if first_acc:
                 await redis_client.setex(
                     f"steam_search_result:{chat_id}",
-                    600,
+                    10,
                     json.dumps({"email": first_acc.get("email", ""), "game_name": first_name_game})
                 )
 
