@@ -11167,6 +11167,13 @@ async def handle_callback(update: Update):
 
     # ── TEMPORARILY DISABLE STEAM FOR REGULAR USERS (OWNER still has full access) ──
     elif data in ("steam_do_search", "search_different_game"):
+        if chat_id != OWNER_ID:
+            await tg_app.bot.send_message(
+                chat_id,
+                "🌿 Steam accounts are currently in testing mode.",
+                parse_mode="HTML"
+            )
+            
         current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         
         if current_attempts >= 3:
