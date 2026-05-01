@@ -131,6 +131,15 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
         text += f"<b>{i}️⃣ Account {i}</b>{bundle_tag}\n"
 
+        # ── Account freshness — SOCIAL MEDIA STYLE ──
+        created_at = acc.get("created_at", "")
+        if created_at:
+            try:
+                age_tag = get_relative_time_ago(created_at)
+                text += f"   {age_tag}\n"
+            except Exception:
+                text += "   🟢 Freshly added\n"
+
         # ── Bundle games preview (same style as search page) ──
         if is_bundle and games_list:
             # Show the searched game first, then others
@@ -143,14 +152,8 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
                 more_str = f" <i>+{more_count} more</i>" if more_count > 0 else ""
                 text += f"   <b>Also includes:</b> {preview_str}{more_str}\n"
 
-        # ── Account freshness — SOCIAL MEDIA STYLE ──
-        created_at = acc.get("created_at", "")
-        if created_at:
-            try:
-                age_tag = get_relative_time_ago(created_at)
-                text += f"   {age_tag}\n"
-            except Exception:
-                text += "   🟢 Freshly added\n"
+        text += "\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
+        
 
         # ── Claim button ──
         btn_label = f"✅ Claim Account {i}"
