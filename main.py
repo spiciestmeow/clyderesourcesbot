@@ -6196,7 +6196,11 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         action_name = action_map.get(service_type, "reveal_netflix")
 
         # Plan detail from service_type now, not display_name
-        plan_detail = raw_service_type.replace("Netflix", "").replace("PrimeVideo", "").strip()
+        if "crunchyroll" in raw_service_type.lower():
+            plan_detail = "Premium" + get_region_flag(raw_service_type)
+        else:
+            plan_detail = raw_service_type.replace("Netflix", "").replace("PrimeVideo", "").strip()
+
         plan_line = f"📋  Plan: <b>{plan_detail}</b>\n" if plan_detail and plan_detail.lower() != "cookie" else ""
 
         freshness    = get_freshness_badge(item.get("last_updated"))
