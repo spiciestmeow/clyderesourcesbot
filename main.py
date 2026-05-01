@@ -4284,7 +4284,7 @@ def kb_inventory():
         ],
         [
             InlineKeyboardButton("🍜 Crunchyroll", callback_data="vamt_filter_crunchyroll"),
-            InlineKeyboardButton("🎮 Steam Accounts", callback_data="vamt_filter_steam"),
+            InlineKeyboardButton("🎮 Steam", callback_data="vamt_filter_steam"),
         ],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
     ])
