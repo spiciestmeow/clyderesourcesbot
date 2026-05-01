@@ -5114,10 +5114,12 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     # ── FIX: Use consistent header label ──
     HEADER = "<b>Mo Tu We Th Fr Sa Su</b>"
 
-    # ── Consistency bar for this month ──
     days_in_month = now.day  # days elapsed so far
     consistency_pct = round((days_this_month / days_in_month) * 100) if days_in_month > 0 else 0
-    consistency_bar = create_daily_progress_bar(days_this_month, days_in_month, length=10)
+
+    # FIX: Use a FILL bar (active/elapsed), not the depleting bar
+    filled = round((days_this_month / max(days_in_month, 1)) * 10)
+    consistency_bar = "🟩" * filled + "⬜" * (10 - filled)
 
     text = (
         f"📅 <b>{html.escape(first_name)}'s Streak Calendar</b>\n"
@@ -5131,7 +5133,8 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
         f"📊 <b>Your Stats</b>\n\n"
         f"🔥 Current Streak: <b>{current_streak} days</b>\n"
         f"🏆 Longest Streak: <b>{longest_streak} days</b>\n"
-        f"📆 Active This Month: <b>{days_this_month}/{days_in_month} days</b>\n"
+        f"📆 Active This Month: <b>{days_this_month}/{days_in_month} days</b>"
+        + (f" <i>(Day {days_in_month} of month)</i>" if days_in_month <= 7 else "") + "\n"
         f"   {consistency_bar} {consistency_pct}%\n\n"
         f"🌿 Active This Year: <b>{days_this_year} days</b>\n"
         f"✅ Total Active Days: <b>{len(active_dates)} days</b>\n\n"
