@@ -76,7 +76,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             **{
                 "email": f"eq.{email}",
                 "status": "eq.Available",
-                "select": "email,game_name,image_url,password,steam_id,release_type,games"
+                "select": "email,game_name,image_url,password,steam_id,release_type,games,created_at"
             }
         ) or []
         if acc_data:
@@ -94,30 +94,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     # Mark that the detailed claim page was opened (prevents double deduction)
     await redis_client.setex(f"steam_result_consumed:{chat_id}", 600, "1")
 
-    # Build text and buttons
-    text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
-    buttons = []
-
-    for i, acc in enumerate(accounts, 1):
-        email = acc.get("email", "")
-        short_email = email[:15] + "..." if len(email) > 15 else email
-        bundle_note = " ← <b>Big Bundle</b>" if is_bundle_account(acc) else ""
-
-        text += f"{i}️⃣ <b>Account {i}</b>{bundle_note}\n"
-        text += f"   📧 <code>{html.escape(short_email)}</code>\n\n"
-
-        buttons.append([
-            InlineKeyboardButton(
-                f"✅ Claim Account {i}", 
-                callback_data=f"claim_steam|{acc['email']}|{group_key}"
-            )
-        ])
-
-    # Back buttons
-    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
-    buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
-
-    # Get logo
+    # ── Get logo ──
     logo_url = None
     if accounts:
         first_acc = accounts[0]
@@ -129,14 +106,88 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # Delete original "Found accounts" page immediately
+    # ── Build caption ──
+    total = len(accounts)
+    text = (
+        f"🎮 <b>{html.escape(game_name)}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"✅ <b>{total} account{'s' if total > 1 else ''} available</b> — pick one below\n\n"
+    )
+
+    buttons = []
+
+    for i, acc in enumerate(accounts, 1):
+        email = acc.get("email", "")
+        games_list = [g.strip() for g in (acc.get("games") or []) if str(g).strip()]
+        is_bundle = is_bundle_account(acc)
+
+        # ── Account header line ──
+        bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
+        text += f"<b>{i}️⃣ Account {i}</b>{bundle_tag}\n"
+
+        # ── Bundle games preview (same style as search page) ──
+        if is_bundle and games_list:
+            # Show the searched game first, then others
+            other_games = [g for g in games_list if g.lower() != game_name.lower()]
+            preview_games = other_games[:3]
+            more_count = len(other_games) - 3
+
+            if preview_games:
+                preview_str = ", ".join(html.escape(g) for g in preview_games)
+                more_str = f" <i>+{more_count} more</i>" if more_count > 0 else ""
+                text += f"   <b>Also includes:</b> {preview_str}{more_str}\n"
+
+        # ── Account freshness ──
+        created_at = acc.get("created_at", "")
+        if created_at:
+            try:
+                manila = pytz.timezone("Asia/Manila")
+                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00")).astimezone(manila)
+                diff_h = (datetime.now(manila) - dt).total_seconds() / 3600
+                if diff_h < 6:
+                    age_tag = "🟢 Freshly added"
+                elif diff_h < 24:
+                    age_tag = f"🟡 Added {int(diff_h)}h ago"
+                elif diff_h < 72:
+                    age_tag = f"🟠 Added {int(diff_h/24)}d ago"
+                else:
+                    age_tag = f"🔵 Added {int(diff_h/24)}d ago"
+                text += f"   {age_tag}\n"
+            except Exception:
+                pass
+
+        text += "\n"
+
+        # ── Claim button ──
+        btn_label = f"✅ Claim Account {i}"
+        if is_bundle:
+            btn_label += " 📦"
+
+        buttons.append([
+            InlineKeyboardButton(
+                btn_label, 
+                callback_data=f"claim_steam|{acc['email']}|{group_key}"
+            )
+        ])
+
+    # ── Footer note ──
+    text += (
+        "━━━━━━━━━━━━━━━━━━\n"
+        "<i>📧 Credentials revealed after claiming. ⏳ Expires in 10 min.</i>"
+    )
+
+    # ── Nav buttons ──
+    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
+    buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+
+    # ── Delete original message ──
     if query_obj and query_obj.message:
         try:
             await query_obj.message.delete()
         except:
             pass
 
-    # Send claim page (with logo or without)
+    # ── Send with or without logo ──
     try:
         if logo_url:
             msg = await tg_app.bot.send_photo(
@@ -157,7 +208,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         print(f"🔴 Error sending claim page: {e}")
         return
 
-    # Auto-expire the claim page (uses rich message)
+    # ── Auto-expire ──
     async def auto_expire_claim_page():
         await asyncio.sleep(10)
         try:
