@@ -174,7 +174,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     )
 
     # ── Nav buttons ──
-    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
+    buttons.append([InlineKeyboardButton("← Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
     # ── Delete original message ──
@@ -242,7 +242,7 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
         ])
     )
 
@@ -2627,7 +2627,7 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None, fil
 
     buttons.append(nav)
     buttons.append([InlineKeyboardButton("🔄 Refresh Library", callback_data="view_notion_steam_refresh")])
-    buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_menu")])
+    buttons.append([InlineKeyboardButton("← Back to Caretaker Menu", callback_data="caretaker_menu")])
 
     final_text = text + f"━━━━━━━━━━━━━━━━━━\n📄 Page {page+1} of {((len(all_items)-1)//8)+1} • {len(all_items)} games • Last synced just now"
 
@@ -4146,8 +4146,8 @@ async def show_gcash_qr(chat_id: int, query=None):
     )
 
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to Donate Menu", callback_data="donate")],
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Donate Menu", callback_data="donate")],
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")],
     ])
 
     if query and query.message:
@@ -4224,7 +4224,7 @@ def kb_resources():
         ],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("🍜 Crunchy Checker", callback_data="show_crunchyroll_bot")],
-        [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Main Menu", callback_data="main_menu")],
     ])
 
 def kb_main_menu():
@@ -4264,12 +4264,12 @@ def kb_first_time_menu():
 def kb_donate():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💰 GCash QR Code", callback_data="gcash_qr")],
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")],
     ])
 
 def kb_patrons():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")],
     ])
 
 def kb_inventory():
@@ -4286,7 +4286,7 @@ def kb_inventory():
             InlineKeyboardButton("🍜 Crunchyroll", callback_data="vamt_filter_crunchyroll"),
             InlineKeyboardButton("🎮 Steam", callback_data="vamt_filter_steam"),
         ],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
 def kb_back_inventory():
@@ -4311,7 +4311,7 @@ def kb_winoffice_guide():
 
 def kb_back_to_wheel():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to Wheel of Whispers", callback_data="show_wheel_menu")],
+        [InlineKeyboardButton("← Back to Wheel of Whispers", callback_data="show_wheel_menu")],
     ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4341,7 +4341,7 @@ async def show_patrons_page(chat_id: int, query=None):
         )
 
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")]
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")]
     ])
 
     if query and query.message:
@@ -4397,7 +4397,7 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
             InlineKeyboardButton("👤 User Tools", callback_data="cpage_usertools"),
         ],
         [
-            InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu"),
+            InlineKeyboardButton("← Back to Clearing", callback_data="main_menu"),
         ],
     ])
 
@@ -4588,7 +4588,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
                 [InlineKeyboardButton("🗝️ Manual Win/Office Entry", callback_data="caretaker_manualkeys")],  # ← NEW
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4608,7 +4608,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "📋 <b>Shows last 5 patch notes to users</b>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📜 Add Patch Note Now", callback_data="caretaker_addupdate")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4625,7 +4625,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "⚠️ Users are limited to <b>3 feedbacks per day</b> to prevent spam.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📬 View Feedbacks Now", callback_data="caretaker_viewfeedback")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4650,7 +4650,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                 [InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent")],
                 [InlineKeyboardButton("👁️ View Current Event", callback_data="caretaker_viewevent")],
                 [InlineKeyboardButton("🔴 End Current Event", callback_data="confirm_end_event")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4670,7 +4670,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "or when users report seeing outdated info.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Flush All Caches Now", callback_data="caretaker_flushcache")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4695,7 +4695,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "💡 Use this when something feels slow or broken.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📊 Run Health Check Now", callback_data="caretaker_health")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4715,7 +4715,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "🔔 The bot auto-alerts you every 6 hours if stock is low.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📦 Check Stock Now", callback_data="caretaker_checkstock")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4734,7 +4734,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "💡 Use this to identify and remove broken keys from the inventory.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📋 View Reports Now", callback_data="caretaker_viewreports")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4752,7 +4752,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "⚠️ <b>Always turn this OFF after you're done with maintenance!</b>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🛠️ Toggle Maintenance Mode", callback_data="confirm_toggle_maintenance")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4774,7 +4774,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "• Field 3 = Time (merged as Date · Time)",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📝 Set Forest Info (use command)", callback_data="caretaker_setinfo")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4794,8 +4794,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "whenever a user comes online (once per 15 min per user).",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🟢 View Online Users Now", callback_data="show_online_users")],
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4820,8 +4820,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                     "🔬 Run Achievement Diagnostics",
                     callback_data="run_test_achievements"
                 )],
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4854,8 +4854,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "Command: <code>/resetsteamsearch &lt;id&gt;</code>\n\n"
             "📌 <b>To use:</b> Close this and type the command.",
             InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4878,7 +4878,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "❌ <b>This cannot be undone!</b>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("⚠️ Proceed to Reset", callback_data="caretaker_resetfirst")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4902,7 +4902,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                 [InlineKeyboardButton("🔍 Search Steam", callback_data="caretaker_searchsteam")],
                 [InlineKeyboardButton("📤 Upload Steam", callback_data="caretaker_uploadsteam")],
                 [InlineKeyboardButton("📋 Notion Library", callback_data="view_notion_steam")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4921,7 +4921,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "💡 Changes made here update your Notion database in real time.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📋 Open Notion Library", callback_data="view_notion_steam")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4948,8 +4948,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                     "🔬 Run Achievement Diagnostics",
                     callback_data="run_test_achievements"
                 )],
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4963,7 +4963,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                 [InlineKeyboardButton("🔄 Reset Tools", callback_data="cpage_reset_tools")],
                 [InlineKeyboardButton("👥 Patron & Diagnostics", callback_data="cpage_patron_tools")],
                 [InlineKeyboardButton("🟢 Online Users", callback_data="cpage_online_tools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
     }
@@ -5143,7 +5143,7 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔄 Refresh", callback_data="show_streak_calendar"),
-            InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page"),
+            InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page"),
         ],
     ])
 
@@ -5191,7 +5191,7 @@ async def auto_expire_search_prompt(chat_id: int, prompt_msg_id: int):
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
     ])
     
     await tg_app.bot.send_message(
@@ -5650,11 +5650,11 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
     # ── Navigation ──
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀ Previous", callback_data=f"myclaims_page_{page-1}"))
+        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"myclaims_page_{page-1}"))
     # Center page indicator (disabled button)
     nav.append(InlineKeyboardButton(f"· {page + 1}/{total_pages} ·", callback_data="noop"))
     if start + ITEMS_PER_PAGE < total:
-        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"myclaims_page_{page+1}"))
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"myclaims_page_{page+1}"))
     if nav:
         buttons.append(nav)
 
@@ -6052,9 +6052,9 @@ async def show_paginated_cookie_list(
     # ── Navigation ──
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("← Prev", callback_data=f"{service_type}_page_{page - 1}"))
+        nav.append(InlineKeyboardButton("↼ Prev", callback_data=f"{service_type}_page_{page - 1}"))
     if end < len(filtered):
-        nav.append(InlineKeyboardButton("Next →", callback_data=f"{service_type}_page_{page + 1}"))
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"{service_type}_page_{page + 1}"))
     if nav:
         buttons.append(nav)
 
@@ -6359,7 +6359,7 @@ async def handle_referral_history(chat_id: int):
             "🔗 Share My Link", 
             callback_data="invite_friends"
         )],
-        [InlineKeyboardButton("⬅️ Back", callback_data="invite_friends")],
+        [InlineKeyboardButton("← Back", callback_data="invite_friends")],
     ])
 
     msg = await send_animated_translated(
@@ -6465,7 +6465,7 @@ async def handle_online_users(chat_id: int, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Refresh", callback_data="show_online_users")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
     if query and query.message:
@@ -6648,7 +6648,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None, page: i
             InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
         ],
         nav_row,
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
     caption = pages.get(page, pages[0]) 
@@ -6791,7 +6791,7 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
     if nav:
         buttons.append(nav)
 
-    buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
+    buttons.append([InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page")])
 
     markup = InlineKeyboardMarkup(buttons)
 
@@ -6838,7 +6838,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
             "<i>Tap Next → to continue</i>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_2")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back", callback_data="check_vamt")],
             ])
         ),
         2: (
@@ -6861,7 +6861,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
                     InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_1"),
                     InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_3"),
                 ],
-                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back", callback_data="check_vamt")],
             ])
         ),
         3: (
@@ -6885,7 +6885,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
                 [InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_2")],
                 [InlineKeyboardButton(btn_label, callback_data=f"vamt_filter_{service}"
                 )],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
             ])
         ),
     }
@@ -6967,7 +6967,7 @@ async def handle_set_title(chat_id: int, first_name: str, query=None):
             InlineKeyboardButton("🔄 Reset to Current Level Title", callback_data="reset_title")
         ])
 
-    buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
+    buttons.append([InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page")])
 
     if query and query.message:
         try:
@@ -8319,7 +8319,7 @@ async def handle_steam_feedback(
                "<i>Thank you for your feedback! 🍃</i>")
         )
 
-        back_button = [[InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")]]
+        back_button = [[InlineKeyboardButton("← Back to My Claims", callback_data="my_steam_claims")]]
 
         final_markup = InlineKeyboardMarkup(
             ([[InlineKeyboardButton("↩️ Undo — I made a mistake!", callback_data=f"stfb_undo|{account_email}|{game_name[:30]}")]]
@@ -8341,7 +8341,7 @@ async def handle_steam_feedback(
             try:
                 await query.message.edit_reply_markup(
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")
+                        InlineKeyboardButton("← Back to My Claims", callback_data="my_steam_claims")
                     ]])
                 )
             except Exception:
@@ -8420,7 +8420,7 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
             "🌲 Invite Friends & Earn 25 XP",
             callback_data="invite_friends"
         )],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
     if query and query.message:
@@ -8602,7 +8602,7 @@ async def show_wheel_history(chat_id: int, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
-        [InlineKeyboardButton("⬅️ Back to Wheel", callback_data="show_wheel_menu")],
+        [InlineKeyboardButton("← Back to Wheel", callback_data="show_wheel_menu")],
     ])
 
     if query and query.message:
@@ -8738,7 +8738,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
             "❓ What is VAMT / Remaining?", callback_data=f"explain_vamt|{internal_cat}"
         )])
         buttons.append([InlineKeyboardButton(
-            "⬅️ Back to Inventory", callback_data="check_vamt"
+            "← Back to Inventory", callback_data="check_vamt"
         )])
 
         await safe_edit(loading,
@@ -8863,7 +8863,7 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
         owner_buttons +
         [
             [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
         ]
     )
 
@@ -8921,7 +8921,7 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
         ])
     else:
         status_text = (
@@ -8931,7 +8931,7 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
             [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
         ])
 
     caption = (
@@ -8978,7 +8978,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             f"Please wait for your cooldown to expire before searching again. 🍃",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
             ])
         )
         return
@@ -9097,7 +9097,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                 f"Please wait for your cooldown to expire. 🍃",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             )
         else:
@@ -9109,7 +9109,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             )
         return
@@ -9123,7 +9123,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔍 Search Different Game", callback_data="steam_do_search")],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
             ])
         )
         return
@@ -9189,7 +9189,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                     ])
                 )
             except Exception:
@@ -9248,7 +9248,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             )])
 
     buttons.append([InlineKeyboardButton("🔍 Search Different Game", callback_data="search_different_game")])
-    buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+    buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
     await tg_app.bot.send_message(
         chat_id,
@@ -9360,7 +9360,7 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
             nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"bulk_page|{page+1}"))
         if nav:
             buttons.append(nav)
-        buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")])
+        buttons.append([InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")])
 
         markup = InlineKeyboardMarkup(buttons) if buttons else None
 
@@ -9522,7 +9522,7 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
         nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"games_page|{term}|{page+1}"))
     if nav:
         buttons.append(nav)
-    buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_searchsteam")])
+    buttons.append([InlineKeyboardButton("← Back to Caretaker Menu", callback_data="caretaker_searchsteam")])
 
     markup = InlineKeyboardMarkup(buttons)
 
@@ -9560,7 +9560,7 @@ async def handle_set_language(chat_id: int, query=None):
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_set|en")],
         [InlineKeyboardButton("🇵🇭 Tagalog", callback_data="lang_set|tl")],
         [InlineKeyboardButton("🇵🇭 Bisaya", callback_data="lang_set|ceb")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")]
     ]
     markup = InlineKeyboardMarkup(buttons)
 
@@ -10276,7 +10276,7 @@ async def handle_callback(update: Update):
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🍜 Open Crunchyroll Bot", url="https://t.me/clydecrunchybot")],
-            [InlineKeyboardButton("⬅️ Back to Resources", callback_data="show_resources")],
+            [InlineKeyboardButton("← Back to Resources", callback_data="show_resources")],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
 
@@ -10390,7 +10390,7 @@ async def handle_callback(update: Update):
                 "<i>Tap Next → to continue</i>",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_2")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             ),
             2: (
@@ -10413,7 +10413,7 @@ async def handle_callback(update: Update):
                         InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_1"),
                         InlineKeyboardButton("Next ⇀",     callback_data=f"cookie_tutorial_{service}_3"),
                     ],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             ),
             3: (
@@ -10435,7 +10435,7 @@ async def handle_callback(update: Update):
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_2")],
                     [InlineKeyboardButton(btn_label,    callback_data=f"vamt_filter_{service}")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             ),
         }
@@ -10640,7 +10640,7 @@ async def handle_callback(update: Update):
                 InlineKeyboardButton("📜 My Spin History", callback_data="show_wheel_history"),
             ],
             [InlineKeyboardButton("ℹ️ About the Wheel", callback_data="about_wheel")],
-            [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+            [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")]
         ])
         await send_animated_translated(
             chat_id=chat_id,
@@ -10916,8 +10916,8 @@ async def handle_callback(update: Update):
         )
 
         buttons = [
-            [InlineKeyboardButton("⬅️ Back to Keys", callback_data=f"back_to_winoffice_keys|{pending_cat}")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+            [InlineKeyboardButton("← Back to Keys", callback_data=f"back_to_winoffice_keys|{pending_cat}")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
         ]
 
         await query.message.edit_caption(
@@ -11249,7 +11249,7 @@ async def handle_callback(update: Update):
         if nav:
             buttons.append(nav)
 
-        buttons.append([InlineKeyboardButton("⬅️ Back to Account", callback_data=f"steam_detail|{short_key}|0")])
+        buttons.append([InlineKeyboardButton("← Back to Account", callback_data=f"steam_detail|{short_key}|0")])
 
         # === FIXED: Use edit_caption for photo messages ===
         try:
@@ -11352,7 +11352,7 @@ async def handle_callback(update: Update):
                 f"Please wait for your cooldown to expire before searching again. 🍃",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                 ])
             )
             return
@@ -11579,7 +11579,7 @@ async def handle_callback(update: Update):
                             "Please check back soon, wanderer! 🍃",
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                     ])
                 )
                 return
@@ -11749,7 +11749,7 @@ async def handle_callback(update: Update):
                 "<i>Tap Next → to learn about the Leveling System</i>",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("Next ⇀", callback_data="guidance_page_2")],
-                    [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+                    [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
                 ]),
             ),
             2: (
@@ -11767,7 +11767,7 @@ async def handle_callback(update: Update):
                         InlineKeyboardButton("↼ Previous", callback_data="guidance_page_1"),
                         InlineKeyboardButton("Next ⇀",     callback_data="guidance_page_3"),
                     ],
-                    [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+                    [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
                 ]),
             ),
             3: (
@@ -11795,7 +11795,7 @@ async def handle_callback(update: Update):
                 "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("↼ Previous", callback_data="guidance_page_2")],
-                    [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+                    [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
                 ]),
             ),
         }
@@ -12025,8 +12025,8 @@ async def handle_callback(update: Update):
                     "<i>Close this and type the command above.</i> 🍃"
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Upload Keys", callback_data="cpage_uploadkeys")],
-                    [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                    [InlineKeyboardButton("← Back to Upload Keys", callback_data="cpage_uploadkeys")],
+                    [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
                 ])
             )
 
@@ -12290,7 +12290,7 @@ async def process_update(update_data: dict):
                     f"Please wait for your cooldown to expire before searching again. 🍃",
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                     ])
                 )
                 return
@@ -12379,7 +12379,7 @@ async def process_update(update_data: dict):
                 )
 
                 buttons = [
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                 ]
 
                 if remaining > 0:
@@ -12482,7 +12482,7 @@ async def process_update(update_data: dict):
                 )
 
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
-            buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+            buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             result_msg = await tg_app.bot.send_message(
@@ -12520,7 +12520,7 @@ async def process_update(update_data: dict):
                         )
                         buttons_expired = [
                             [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                         ]
                     else:
                         # ← This is the clean message you want when attempts = 0
@@ -12529,7 +12529,7 @@ async def process_update(update_data: dict):
                             f"Please wait for your cooldown to expire before searching again. 🍃"
                         )
                         buttons_expired = [
-                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                         ]
 
                     await result_msg.edit_text(
