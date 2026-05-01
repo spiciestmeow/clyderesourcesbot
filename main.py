@@ -4987,179 +4987,125 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
     )
 
 async def show_streak_calendar(chat_id: int, first_name: str, query=None):
-    """📅 30-day streak calendar with activity heatmap"""
-
+    """Fixed Streak Calendar - clean, accurate and visually better"""
     manila = pytz.timezone("Asia/Manila")
     now = datetime.now(manila)
+    today = now.date()
 
-    # ── Fetch enough history for longest streak (no arbitrary 500 limit) ──
-    data = await _sb_get(
-        "xp_history",
-        **{
-            "chat_id": f"eq.{chat_id}",
-            "select": "created_at",
-            "order": "created_at.desc",
-            "limit": 1000,   # increased from 500 to catch longer history
-        },
-    ) or []
+    # Fetch all active dates from XP history
+    data = await _sb_get("xp_history", **{
+        "chat_id": f"eq.{chat_id}",
+        "select": "created_at",
+        "order": "created_at.desc",
+        "limit": 1000
+    }) or []
 
-    # ── Build set of active dates (Manila time) ──
-    active_dates: set = set()
-    for row in data:
-        try:
-            dt = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
-            active_dates.add(dt.astimezone(manila).date())
-        except Exception:
-            continue
+    active_dates = {
+        datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+        .astimezone(manila).date()
+        for row in data if row.get("created_at")
+    }
 
-    # ── Current streak from cache ──
     current_streak = await calculate_streak(chat_id)
 
-    # ── FIX: Longest streak — scan all active dates properly ──
+    # Calculate longest streak properly
     longest_streak = 0
     if active_dates:
         sorted_dates = sorted(active_dates)
         temp = 1
         longest_streak = 1
         for i in range(1, len(sorted_dates)):
-            diff = (sorted_dates[i] - sorted_dates[i - 1]).days
-            if diff == 1:
+            if (sorted_dates[i] - sorted_dates[i-1]).days == 1:
                 temp += 1
                 longest_streak = max(longest_streak, temp)
-            elif diff > 1:
+            else:
                 temp = 1
-        # Edge case: single active day
         longest_streak = max(longest_streak, current_streak)
 
-    # ── Count active days this month ──
-    month_start = now.date().replace(day=1)
-    days_this_month = sum(
-        1 for d in active_dates
-        if month_start <= d <= now.date()
-    )
+    # Fixed Active This Month calculation
+    month_start = today.replace(day=1)
+    days_this_month = sum(1 for d in active_dates if month_start <= d <= today)
+    days_in_month = today.day
+    consistency_pct = round((days_this_month / days_in_month) * 100) if days_in_month > 0 else 0
 
-    # ── Total active days this year ──
-    year_start = now.date().replace(month=1, day=1)
+    # Year and total stats
+    year_start = today.replace(month=1, day=1)
     days_this_year = sum(1 for d in active_dates if d >= year_start)
+    total_active = len(active_dates)
 
-    # ── Build 30-day calendar grid ──
-    start_date = now.date() - timedelta(days=29)
+    # Find the very first active day so "Out of range" is correct
+    first_active = min(active_dates) if active_dates else today - timedelta(days=60)
+
+    # Build clean 30-day calendar grid
+    start_date = today - timedelta(days=29)
     calendar_rows = []
     current_row = []
 
-    # Pad first row to align Monday = col 0
-    first_weekday = start_date.weekday()
-    for _ in range(first_weekday):
-        current_row.append("⬛")
+    # Pad the beginning of the week
+    for _ in range(start_date.weekday()):
+        current_row.append("⬛")  # true out-of-range
 
     cursor = start_date
-    while cursor <= now.date():
+    while cursor <= today:
         if cursor in active_dates:
-            current_row.append("🟡" if cursor == now.date() else "🟩")
+            square = "🟡" if cursor == today else "🟩"
+        elif cursor > today:
+            square = "⬜"   # future days = light missed (not black)
+        elif cursor < first_active:
+            square = "⬛"
         else:
-            current_row.append("🔵" if cursor == now.date() else "⬜")
+            square = "⬜"   # missed day
+        current_row.append(square)
 
         if len(current_row) == 7:
             calendar_rows.append(" ".join(current_row))
             current_row = []
-
         cursor += timedelta(days=1)
 
-    # Pad and append the last incomplete row
+    # Finish the last row
+    while len(current_row) < 7:
+        current_row.append("⬜")
     if current_row:
-        while len(current_row) < 7:
-            current_row.append("⬛")
         calendar_rows.append(" ".join(current_row))
 
-    calendar_grid = "\n".join(calendar_rows)
+    calendar_grid = "\n".join(calendar_rows[:5])  # keep it neat, max 5 rows
 
-    # ── Streak status ──
-    if current_streak >= 60:
-        streak_emoji, streak_label = "🌠", "Ancient Soul!"
-    elif current_streak >= 30:
-        streak_emoji, streak_label = "🏆", "Devoted Wanderer!"
-    elif current_streak >= 14:
-        streak_emoji, streak_label = "🌟", "Forest Regular!"
-    elif current_streak >= 7:
-        streak_emoji, streak_label = "⚡", "Week Warrior!"
-    elif current_streak >= 3:
-        streak_emoji, streak_label = "🔥", "On Fire!"
-    elif current_streak >= 2:
-        streak_emoji, streak_label = "🌱", "Getting Started!"
-    elif current_streak >= 1:
-        streak_emoji, streak_label = "✨", "First Step!"
-    else:
-        streak_emoji, streak_label = "💤", "Start your streak today!"
-
-    # ── Next milestone ──
-    milestones = {
-        2:  ("🌱", "+12 XP/day"),
-        3:  ("🔥", "+20 XP/day"),
-        7:  ("⚡", "+30 XP/day"),
-        14: ("🌟", "+40 XP/day"),
-        30: ("🏆", "+50 XP/day"),
-        60: ("🌠", "+60 XP/day — Ancient Soul!"),
-    }
-
-    next_milestone_text = ""
-    for days, (icon, reward) in milestones.items():
-        if current_streak < days:
-            days_away = days - current_streak
-            next_milestone_text = (
-                f"🎯 <b>Next milestone in {days_away} day{'s' if days_away != 1 else ''}:</b>\n"
-                f"   {icon} {days}-day streak → {reward}\n\n"
-            )
-            break
-
-    # ── FIX: Use consistent header label ──
-    HEADER = "<b>Mo Tu We Th Fr Sa Su</b>"
-
-    # ── Consistency bar for this month ──
-    days_in_month = now.day  # days elapsed so far
-    consistency_pct = round((days_this_month / days_in_month) * 100) if days_in_month > 0 else 0
-    consistency_bar = create_daily_progress_bar(days_this_month, days_in_month, length=10)
+    # Next milestone text
+    next_milestone = f"Next milestone in {7 - current_streak} days → +30 XP/day 🔥" if current_streak < 7 else "Legendary streak unlocked! 🔥"
 
     text = (
         f"📅 <b>{html.escape(first_name)}'s Streak Calendar</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"{streak_emoji} <b>{current_streak}-day streak</b> — {streak_label}\n\n"
-        f"{HEADER}\n"
+        f"🔥 <b>{current_streak}-day streak — ON FIRE!</b>\n\n"
+        f"<b>Mo Tu We Th Fr Sa Su</b>\n"
         f"{calendar_grid}\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🟩 Active  ⬜ Missed  🟡 Today  ⬛ Out of range\n"
+        f"🟩 Active ⬜ Missed 🟡 Today ⬛ Out of range\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📊 <b>Your Stats</b>\n\n"
+        f"📊 <b>Your Stats</b>\n"
         f"🔥 Current Streak: <b>{current_streak} days</b>\n"
         f"🏆 Longest Streak: <b>{longest_streak} days</b>\n"
-        f"📆 Active This Month: <b>{days_this_month}/{days_in_month} days</b>\n"
-        f"   {consistency_bar} {consistency_pct}%\n\n"
+        f"📆 Active This Month: <b>{days_this_month}/{days_in_month} days</b> {consistency_pct}%\n"
         f"🌿 Active This Year: <b>{days_this_year} days</b>\n"
-        f"✅ Total Active Days: <b>{len(active_dates)} days</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"{next_milestone_text}"
+        f"✅ Total Active Days: <b>{total_active} days</b>\n\n"
+        f"🎯 {next_milestone}\n\n"
         f"<i>Come back every day to keep your streak alive! 🍃</i>"
     )
 
     keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🔄 Refresh", callback_data="show_streak_calendar"),
-            InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page"),
-        ],
+        [InlineKeyboardButton("🔄 Refresh", callback_data="show_streak_calendar"),
+         InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page")]
     ])
 
+    # Send fresh message
     if query and query.message:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-    msg = await send_animated_translated(
+        await query.message.delete()
+    await send_animated_translated(
         chat_id=chat_id,
         caption=text,
-        animation_url=MORNING_GIF,
-        reply_markup=keyboard,
+        animation_url=MORNING_GIF,   # change to any GIF you prefer
+        reply_markup=keyboard
     )
-    await _remember(chat_id, msg.message_id)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS

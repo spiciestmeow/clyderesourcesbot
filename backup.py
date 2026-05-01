@@ -116,6 +116,12 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
 
     buttons = []
 
+    # Sort by newest first (best UX)
+    accounts.sort(
+        key=lambda acc: acc.get("created_at") or "", 
+        reverse=True
+    )
+
     for i, acc in enumerate(accounts, 1):
         email = acc.get("email", "")
         games_list = [g.strip() for g in (acc.get("games") or []) if str(g).strip()]
@@ -124,6 +130,15 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         # ── Account header line ──
         bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
         text += f"<b>{i}️⃣ Account {i}</b>{bundle_tag}\n"
+
+        # ── Account freshness — SOCIAL MEDIA STYLE ──
+        created_at = acc.get("created_at", "")
+        if created_at:
+            try:
+                age_tag = get_relative_time_ago(created_at)
+                text += f"   {age_tag}\n"
+            except Exception:
+                text += "   🟢 Freshly added\n"
 
         # ── Bundle games preview (same style as search page) ──
         if is_bundle and games_list:
@@ -135,28 +150,10 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             if preview_games:
                 preview_str = ", ".join(html.escape(g) for g in preview_games)
                 more_str = f" <i>+{more_count} more</i>" if more_count > 0 else ""
-                text += f"   <b>Also includes:</b> {preview_str}{more_str}\n"
+                text += f"   <b>Also includes:</b> {preview_str}<b>{more_str}</b>\n"
 
-        # ── Account freshness ──
-        created_at = acc.get("created_at", "")
-        if created_at:
-            try:
-                manila = pytz.timezone("Asia/Manila")
-                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00")).astimezone(manila)
-                diff_h = (datetime.now(manila) - dt).total_seconds() / 3600
-                if diff_h < 6:
-                    age_tag = "🟢 Freshly added"
-                elif diff_h < 24:
-                    age_tag = f"🟡 Added {int(diff_h)}h ago"
-                elif diff_h < 72:
-                    age_tag = f"🟠 Added {int(diff_h/24)}d ago"
-                else:
-                    age_tag = f"🔵 Added {int(diff_h/24)}d ago"
-                text += f"   {age_tag}\n"
-            except Exception:
-                pass
-
-        text += "\n"
+        text += "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
+        
 
         # ── Claim button ──
         btn_label = f"✅ Claim Account {i}"
@@ -177,7 +174,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     )
 
     # ── Nav buttons ──
-    buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
+    buttons.append([InlineKeyboardButton("← Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
     # ── Delete original message ──
@@ -245,7 +242,7 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
         ])
     )
 
@@ -2630,7 +2627,7 @@ async def view_notion_steam_library(chat_id: int, page: int = 0, query=None, fil
 
     buttons.append(nav)
     buttons.append([InlineKeyboardButton("🔄 Refresh Library", callback_data="view_notion_steam_refresh")])
-    buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_menu")])
+    buttons.append([InlineKeyboardButton("← Back to Caretaker Menu", callback_data="caretaker_menu")])
 
     final_text = text + f"━━━━━━━━━━━━━━━━━━\n📄 Page {page+1} of {((len(all_items)-1)//8)+1} • {len(all_items)} games • Last synced just now"
 
@@ -4149,8 +4146,8 @@ async def show_gcash_qr(chat_id: int, query=None):
     )
 
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to Donate Menu", callback_data="donate")],
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Donate Menu", callback_data="donate")],
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")],
     ])
 
     if query and query.message:
@@ -4227,7 +4224,7 @@ def kb_resources():
         ],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [InlineKeyboardButton("🍜 Crunchy Checker", callback_data="show_crunchyroll_bot")],
-        [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Main Menu", callback_data="main_menu")],
     ])
 
 def kb_main_menu():
@@ -4267,12 +4264,12 @@ def kb_first_time_menu():
 def kb_donate():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💰 GCash QR Code", callback_data="gcash_qr")],
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")],
     ])
 
 def kb_patrons():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")],
     ])
 
 def kb_inventory():
@@ -4282,14 +4279,14 @@ def kb_inventory():
             InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office"),
         ],
         [
-            InlineKeyboardButton("🍿 Netflix Cookies", callback_data="vamt_filter_netflix"),
-            InlineKeyboardButton("🎥 PrimeVideo Cookies", callback_data="vamt_filter_prime"),
+            InlineKeyboardButton("🍿 Netflix", callback_data="vamt_filter_netflix"),
+            InlineKeyboardButton("🎥 PrimeVideo", callback_data="vamt_filter_prime"),
         ],
         [
-            InlineKeyboardButton("🍜 Crunchyroll Cookies", callback_data="vamt_filter_crunchyroll"),
-            InlineKeyboardButton("🎮 Steam Accounts", callback_data="vamt_filter_steam"),
+            InlineKeyboardButton("🍜 Crunchyroll", callback_data="vamt_filter_crunchyroll"),
+            InlineKeyboardButton("🎮 Steam", callback_data="vamt_filter_steam"),
         ],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
 def kb_back_inventory():
@@ -4314,7 +4311,7 @@ def kb_winoffice_guide():
 
 def kb_back_to_wheel():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to Wheel of Whispers", callback_data="show_wheel_menu")],
+        [InlineKeyboardButton("← Back to Wheel of Whispers", callback_data="show_wheel_menu")],
     ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4344,7 +4341,7 @@ async def show_patrons_page(chat_id: int, query=None):
         )
 
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to the Clearing", callback_data="main_menu")]
+        [InlineKeyboardButton("← Back to the Clearing", callback_data="main_menu")]
     ])
 
     if query and query.message:
@@ -4400,7 +4397,7 @@ async def kb_caretaker_dynamic() -> InlineKeyboardMarkup:
             InlineKeyboardButton("👤 User Tools", callback_data="cpage_usertools"),
         ],
         [
-            InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu"),
+            InlineKeyboardButton("← Back to Clearing", callback_data="main_menu"),
         ],
     ])
 
@@ -4443,26 +4440,6 @@ def _greeting(tz_str: str = "Asia/Manila", first_name: str = None) -> tuple[str,
         text = f"Good evening, {name}" if not is_weekend else f"Cozy weekend evening, {name}"
         return "🌙", text, EVENING_GIF
 
-# Build unified games list per account (game_name + games[] merged, deduplicated)
-def get_unified_games(acc: dict) -> list[str]:
-    """Returns all game names for this account, deduped, game_name first"""
-    seen = set()
-    result = []
-    
-    # game_name first
-    primary = (acc.get("game_name") or "").strip()
-    if primary and primary.lower() not in seen:
-        seen.add(primary.lower())
-        result.append(primary)
-    
-    # then games[]
-    for g in (acc.get("games") or []):
-        g = str(g).strip()
-        if g and g.lower() not in seen:
-            seen.add(g.lower())
-            result.append(g)
-    
-    return result
 
 def get_crossed_milestones(old_xp: int, new_xp: int) -> list[int]:
     """Returns milestones crossed between old and new XP"""
@@ -4611,7 +4588,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📤 Upload Keys (send file after)", callback_data="caretaker_uploadkeys")],
                 [InlineKeyboardButton("🗝️ Manual Win/Office Entry", callback_data="caretaker_manualkeys")],  # ← NEW
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4631,7 +4608,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "📋 <b>Shows last 5 patch notes to users</b>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📜 Add Patch Note Now", callback_data="caretaker_addupdate")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4648,7 +4625,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "⚠️ Users are limited to <b>3 feedbacks per day</b> to prevent spam.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📬 View Feedbacks Now", callback_data="caretaker_viewfeedback")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4673,7 +4650,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                 [InlineKeyboardButton("🎉 Create Event", callback_data="caretaker_addevent")],
                 [InlineKeyboardButton("👁️ View Current Event", callback_data="caretaker_viewevent")],
                 [InlineKeyboardButton("🔴 End Current Event", callback_data="confirm_end_event")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4693,7 +4670,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "or when users report seeing outdated info.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Flush All Caches Now", callback_data="caretaker_flushcache")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4718,7 +4695,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "💡 Use this when something feels slow or broken.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📊 Run Health Check Now", callback_data="caretaker_health")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4738,7 +4715,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "🔔 The bot auto-alerts you every 6 hours if stock is low.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📦 Check Stock Now", callback_data="caretaker_checkstock")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4757,7 +4734,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "💡 Use this to identify and remove broken keys from the inventory.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📋 View Reports Now", callback_data="caretaker_viewreports")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4775,7 +4752,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "⚠️ <b>Always turn this OFF after you're done with maintenance!</b>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🛠️ Toggle Maintenance Mode", callback_data="confirm_toggle_maintenance")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4797,7 +4774,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "• Field 3 = Time (merged as Date · Time)",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📝 Set Forest Info (use command)", callback_data="caretaker_setinfo")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4817,8 +4794,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "whenever a user comes online (once per 15 min per user).",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🟢 View Online Users Now", callback_data="show_online_users")],
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4843,8 +4820,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                     "🔬 Run Achievement Diagnostics",
                     callback_data="run_test_achievements"
                 )],
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4877,8 +4854,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "Command: <code>/resetsteamsearch &lt;id&gt;</code>\n\n"
             "📌 <b>To use:</b> Close this and type the command.",
             InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4901,7 +4878,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "❌ <b>This cannot be undone!</b>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("⚠️ Proceed to Reset", callback_data="caretaker_resetfirst")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4925,7 +4902,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                 [InlineKeyboardButton("🔍 Search Steam", callback_data="caretaker_searchsteam")],
                 [InlineKeyboardButton("📤 Upload Steam", callback_data="caretaker_uploadsteam")],
                 [InlineKeyboardButton("📋 Notion Library", callback_data="view_notion_steam")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4944,7 +4921,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
             "💡 Changes made here update your Notion database in real time.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📋 Open Notion Library", callback_data="view_notion_steam")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4971,8 +4948,8 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                     "🔬 Run Achievement Diagnostics",
                     callback_data="run_test_achievements"
                 )],
-                [InlineKeyboardButton("⬅️ Back to User Tools", callback_data="cpage_usertools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to User Tools", callback_data="cpage_usertools")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
 
@@ -4986,7 +4963,7 @@ async def show_caretaker_page(chat_id: int, page: str, query=None):
                 [InlineKeyboardButton("🔄 Reset Tools", callback_data="cpage_reset_tools")],
                 [InlineKeyboardButton("👥 Patron & Diagnostics", callback_data="cpage_patron_tools")],
                 [InlineKeyboardButton("🟢 Online Users", callback_data="cpage_online_tools")],
-                [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
             ])
         ),
     }
@@ -5166,7 +5143,7 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔄 Refresh", callback_data="show_streak_calendar"),
-            InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page"),
+            InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page"),
         ],
     ])
 
@@ -5214,7 +5191,7 @@ async def auto_expire_search_prompt(chat_id: int, prompt_msg_id: int):
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
     ])
     
     await tg_app.bot.send_message(
@@ -5673,11 +5650,11 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
     # ── Navigation ──
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀ Previous", callback_data=f"myclaims_page_{page-1}"))
+        nav.append(InlineKeyboardButton("↼ Previous", callback_data=f"myclaims_page_{page-1}"))
     # Center page indicator (disabled button)
     nav.append(InlineKeyboardButton(f"· {page + 1}/{total_pages} ·", callback_data="noop"))
     if start + ITEMS_PER_PAGE < total:
-        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"myclaims_page_{page+1}"))
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"myclaims_page_{page+1}"))
     if nav:
         buttons.append(nav)
 
@@ -6075,9 +6052,9 @@ async def show_paginated_cookie_list(
     # ── Navigation ──
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("← Prev", callback_data=f"{service_type}_page_{page - 1}"))
+        nav.append(InlineKeyboardButton("↼ Prev", callback_data=f"{service_type}_page_{page - 1}"))
     if end < len(filtered):
-        nav.append(InlineKeyboardButton("Next →", callback_data=f"{service_type}_page_{page + 1}"))
+        nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"{service_type}_page_{page + 1}"))
     if nav:
         buttons.append(nav)
 
@@ -6219,7 +6196,11 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         action_name = action_map.get(service_type, "reveal_netflix")
 
         # Plan detail from service_type now, not display_name
-        plan_detail = raw_service_type.replace("Netflix", "").replace("PrimeVideo", "").strip()
+        if "crunchyroll" in raw_service_type.lower():
+            plan_detail = "Premium" + get_region_flag(raw_service_type)
+        else:
+            plan_detail = raw_service_type.replace("Netflix", "").replace("PrimeVideo", "").strip()
+
         plan_line = f"📋  Plan: <b>{plan_detail}</b>\n" if plan_detail and plan_detail.lower() != "cookie" else ""
 
         freshness    = get_freshness_badge(item.get("last_updated"))
@@ -6242,7 +6223,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         )
 
         manila = pytz.timezone("Asia/Manila")
-        revealed_at = datetime.now(manila).strftime('%Y-%m-%d at %H:%M:%S')
+        revealed_at = datetime.now(manila).strftime("%Y-%m-%d at %I:%M:%S %p")
 
         file_content = (
             f"🌿🍃 Clyde's Enchanted Clearing — Secret {title_name} Cookie 🌿🍃\n"
@@ -6382,7 +6363,7 @@ async def handle_referral_history(chat_id: int):
             "🔗 Share My Link", 
             callback_data="invite_friends"
         )],
-        [InlineKeyboardButton("⬅️ Back", callback_data="invite_friends")],
+        [InlineKeyboardButton("← Back", callback_data="invite_friends")],
     ])
 
     msg = await send_animated_translated(
@@ -6488,7 +6469,7 @@ async def handle_online_users(chat_id: int, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Refresh", callback_data="show_online_users")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
     if query and query.message:
@@ -6671,7 +6652,7 @@ async def handle_profile_page(chat_id: int, first_name: str, query=None, page: i
             InlineKeyboardButton("📅 Streak Calendar", callback_data="show_streak_calendar"),
         ],
         nav_row,
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
     caption = pages.get(page, pages[0]) 
@@ -6814,7 +6795,7 @@ async def show_achievements_page(chat_id: int, query=None, page: int = 0):
     if nav:
         buttons.append(nav)
 
-    buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
+    buttons.append([InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page")])
 
     markup = InlineKeyboardMarkup(buttons)
 
@@ -6861,7 +6842,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
             "<i>Tap Next → to continue</i>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_2")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back", callback_data="check_vamt")],
             ])
         ),
         2: (
@@ -6884,7 +6865,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
                     InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_1"),
                     InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_3"),
                 ],
-                [InlineKeyboardButton("⬅️ Back", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back", callback_data="check_vamt")],
             ])
         ),
         3: (
@@ -6908,7 +6889,7 @@ async def handle_cookie_tutorial(chat_id: int, service: str = "netflix", page: i
                 [InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_2")],
                 [InlineKeyboardButton(btn_label, callback_data=f"vamt_filter_{service}"
                 )],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
             ])
         ),
     }
@@ -6990,7 +6971,7 @@ async def handle_set_title(chat_id: int, first_name: str, query=None):
             InlineKeyboardButton("🔄 Reset to Current Level Title", callback_data="reset_title")
         ])
 
-    buttons.append([InlineKeyboardButton("⬅️ Back to Profile", callback_data="show_profile_page")])
+    buttons.append([InlineKeyboardButton("← Back to Profile", callback_data="show_profile_page")])
 
     if query and query.message:
         try:
@@ -7452,6 +7433,45 @@ async def handle_updates(chat_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
+def get_relative_time_ago(created_at_str: str) -> str:
+    """Returns social media style relative time (Manila timezone)"""
+    if not created_at_str:
+        return "🟢 Freshly added"
+    
+    try:
+        manila = pytz.timezone("Asia/Manila")
+        
+        # Handle both '2024-...' and '2024-...Z' formats
+        if created_at_str.endswith('Z'):
+            dt = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(created_at_str)
+        
+        dt = dt.astimezone(manila)
+        now = datetime.now(manila)
+        
+        diff = now - dt
+        seconds = int(diff.total_seconds())
+        
+        if seconds < 60:
+            return "🟢 Just now"
+        elif seconds < 3600:          # < 1 hour
+            minutes = seconds // 60
+            return f"🟢 {minutes}m ago"
+        elif seconds < 86400:         # < 1 day
+            hours = seconds // 3600
+            return f"🟡 {hours}h ago"
+        else:                         # days
+            days = seconds // 86400
+            if days <= 3:
+                return f"🟠 {days}d ago"
+            else:
+                return f"🔵 {days}d ago"
+                
+    except Exception as e:
+        print(f"⚠️ Time parsing error: {e}")
+        return "🟢 Freshly added"
+
 def get_freshness_badge(last_updated: str | None) -> str:
     """
     Returns a freshness badge based on how recently the cookie was added/updated.
@@ -8303,7 +8323,7 @@ async def handle_steam_feedback(
                "<i>Thank you for your feedback! 🍃</i>")
         )
 
-        back_button = [[InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")]]
+        back_button = [[InlineKeyboardButton("← Back to My Claims", callback_data="my_steam_claims")]]
 
         final_markup = InlineKeyboardMarkup(
             ([[InlineKeyboardButton("↩️ Undo — I made a mistake!", callback_data=f"stfb_undo|{account_email}|{game_name[:30]}")]]
@@ -8325,7 +8345,7 @@ async def handle_steam_feedback(
             try:
                 await query.message.edit_reply_markup(
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("◀ Back to My Claims", callback_data="my_steam_claims")
+                        InlineKeyboardButton("← Back to My Claims", callback_data="my_steam_claims")
                     ]])
                 )
             except Exception:
@@ -8404,7 +8424,7 @@ async def handle_settings_page(chat_id: int, first_name: str, query=None):
             "🌲 Invite Friends & Earn 25 XP",
             callback_data="invite_friends"
         )],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
     if query and query.message:
@@ -8586,7 +8606,7 @@ async def show_wheel_history(chat_id: int, query=None):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🌟 Spin Now", callback_data="spin_now")],
-        [InlineKeyboardButton("⬅️ Back to Wheel", callback_data="show_wheel_menu")],
+        [InlineKeyboardButton("← Back to Wheel", callback_data="show_wheel_menu")],
     ])
 
     if query and query.message:
@@ -8722,7 +8742,7 @@ async def show_winoffice_keys(chat_id: int, category: str, profile: dict, query,
             "❓ What is VAMT / Remaining?", callback_data=f"explain_vamt|{internal_cat}"
         )])
         buttons.append([InlineKeyboardButton(
-            "⬅️ Back to Inventory", callback_data="check_vamt"
+            "← Back to Inventory", callback_data="check_vamt"
         )])
 
         await safe_edit(loading,
@@ -8835,19 +8855,11 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
         search_buttons = [
             [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
         ]
-
-    owner_buttons = []
-    if chat_id == OWNER_ID:
-        owner_buttons = [
-            [InlineKeyboardButton("🛠️ Admin Steam Search", callback_data="owner_steam_search")],
-        ]
-
     keyboard = InlineKeyboardMarkup(
         search_buttons +
-        owner_buttons +
         [
             [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
         ]
     )
 
@@ -8905,7 +8917,7 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
         ])
     else:
         status_text = (
@@ -8915,7 +8927,7 @@ async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
             [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
         ])
 
     caption = (
@@ -8962,7 +8974,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             f"Please wait for your cooldown to expire before searching again. 🍃",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
             ])
         )
         return
@@ -9081,7 +9093,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                 f"Please wait for your cooldown to expire. 🍃",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             )
         else:
@@ -9093,7 +9105,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             )
         return
@@ -9107,7 +9119,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔍 Search Different Game", callback_data="steam_do_search")],
-                [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
             ])
         )
         return
@@ -9173,7 +9185,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("🔍 Search Again", callback_data="steam_do_search")],
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                     ])
                 )
             except Exception:
@@ -9232,7 +9244,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
             )])
 
     buttons.append([InlineKeyboardButton("🔍 Search Different Game", callback_data="search_different_game")])
-    buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+    buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
     await tg_app.bot.send_message(
         chat_id,
@@ -9344,7 +9356,7 @@ async def handle_searchsteam_command(chat_id: int, raw_text: str, page: int = 0,
             nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"bulk_page|{page+1}"))
         if nav:
             buttons.append(nav)
-        buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")])
+        buttons.append([InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")])
 
         markup = InlineKeyboardMarkup(buttons) if buttons else None
 
@@ -9506,7 +9518,7 @@ async def show_games_page(chat_id: int, term: str, supabase_text: str, live_stat
         nav.append(InlineKeyboardButton("Next ⇀", callback_data=f"games_page|{term}|{page+1}"))
     if nav:
         buttons.append(nav)
-    buttons.append([InlineKeyboardButton("⬅️ Back to Caretaker Menu", callback_data="caretaker_searchsteam")])
+    buttons.append([InlineKeyboardButton("← Back to Caretaker Menu", callback_data="caretaker_searchsteam")])
 
     markup = InlineKeyboardMarkup(buttons)
 
@@ -9544,7 +9556,7 @@ async def handle_set_language(chat_id: int, query=None):
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_set|en")],
         [InlineKeyboardButton("🇵🇭 Tagalog", callback_data="lang_set|tl")],
         [InlineKeyboardButton("🇵🇭 Bisaya", callback_data="lang_set|ceb")],
-        [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+        [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")]
     ]
     markup = InlineKeyboardMarkup(buttons)
 
@@ -10260,7 +10272,7 @@ async def handle_callback(update: Update):
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🍜 Open Crunchyroll Bot", url="https://t.me/clydecrunchybot")],
-            [InlineKeyboardButton("⬅️ Back to Resources", callback_data="show_resources")],
+            [InlineKeyboardButton("← Back to Resources", callback_data="show_resources")],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
 
@@ -10374,7 +10386,7 @@ async def handle_callback(update: Update):
                 "<i>Tap Next → to continue</i>",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("Next ⇀", callback_data=f"cookie_tutorial_{service}_2")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             ),
             2: (
@@ -10397,7 +10409,7 @@ async def handle_callback(update: Update):
                         InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_1"),
                         InlineKeyboardButton("Next ⇀",     callback_data=f"cookie_tutorial_{service}_3"),
                     ],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             ),
             3: (
@@ -10419,7 +10431,7 @@ async def handle_callback(update: Update):
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("↼ Previous", callback_data=f"cookie_tutorial_{service}_2")],
                     [InlineKeyboardButton(btn_label,    callback_data=f"vamt_filter_{service}")],
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
                 ])
             ),
         }
@@ -10624,7 +10636,7 @@ async def handle_callback(update: Update):
                 InlineKeyboardButton("📜 My Spin History", callback_data="show_wheel_history"),
             ],
             [InlineKeyboardButton("ℹ️ About the Wheel", callback_data="about_wheel")],
-            [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")]
+            [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")]
         ])
         await send_animated_translated(
             chat_id=chat_id,
@@ -10900,8 +10912,8 @@ async def handle_callback(update: Update):
         )
 
         buttons = [
-            [InlineKeyboardButton("⬅️ Back to Keys", callback_data=f"back_to_winoffice_keys|{pending_cat}")],
-            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+            [InlineKeyboardButton("← Back to Keys", callback_data=f"back_to_winoffice_keys|{pending_cat}")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
         ]
 
         await query.message.edit_caption(
@@ -11233,7 +11245,7 @@ async def handle_callback(update: Update):
         if nav:
             buttons.append(nav)
 
-        buttons.append([InlineKeyboardButton("⬅️ Back to Account", callback_data=f"steam_detail|{short_key}|0")])
+        buttons.append([InlineKeyboardButton("← Back to Account", callback_data=f"steam_detail|{short_key}|0")])
 
         # === FIXED: Use edit_caption for photo messages ===
         try:
@@ -11336,7 +11348,7 @@ async def handle_callback(update: Update):
                 f"Please wait for your cooldown to expire before searching again. 🍃",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                 ])
             )
             return
@@ -11563,7 +11575,7 @@ async def handle_callback(update: Update):
                             "Please check back soon, wanderer! 🍃",
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                     ])
                 )
                 return
@@ -11733,7 +11745,7 @@ async def handle_callback(update: Update):
                 "<i>Tap Next → to learn about the Leveling System</i>",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("Next ⇀", callback_data="guidance_page_2")],
-                    [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+                    [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
                 ]),
             ),
             2: (
@@ -11751,7 +11763,7 @@ async def handle_callback(update: Update):
                         InlineKeyboardButton("↼ Previous", callback_data="guidance_page_1"),
                         InlineKeyboardButton("Next ⇀",     callback_data="guidance_page_3"),
                     ],
-                    [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+                    [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
                 ]),
             ),
             3: (
@@ -11779,7 +11791,7 @@ async def handle_callback(update: Update):
                 "<i>The more you explore, the more the forest opens up to you.</i> 🍃✨",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton("↼ Previous", callback_data="guidance_page_2")],
-                    [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
+                    [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
                 ]),
             ),
         }
@@ -12009,8 +12021,8 @@ async def handle_callback(update: Update):
                     "<i>Close this and type the command above.</i> 🍃"
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Upload Keys", callback_data="cpage_uploadkeys")],
-                    [InlineKeyboardButton("⬅️ Back to Caretaker", callback_data="caretaker_home")],
+                    [InlineKeyboardButton("← Back to Upload Keys", callback_data="cpage_uploadkeys")],
+                    [InlineKeyboardButton("← Back to Caretaker", callback_data="caretaker_home")],
                 ])
             )
 
@@ -12274,7 +12286,7 @@ async def process_update(update_data: dict):
                     f"Please wait for your cooldown to expire before searching again. 🍃",
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                     ])
                 )
                 return
@@ -12284,7 +12296,7 @@ async def process_update(update_data: dict):
                 "steamCredentials",
                 **{
                     "status": "eq.Available",
-                    "select": "email,game_name,image_url,password,steam_id,release_type,games"
+                    "select": "email,game_name,image_url,password,steam_id,release_type,games,created_at"
                 }
             ) or []
 
@@ -12298,14 +12310,48 @@ async def process_update(update_data: dict):
             # Filter out accounts this user already claimed
             accounts = [acc for acc in all_accounts if acc.get("email") not in user_claimed_emails]
 
-            # Search in BOTH game_name AND games[] array
-            matching_accounts = []
+            # ── Build unified games list per account ──
+            def get_unified_games(acc: dict) -> list[str]:
+                seen = set()
+                result = []
+                primary = (acc.get("game_name") or "").strip()
+                if primary and primary.lower() not in seen:
+                    seen.add(primary.lower())
+                    result.append(primary)
+                for g in (acc.get("games") or []):
+                    g = str(g).strip()
+                    if g and g.lower() not in seen:
+                        seen.add(g.lower())
+                        result.append(g)
+                return result
+
+            # ── Search across unified games list ──
+            matching_accounts = []  # list of (acc, matched_game_name)
+
             for acc in accounts:
-                game_name = str(acc.get("game_name", "")).lower()
-                games_list = [str(g).lower() for g in (acc.get("games") or []) if str(g).strip()]
-                
-                if term in game_name or any(term in g for g in games_list):
-                    matching_accounts.append(acc)
+                unified = get_unified_games(acc)
+                best_match = None
+                best_score = 0
+
+                for game in unified:
+                    g_lower = game.lower()
+                    if term == g_lower:
+                        score = 100
+                    elif g_lower.startswith(term):
+                        score = 90
+                    elif term in g_lower:
+                        score = 80
+                    elif all(w in g_lower for w in term.split()):
+                        score = 70
+                    else:
+                        score = 0
+
+                    if score > best_score:
+                        best_score = score
+                        best_match = game
+
+                if best_match:
+                    matching_accounts.append((acc, best_match))
 
             if not matching_accounts:
                 new_attempts = min(current_attempts + 1, 3)
@@ -12314,7 +12360,7 @@ async def process_update(update_data: dict):
                     86400,
                     str(new_attempts)
                 )
-                
+
                 remaining = 3 - new_attempts
                 used = new_attempts
 
@@ -12329,7 +12375,7 @@ async def process_update(update_data: dict):
                 )
 
                 buttons = [
-                    [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                 ]
 
                 if remaining > 0:
@@ -12343,65 +12389,65 @@ async def process_update(update_data: dict):
                 )
                 return
 
+            # ── Group by matched_game_name ──
             from collections import defaultdict
             grouped = defaultdict(list)
-            for acc in matching_accounts:
-                if is_bundle_account(acc):
-                    db_game_name = (acc.get("game_name") or "").strip()
-                    games_list = [str(g).strip() for g in (acc.get("games") or []) if str(g).strip()]
 
-                    # Priority 1: game_name matches the search term (e.g. "Borderlands 2")
-                    if db_game_name and term in db_game_name.lower():
-                        display_name = db_game_name
-                    else:
-                        # Priority 2: find match inside games[] array
-                        best_match = next((g for g in games_list if term in g.lower()), None)
-                        # Priority 3: fallback to game_name as-is, then raw query
-                        display_name = best_match or db_game_name or raw.title()
-                else:
-                    display_name = (acc.get("game_name") or "Steam Account").strip()
-                grouped[display_name].append(acc)
+            for acc, matched_name in matching_accounts:
+                grouped[matched_name].append(acc)
 
-            text = f"✅ Found <b>{len(matching_accounts)}</b> account(s) for \"<b>{html.escape(term)}</b>\"\n\n"
+            # ── Build result message ──
+            text = (
+                f"✅ Found <b>{len(matching_accounts)}</b> account(s) "
+                f"for \"<b>{html.escape(term)}</b>\"\n\n"
+            )
             buttons = []
 
             for display_name, acc_list in grouped.items():
                 count = len(acc_list)
+                sample_acc = acc_list[0]
+                all_games = get_unified_games(sample_acc)
+                other_games = [g for g in all_games if g.lower() != display_name.lower()]
+                is_bundle = is_bundle_account(sample_acc)
+
+                # === NEW: Detect if this group has mixed single + bundle accounts ===
                 has_bundle = any(is_bundle_account(acc) for acc in acc_list)
+                has_single = any(not is_bundle_account(acc) for acc in acc_list)
+
+                # Get freshness from the newest account
+                newest_created = max(
+                    (a.get("created_at") for a in acc_list if a.get("created_at")),
+                    default=None
+                )
+                age_tag = get_relative_time_ago(newest_created) if newest_created else "🟢 Freshly added"
+
+                # === Improved display logic ===
+                if has_bundle and has_single:
+                    type_label = "📦 <b>Bundle + Single</b>"
+                elif has_bundle:
+                    type_label = "📦 <b>All Big Bundles</b>"
+                else:
+                    type_label = ""
 
                 if count == 1 and not has_bundle:
-                    acc = acc_list[0]
-                    text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account available\n\n"
+                    # Pure single account
+                    text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account {age_tag}\n\n"
                     buttons.append([InlineKeyboardButton(
-                        f"✅ Claim {html.escape(display_name)}",
-                        callback_data=f"claim_steam|{acc['email']}"
+                        f"✅ Claim — {display_name[:35]}",
+                        callback_data=f"claim_steam|{acc_list[0]['email']}"
                     )])
                 else:
-                    label = f"🎮 <b>{html.escape(display_name)}</b>"
-                    if has_bundle:
-                        bundle_acc = next((acc for acc in acc_list if is_bundle_account(acc)), None)
-                        total_games = len([g for g in (bundle_acc.get("games") or []) if str(g).strip()]) if bundle_acc else 0
+                    # Bundle or multiple accounts
+                    text += f"🎮 <b>{html.escape(display_name)}</b> {type_label} {age_tag}\n"
 
-                        all_bundles = all(is_bundle_account(acc) for acc in acc_list)
-                        if all_bundles:
-                            label += f" ← <b>Big Bundle ({total_games} games total)</b>"
-                        else:
-                            label += f" <i>(includes a {total_games}-game bundle)</i>"
-                        
-                        # Smart "Also includes"
-                        games_list = acc_list[0].get("games") or []
-                        example_games = [g for g in games_list if str(g).strip()][:4]
-                        if example_games:
-                            examples = ", ".join(example_games[:3])
-                            text += label + "\n"
-                            text += f"   <b>Also includes:</b> {examples} +{total_games-3} more\n\n"
-                        else:
-                            text += label + "\n\n"
-                    else:
-                        label += f" — {count} account{'s' if count > 1 else ''} available"
-                        text += label + "\n\n"
+                    if other_games:
+                        preview = ", ".join(html.escape(g) for g in other_games[:3])
+                        more = f" +{len(other_games) - 3} more" if len(other_games) > 3 else ""
+                        text += f"   <b>Also includes:</b> {preview}{more}\n"
 
-                    # Store emails in Redis for show_steam_account_selection
+                    text += f"   <b>{count} accounts available</b>\n\n"
+
+                    # Store group for "View All"
                     emails = [acc.get("email") for acc in acc_list if acc.get("email")]
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
@@ -12409,24 +12455,30 @@ async def process_update(update_data: dict):
                         15,
                         json.dumps({"emails": emails, "game_name": display_name})
                     )
-                    buttons.append([InlineKeyboardButton(
-                        f"👉 View all {count} account{'s' if count > 1 else ''}",
-                        callback_data=f"steam_sel|{chat_id}|{safe_key}"
-                    )])
+
+                    btn_label = (
+                        f"👉 View {count} accounts — {display_name[:25]}"
+                        if count > 1
+                        else f"✅ Claim — {display_name[:35]}"
+                    )
+                    btn_callback = (
+                        f"steam_sel|{chat_id}|{safe_key}"
+                        if count > 1
+                        else f"claim_steam|{acc_list[0]['email']}"
+                    )
+                    buttons.append([InlineKeyboardButton(btn_label, callback_data=btn_callback)])
 
             # ✅ Set steam_search_result ONCE after the loop
-            first_acc, first_name_game = next(
-                ((a, n) for n, accs in grouped.items() for a in accs[:1]), (None, None)
-            )
-            if first_acc:
+            if matching_accounts:
+                first_acc, first_game = matching_accounts[0]
                 await redis_client.setex(
                     f"steam_search_result:{chat_id}",
                     10,
-                    json.dumps({"email": first_acc.get("email", ""), "game_name": first_name_game})
+                    json.dumps({"email": first_acc.get("email", ""), "game_name": first_game})
                 )
 
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
-            buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
+            buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             result_msg = await tg_app.bot.send_message(
@@ -12464,7 +12516,7 @@ async def process_update(update_data: dict):
                         )
                         buttons_expired = [
                             [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                         ]
                     else:
                         # ← This is the clean message you want when attempts = 0
@@ -12473,7 +12525,7 @@ async def process_update(update_data: dict):
                             f"Please wait for your cooldown to expire before searching again. 🍃"
                         )
                         buttons_expired = [
-                            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+                            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
                         ]
 
                     await result_msg.edit_text(
