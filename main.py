@@ -8851,16 +8851,8 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
         search_buttons = [
             [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
         ]
-
-    owner_buttons = []
-    if chat_id == OWNER_ID:
-        owner_buttons = [
-            [InlineKeyboardButton("🛠️ Admin Steam Search", callback_data="owner_steam_search")],
-        ]
-
     keyboard = InlineKeyboardMarkup(
         search_buttons +
-        owner_buttons +
         [
             [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
             [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
