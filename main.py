@@ -12291,7 +12291,7 @@ async def process_update(update_data: dict):
                 "steamCredentials",
                 **{
                     "status": "eq.Available",
-                    "select": "email,game_name,image_url,password,steam_id,release_type,games"
+                    "select": "email,game_name,image_url,password,steam_id,release_type,games,created_at"
                 }
             ) or []
 
