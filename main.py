@@ -12276,10 +12276,17 @@ async def process_update(update_data: dict):
             grouped = defaultdict(list)
             for acc in matching_accounts:
                 if is_bundle_account(acc):
-                    # Smart display: Prefer the actual searched game name
+                    db_game_name = (acc.get("game_name") or "").strip()
                     games_list = [str(g).strip() for g in (acc.get("games") or []) if str(g).strip()]
-                    best_match = next((g for g in games_list if term in g.lower()), None)
-                    display_name = best_match or raw.title()
+
+                    # Priority 1: game_name matches the search term (e.g. "Borderlands 2")
+                    if db_game_name and term in db_game_name.lower():
+                        display_name = db_game_name
+                    else:
+                        # Priority 2: find match inside games[] array
+                        best_match = next((g for g in games_list if term in g.lower()), None)
+                        # Priority 3: fallback to game_name as-is, then raw query
+                        display_name = best_match or db_game_name or raw.title()
                 else:
                     display_name = (acc.get("game_name") or "Steam Account").strip()
                 grouped[display_name].append(acc)
@@ -12310,7 +12317,7 @@ async def process_update(update_data: dict):
                         if example_games:
                             examples = ", ".join(example_games[:3])
                             text += label + "\n"
-                            text += f"   Also includes: {examples} +{total_games-3} more\n\n"
+                            text += f"   <b>Also includes:</b> {examples} +{total_games-3} more\n\n"
                         else:
                             text += label + "\n\n"
                     else:
