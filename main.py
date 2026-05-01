@@ -116,6 +116,12 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
 
     buttons = []
 
+    # Sort by newest first (best UX)
+    accounts.sort(
+        key=lambda acc: acc.get("created_at") or "", 
+        reverse=True
+    )
+
     for i, acc in enumerate(accounts, 1):
         email = acc.get("email", "")
         games_list = [g.strip() for g in (acc.get("games") or []) if str(g).strip()]
@@ -12405,34 +12411,44 @@ async def process_update(update_data: dict):
                 other_games = [g for g in all_games if g.lower() != display_name.lower()]
                 is_bundle = is_bundle_account(sample_acc)
 
-                # Get freshness from the newest account in the group
+                # === NEW: Detect if this group has mixed single + bundle accounts ===
+                has_bundle = any(is_bundle_account(acc) for acc in acc_list)
+                has_single = any(not is_bundle_account(acc) for acc in acc_list)
+
+                # Get freshness from the newest account
                 newest_created = max(
                     (a.get("created_at") for a in acc_list if a.get("created_at")),
                     default=None
                 )
                 age_tag = get_relative_time_ago(newest_created) if newest_created else "🟢 Freshly added"
 
-                if count == 1 and not is_bundle:
+                # === Improved display logic ===
+                if has_bundle and has_single:
+                    type_label = "📦 <b>Bundle + Single</b>"
+                elif has_bundle:
+                    type_label = "📦 <b>All Big Bundles</b>"
+                else:
+                    type_label = ""
+
+                if count == 1 and not has_bundle:
+                    # Pure single account
                     text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account {age_tag}\n\n"
                     buttons.append([InlineKeyboardButton(
                         f"✅ Claim — {display_name[:35]}",
                         callback_data=f"claim_steam|{acc_list[0]['email']}"
                     )])
                 else:
-                    bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
-                    text += f"🎮 <b>{html.escape(display_name)}</b>{bundle_tag} {age_tag}\n"
+                    # Bundle or multiple accounts
+                    text += f"🎮 <b>{html.escape(display_name)}</b> {type_label} {age_tag}\n"
 
                     if other_games:
                         preview = ", ".join(html.escape(g) for g in other_games[:3])
                         more = f" +{len(other_games) - 3} more" if len(other_games) > 3 else ""
                         text += f"   <b>Also includes:</b> {preview}{more}\n"
 
-                    if count > 1:
-                        text += f"   {count} accounts available\n"
+                    text += f"   <b>{count} accounts available</b>\n\n"
 
-                    text += "\n"
-
-                    # Store in Redis for "View All"
+                    # Store group for "View All"
                     emails = [acc.get("email") for acc in acc_list if acc.get("email")]
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
