@@ -76,7 +76,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             **{
                 "email": f"eq.{email}",
                 "status": "eq.Available",
-                "select": "email,game_name,image_url,password,steam_id,release_type,games"
+                "select": "email,game_name,image_url,password,steam_id,release_type,games,created_at"
             }
         ) or []
         if acc_data:
@@ -86,35 +86,175 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
 
-    text = f"🎮 <b>{html.escape(game_name)}</b> — Choose an account\n\n"
+    # === IMMEDIATELY CONSUME 1 ATTEMPT WHEN OPENING "VIEW ALL" ===
+    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+    new_attempts = min(current + 1, 3)
+    await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+
+    # Mark that the detailed claim page was opened (prevents double deduction)
+    await redis_client.setex(f"steam_result_consumed:{chat_id}", 600, "1")
+
+    # ── Get logo ──
+    logo_url = None
+    if accounts:
+        first_acc = accounts[0]
+        logo_url = await get_game_logo_url(
+            game_name=game_name,
+            games_list=first_acc.get("games") or [],
+            preferred_name=game_name
+        )
+        if logo_url:
+            logo_url = clean_image_url(logo_url)
+
+    # ── Build caption ──
+    total = len(accounts)
+    text = (
+        f"🎮 <b>{html.escape(game_name)}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"✅ <b>{total} account{'s' if total > 1 else ''} available</b> — pick one below\n\n"
+    )
+
     buttons = []
 
     for i, acc in enumerate(accounts, 1):
         email = acc.get("email", "")
-        short_email = email[:15] + "..." if len(email) > 15 else email
-        bundle_note = " ← <b>Big Bundle</b>" if is_bundle_account(acc) else ""
+        games_list = [g.strip() for g in (acc.get("games") or []) if str(g).strip()]
+        is_bundle = is_bundle_account(acc)
 
-        text += f"{i}️⃣ <b>Account {i}</b>{bundle_note}\n"
-        text += f"   📧 <code>{html.escape(short_email)}</code>\n\n"
+        # ── Account header line ──
+        bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
+        text += f"<b>{i}️⃣ Account {i}</b>{bundle_tag}\n"
+
+        # ── Bundle games preview (same style as search page) ──
+        if is_bundle and games_list:
+            # Show the searched game first, then others
+            other_games = [g for g in games_list if g.lower() != game_name.lower()]
+            preview_games = other_games[:3]
+            more_count = len(other_games) - 3
+
+            if preview_games:
+                preview_str = ", ".join(html.escape(g) for g in preview_games)
+                more_str = f" <i>+{more_count} more</i>" if more_count > 0 else ""
+                text += f"   <b>Also includes:</b> {preview_str}{more_str}\n"
+
+        # ── Account freshness ──
+        created_at = acc.get("created_at", "")
+        if created_at:
+            try:
+                manila = pytz.timezone("Asia/Manila")
+                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00")).astimezone(manila)
+                diff_h = (datetime.now(manila) - dt).total_seconds() / 3600
+                if diff_h < 6:
+                    age_tag = "🟢 Freshly added"
+                elif diff_h < 24:
+                    age_tag = f"🟡 Added {int(diff_h)}h ago"
+                elif diff_h < 72:
+                    age_tag = f"🟠 Added {int(diff_h/24)}d ago"
+                else:
+                    age_tag = f"🔵 Added {int(diff_h/24)}d ago"
+                text += f"   {age_tag}\n"
+            except Exception:
+                pass
+
+        text += "\n"
+
+        # ── Claim button ──
+        btn_label = f"✅ Claim Account {i}"
+        if is_bundle:
+            btn_label += " 📦"
 
         buttons.append([
             InlineKeyboardButton(
-                f"✅ Claim Account {i}", 
+                btn_label, 
                 callback_data=f"claim_steam|{acc['email']}|{group_key}"
             )
         ])
 
-    # FIXED: Proper back button
+    # ── Footer note ──
+    text += (
+        "━━━━━━━━━━━━━━━━━━\n"
+        "<i>📧 Credentials revealed after claiming. ⏳ Expires in 10 min.</i>"
+    )
+
+    # ── Nav buttons ──
     buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
+    # ── Delete original message ──
+    if query_obj and query_obj.message:
+        try:
+            await query_obj.message.delete()
+        except:
+            pass
+
+    # ── Send with or without logo ──
     try:
-        if query_obj and query_obj.message:
-            await query_obj.message.edit_text(text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        if logo_url:
+            msg = await tg_app.bot.send_photo(
+                chat_id=chat_id,
+                photo=logo_url,
+                caption=text.strip(),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
         else:
-            await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
-    except Exception:
-        await tg_app.bot.send_message(chat_id, text=text.strip(), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+            msg = await tg_app.bot.send_message(
+                chat_id, 
+                text=text.strip(), 
+                parse_mode="HTML", 
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+    except Exception as e:
+        print(f"🔴 Error sending claim page: {e}")
+        return
+
+    # ── Auto-expire ──
+    async def auto_expire_claim_page():
+        await asyncio.sleep(10)
+        try:
+            await tg_app.bot.delete_message(chat_id, msg.message_id)
+            await send_steam_search_expired_message(chat_id, increment_attempt=False)
+        except Exception:
+            pass
+
+    asyncio.create_task(auto_expire_claim_page())
+
+async def send_steam_search_expired_message(chat_id: int, increment_attempt: bool = True):
+    """Reusable rich expired message — now safely avoids double counting"""
+    if increment_attempt:
+        current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+        new_attempts = min(current_attempts + 1, 3)
+    else:
+        new_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+        new_attempts = min(new_attempts, 3)
+
+    remaining = 3 - new_attempts
+
+    expired_text = (
+        f"⏳ <b>This search has expired.</b>\n\n"
+        f"The results are no longer valid.\n"
+        f"(10 seconds have passed without claiming)\n\n"
+        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+        f"{make_attempts_bar(new_attempts)}\n\n"
+        f"🌲 <i>You can search again right now!</i>"
+    )
+
+    await tg_app.bot.send_message(
+        chat_id,
+        expired_text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+            [InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")]
+        ])
+    )
+
+    if increment_attempt:
+        await redis_client.setex(
+            f"steam_search_attempts:{chat_id}",
+            86400,
+            str(new_attempts)
+        )
 
 # ──────────────────────────────────────────────
 # NEW: Get the exact display name the user saw during search
@@ -4303,6 +4443,26 @@ def _greeting(tz_str: str = "Asia/Manila", first_name: str = None) -> tuple[str,
         text = f"Good evening, {name}" if not is_weekend else f"Cozy weekend evening, {name}"
         return "🌙", text, EVENING_GIF
 
+# Build unified games list per account (game_name + games[] merged, deduplicated)
+def get_unified_games(acc: dict) -> list[str]:
+    """Returns all game names for this account, deduped, game_name first"""
+    seen = set()
+    result = []
+    
+    # game_name first
+    primary = (acc.get("game_name") or "").strip()
+    if primary and primary.lower() not in seen:
+        seen.add(primary.lower())
+        result.append(primary)
+    
+    # then games[]
+    for g in (acc.get("games") or []):
+        g = str(g).strip()
+        if g and g.lower() not in seen:
+            seen.add(g.lower())
+            result.append(g)
+    
+    return result
 
 def get_crossed_milestones(old_xp: int, new_xp: int) -> list[int]:
     """Returns milestones crossed between old and new XP"""
@@ -12073,15 +12233,18 @@ async def process_update(update_data: dict):
     # ── FINAL SMART SEARCH RESULT LOGIC (Combined game_name + games[] + Clean Display) ──
     if await redis_client.get(f"steam_searching:{chat_id}"):
         if chat_id != OWNER_ID:
-            await tg_app.bot.send_message(
-                chat_id,
-                "🌿 <b>Steam accounts are currently in testing mode.</b>\n\n",
-                parse_mode="HTML"
-            )
+            await tg_app.bot.send_message(...)
             await redis_client.delete(f"steam_searching:{chat_id}")
             return
+
         if not is_real_command:
             await redis_client.delete(f"steam_searching:{chat_id}")
+            
+            # ── NEW: Clear the "View All opened" flag for a fresh new search
+            await redis_client.delete(f"steam_result_consumed:{chat_id}")
+            
+            # Also clear the old search result (you probably already have this line)
+            await redis_client.delete(f"steam_search_result:{chat_id}")
 
             # DELETE the user's typed message
             try:
@@ -12089,7 +12252,7 @@ async def process_update(update_data: dict):
             except Exception:
                 pass
 
-            # DELETE the search prompt message (stored in Redis)
+            # DELETE the old search prompt
             search_prompt_id = await redis_client.get(f"steam_search_prompt:{chat_id}")
             if search_prompt_id:
                 try:
@@ -12184,10 +12347,17 @@ async def process_update(update_data: dict):
             grouped = defaultdict(list)
             for acc in matching_accounts:
                 if is_bundle_account(acc):
-                    # Smart display: Prefer the actual searched game name
+                    db_game_name = (acc.get("game_name") or "").strip()
                     games_list = [str(g).strip() for g in (acc.get("games") or []) if str(g).strip()]
-                    best_match = next((g for g in games_list if term in g.lower()), None)
-                    display_name = best_match or raw.title()
+
+                    # Priority 1: game_name matches the search term (e.g. "Borderlands 2")
+                    if db_game_name and term in db_game_name.lower():
+                        display_name = db_game_name
+                    else:
+                        # Priority 2: find match inside games[] array
+                        best_match = next((g for g in games_list if term in g.lower()), None)
+                        # Priority 3: fallback to game_name as-is, then raw query
+                        display_name = best_match or db_game_name or raw.title()
                 else:
                     display_name = (acc.get("game_name") or "Steam Account").strip()
                 grouped[display_name].append(acc)
@@ -12209,8 +12379,14 @@ async def process_update(update_data: dict):
                 else:
                     label = f"🎮 <b>{html.escape(display_name)}</b>"
                     if has_bundle:
-                        total_games = len([g for g in (acc_list[0].get("games") or []) if str(g).strip()])
-                        label += f" ← <b>Big Bundle ({total_games} games total)</b>"
+                        bundle_acc = next((acc for acc in acc_list if is_bundle_account(acc)), None)
+                        total_games = len([g for g in (bundle_acc.get("games") or []) if str(g).strip()]) if bundle_acc else 0
+
+                        all_bundles = all(is_bundle_account(acc) for acc in acc_list)
+                        if all_bundles:
+                            label += f" ← <b>Big Bundle ({total_games} games total)</b>"
+                        else:
+                            label += f" <i>(includes a {total_games}-game bundle)</i>"
                         
                         # Smart "Also includes"
                         games_list = acc_list[0].get("games") or []
@@ -12218,7 +12394,7 @@ async def process_update(update_data: dict):
                         if example_games:
                             examples = ", ".join(example_games[:3])
                             text += label + "\n"
-                            text += f"   Also includes: {examples} +{total_games-3} more\n\n"
+                            text += f"   <b>Also includes:</b> {examples} +{total_games-3} more\n\n"
                         else:
                             text += label + "\n\n"
                     else:
@@ -12230,7 +12406,7 @@ async def process_update(update_data: dict):
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
                         f"steam_group:{chat_id}:{safe_key}",
-                        10,
+                        15,
                         json.dumps({"emails": emails, "game_name": display_name})
                     )
                     buttons.append([InlineKeyboardButton(
@@ -12264,6 +12440,13 @@ async def process_update(update_data: dict):
             async def auto_expire_result():
                 await asyncio.sleep(10)
                 try:
+                    # === CRITICAL FIX: Prevent double deduction when View All was opened ===
+                    consumed_key = f"steam_result_consumed:{chat_id}"
+                    if await redis_client.get(consumed_key):
+                        await redis_client.delete(consumed_key)
+                        return  # User already paid the attempt when opening "View All"
+
+                    # Original logic continues only if View All was NOT opened
                     current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
                     new_attempts = min(current + 1, 3)
                     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))

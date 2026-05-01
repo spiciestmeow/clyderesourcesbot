@@ -12278,14 +12278,48 @@ async def process_update(update_data: dict):
             # Filter out accounts this user already claimed
             accounts = [acc for acc in all_accounts if acc.get("email") not in user_claimed_emails]
 
-            # Search in BOTH game_name AND games[] array
-            matching_accounts = []
+            # ── Build unified games list per account ──
+            def get_unified_games(acc: dict) -> list[str]:
+                seen = set()
+                result = []
+                primary = (acc.get("game_name") or "").strip()
+                if primary and primary.lower() not in seen:
+                    seen.add(primary.lower())
+                    result.append(primary)
+                for g in (acc.get("games") or []):
+                    g = str(g).strip()
+                    if g and g.lower() not in seen:
+                        seen.add(g.lower())
+                        result.append(g)
+                return result
+
+            # ── Search across unified games list ──
+            matching_accounts = []  # list of (acc, matched_game_name)
+
             for acc in accounts:
-                game_name = str(acc.get("game_name", "")).lower()
-                games_list = [str(g).lower() for g in (acc.get("games") or []) if str(g).strip()]
-                
-                if term in game_name or any(term in g for g in games_list):
-                    matching_accounts.append(acc)
+                unified = get_unified_games(acc)
+                best_match = None
+                best_score = 0
+
+                for game in unified:
+                    g_lower = game.lower()
+                    if term == g_lower:
+                        score = 100
+                    elif g_lower.startswith(term):
+                        score = 90
+                    elif term in g_lower:
+                        score = 80
+                    elif all(w in g_lower for w in term.split()):
+                        score = 70
+                    else:
+                        score = 0
+
+                    if score > best_score:
+                        best_score = score
+                        best_match = game
+
+                if best_match:
+                    matching_accounts.append((acc, best_match))
 
             if not matching_accounts:
                 new_attempts = min(current_attempts + 1, 3)
@@ -12294,7 +12328,7 @@ async def process_update(update_data: dict):
                     86400,
                     str(new_attempts)
                 )
-                
+
                 remaining = 3 - new_attempts
                 used = new_attempts
 
@@ -12323,65 +12357,50 @@ async def process_update(update_data: dict):
                 )
                 return
 
+            # ── Group by matched_game_name ──
             from collections import defaultdict
             grouped = defaultdict(list)
-            for acc in matching_accounts:
-                if is_bundle_account(acc):
-                    db_game_name = (acc.get("game_name") or "").strip()
-                    games_list = [str(g).strip() for g in (acc.get("games") or []) if str(g).strip()]
 
-                    # Priority 1: game_name matches the search term (e.g. "Borderlands 2")
-                    if db_game_name and term in db_game_name.lower():
-                        display_name = db_game_name
-                    else:
-                        # Priority 2: find match inside games[] array
-                        best_match = next((g for g in games_list if term in g.lower()), None)
-                        # Priority 3: fallback to game_name as-is, then raw query
-                        display_name = best_match or db_game_name or raw.title()
-                else:
-                    display_name = (acc.get("game_name") or "Steam Account").strip()
-                grouped[display_name].append(acc)
+            for acc, matched_name in matching_accounts:
+                grouped[matched_name].append(acc)
 
-            text = f"✅ Found <b>{len(matching_accounts)}</b> account(s) for \"<b>{html.escape(term)}</b>\"\n\n"
+            # ── Build result message ──
+            text = (
+                f"✅ Found <b>{len(matching_accounts)}</b> account(s) "
+                f"for \"<b>{html.escape(term)}</b>\"\n\n"
+            )
             buttons = []
 
             for display_name, acc_list in grouped.items():
                 count = len(acc_list)
-                has_bundle = any(is_bundle_account(acc) for acc in acc_list)
+                sample_acc = acc_list[0]
+                all_games = get_unified_games(sample_acc)
+                other_games = [g for g in all_games if g.lower() != display_name.lower()]
+                is_bundle = is_bundle_account(sample_acc)
 
-                if count == 1 and not has_bundle:
-                    acc = acc_list[0]
+                if count == 1 and not is_bundle:
+                    # Single non-bundle account
                     text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account available\n\n"
                     buttons.append([InlineKeyboardButton(
-                        f"✅ Claim {html.escape(display_name)}",
-                        callback_data=f"claim_steam|{acc['email']}"
+                        f"✅ Claim — {display_name[:35]}",
+                        callback_data=f"claim_steam|{acc_list[0]['email']}"
                     )])
                 else:
-                    label = f"🎮 <b>{html.escape(display_name)}</b>"
-                    if has_bundle:
-                        bundle_acc = next((acc for acc in acc_list if is_bundle_account(acc)), None)
-                        total_games = len([g for g in (bundle_acc.get("games") or []) if str(g).strip()]) if bundle_acc else 0
+                    # Multiple accounts or bundle
+                    bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
+                    text += f"🎮 <b>{html.escape(display_name)}</b>{bundle_tag}\n"
 
-                        all_bundles = all(is_bundle_account(acc) for acc in acc_list)
-                        if all_bundles:
-                            label += f" ← <b>Big Bundle ({total_games} games total)</b>"
-                        else:
-                            label += f" <i>(includes a {total_games}-game bundle)</i>"
-                        
-                        # Smart "Also includes"
-                        games_list = acc_list[0].get("games") or []
-                        example_games = [g for g in games_list if str(g).strip()][:4]
-                        if example_games:
-                            examples = ", ".join(example_games[:3])
-                            text += label + "\n"
-                            text += f"   <b>Also includes:</b> {examples} +{total_games-3} more\n\n"
-                        else:
-                            text += label + "\n\n"
-                    else:
-                        label += f" — {count} account{'s' if count > 1 else ''} available"
-                        text += label + "\n\n"
+                    if other_games:
+                        preview = ", ".join(html.escape(g) for g in other_games[:3])
+                        more = f" +{len(other_games) - 3} more" if len(other_games) > 3 else ""
+                        text += f"   <b>Also includes:</b> {preview}{more}\n"
 
-                    # Store emails in Redis for show_steam_account_selection
+                    if count > 1:
+                        text += f"   {count} accounts available\n"
+
+                    text += "\n"
+
+                    # Store in Redis
                     emails = [acc.get("email") for acc in acc_list if acc.get("email")]
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
@@ -12389,20 +12408,26 @@ async def process_update(update_data: dict):
                         15,
                         json.dumps({"emails": emails, "game_name": display_name})
                     )
-                    buttons.append([InlineKeyboardButton(
-                        f"👉 View all {count} account{'s' if count > 1 else ''}",
-                        callback_data=f"steam_sel|{chat_id}|{safe_key}"
-                    )])
+
+                    btn_label = (
+                        f"👉 View {count} accounts — {display_name[:25]}"
+                        if count > 1
+                        else f"✅ Claim — {display_name[:35]}"
+                    )
+                    btn_callback = (
+                        f"steam_sel|{chat_id}|{safe_key}"
+                        if count > 1
+                        else f"claim_steam|{acc_list[0]['email']}"
+                    )
+                    buttons.append([InlineKeyboardButton(btn_label, callback_data=btn_callback)])
 
             # ✅ Set steam_search_result ONCE after the loop
-            first_acc, first_name_game = next(
-                ((a, n) for n, accs in grouped.items() for a in accs[:1]), (None, None)
-            )
-            if first_acc:
+            if matching_accounts:
+                first_acc, first_game = matching_accounts[0]
                 await redis_client.setex(
                     f"steam_search_result:{chat_id}",
                     10,
-                    json.dumps({"email": first_acc.get("email", ""), "game_name": first_name_game})
+                    json.dumps({"email": first_acc.get("email", ""), "game_name": first_game})
                 )
 
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
