@@ -22,6 +22,7 @@ ONBOARDING_GIF = "https://64.media.tumblr.com/129ee065eff5fee81fab81c4f8e2ed4f/t
 
 STEAM_GIF = "https://dolphinhorizongames.com/GIFS/STEAM%20Gif.gif"
 STEAM_RESULT_GIF = "https://64.media.tumblr.com/354a0b3a739d3675f4592b202d083df2/tumblr_pjzi86ixQo1rxlf0fo1_1280.gif"
+STEAM_SEARCH = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExNmRzNGp1NDIxcTNleXJsaTltd3hlNm83MjZ0Z3Z3eTk5b2RjcTZwcSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/YbHMxukzwTLWL8oQbE/giphy.gif"
 
 WINOS_GIF = "https://cdn.dribbble.com/userupload/23828782/file/original-8761d5f0eef9c629751c4c95458cfabe.gif"
 OFFICE_GIF = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExbDdzZ3psOTI4MXV5cWhwOTc3bjdjZHZnZWUwejc2OWR0czg3MnN1dyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/e8GyS582vsduh7lSLP/giphy.gif"

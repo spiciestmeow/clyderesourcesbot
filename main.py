@@ -150,9 +150,9 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             if preview_games:
                 preview_str = ", ".join(html.escape(g) for g in preview_games)
                 more_str = f" <i>+{more_count} more</i>" if more_count > 0 else ""
-                text += f"   <b>Also includes:</b> {preview_str}{more_str}\n"
+                text += f"   <b>Also includes:</b> {preview_str}<b>{more_str}</b>\n"
 
-        text += "\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
+        text += "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
         
 
         # ── Claim button ──
@@ -12400,6 +12400,18 @@ async def process_update(update_data: dict):
             for acc, matched_name in matching_accounts:
                 grouped[matched_name].append(acc)
 
+            # ── Get logo for the first (most relevant) game ──
+            logo_url = None
+            if matching_accounts:
+                first_acc = matching_accounts[0][0]
+                logo_url = await get_game_logo_url(
+                    game_name=matching_accounts[0][1],
+                    games_list=first_acc.get("games") or [],
+                    preferred_name=matching_accounts[0][1]
+                )
+                if logo_url:
+                    logo_url = clean_image_url(logo_url)
+
             # ── Build result message ──
             text = (
                 f"✅ Found <b>{len(matching_accounts)}</b> account(s) "
@@ -12484,13 +12496,22 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
 
-            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
-            result_msg = await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text=text.strip(),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+            # ── Send with logo (professional look) ──
+            if logo_url:
+                result_msg = await tg_app.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=logo_url,
+                    caption=text.strip(),
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            else:
+                result_msg = await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text.strip(),
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
 
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             async def auto_expire_result():
