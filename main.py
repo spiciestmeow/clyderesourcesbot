@@ -4279,11 +4279,11 @@ def kb_inventory():
             InlineKeyboardButton("📑 Office Keys", callback_data="vamt_filter_office"),
         ],
         [
-            InlineKeyboardButton("🍿 Netflix Cookies", callback_data="vamt_filter_netflix"),
-            InlineKeyboardButton("🎥 PrimeVideo Cookies", callback_data="vamt_filter_prime"),
+            InlineKeyboardButton("🍿 Netflix", callback_data="vamt_filter_netflix"),
+            InlineKeyboardButton("🎥 PrimeVideo", callback_data="vamt_filter_prime"),
         ],
         [
-            InlineKeyboardButton("🍜 Crunchyroll Cookies", callback_data="vamt_filter_crunchyroll"),
+            InlineKeyboardButton("🍜 Crunchyroll", callback_data="vamt_filter_crunchyroll"),
             InlineKeyboardButton("🎮 Steam Accounts", callback_data="vamt_filter_steam"),
         ],
         [InlineKeyboardButton("⬅️ Back to Clearing", callback_data="main_menu")],
@@ -6219,7 +6219,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         )
 
         manila = pytz.timezone("Asia/Manila")
-        revealed_at = datetime.now(manila).strftime('%Y-%m-%d at %H:%M:%S')
+        revealed_at = datetime.now(manila).strftime("%Y-%m-%d at %I:%M:%S %p")
 
         file_content = (
             f"🌿🍃 Clyde's Enchanted Clearing — Secret {title_name} Cookie 🌿🍃\n"
