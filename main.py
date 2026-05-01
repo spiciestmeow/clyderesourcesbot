@@ -12400,6 +12400,17 @@ async def process_update(update_data: dict):
             for acc, matched_name in matching_accounts:
                 grouped[matched_name].append(acc)
 
+            logo_url = None
+            if matching_accounts:
+                first_acc = matching_accounts[0][0]
+                logo_url = await get_game_logo_url(
+                    game_name=matching_accounts[0][1],
+                    games_list=first_acc.get("games") or [],
+                    preferred_name=matching_accounts[0][1]
+                )
+                if logo_url:
+                    logo_url = clean_image_url(logo_url)
+
             # ── Build result message ──
             text = (
                 f"✅ Found <b>{len(matching_accounts)}</b> account(s) "
@@ -12433,12 +12444,21 @@ async def process_update(update_data: dict):
                 else:
                     type_label = ""
 
-                if count == 1 and not has_bundle:
-                    # Pure single account
+                if count == 1 and not is_bundle:
+                    # Treat single account like a group so expiration works properly
                     text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account {age_tag}\n\n"
+
+                    emails = [acc_list[0].get("email")]
+                    safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
+                    await redis_client.setex(
+                        f"steam_group:{chat_id}:{safe_key}",
+                        15,
+                        json.dumps({"emails": emails, "game_name": display_name})
+                    )
+
                     buttons.append([InlineKeyboardButton(
                         f"✅ Claim — {display_name[:35]}",
-                        callback_data=f"claim_steam|{acc_list[0]['email']}"
+                        callback_data=f"steam_sel|{chat_id}|{safe_key}"
                     )])
                 else:
                     # Bundle or multiple accounts
@@ -12484,13 +12504,22 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("⬅️ Back to Inventory", callback_data="check_vamt")])
 
-            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
-            result_msg = await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text=text.strip(),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+            # ── Send with logo (professional look) ──
+            if logo_url:
+                result_msg = await tg_app.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=logo_url,
+                    caption=text.strip(),
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            else:
+                result_msg = await tg_app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text.strip(),
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
 
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             async def auto_expire_result():
