@@ -12308,8 +12308,14 @@ async def process_update(update_data: dict):
                 else:
                     label = f"🎮 <b>{html.escape(display_name)}</b>"
                     if has_bundle:
-                        total_games = len([g for g in (acc_list[0].get("games") or []) if str(g).strip()])
-                        label += f" ← <b>Big Bundle ({total_games} games total)</b>"
+                        bundle_acc = next((acc for acc in acc_list if is_bundle_account(acc)), None)
+                        total_games = len([g for g in (bundle_acc.get("games") or []) if str(g).strip()]) if bundle_acc else 0
+
+                        all_bundles = all(is_bundle_account(acc) for acc in acc_list)
+                        if all_bundles:
+                            label += f" ← <b>Big Bundle ({total_games} games total)</b>"
+                        else:
+                            label += f" <i>(includes a {total_games}-game bundle)</i>"
                         
                         # Smart "Also includes"
                         games_list = acc_list[0].get("games") or []
