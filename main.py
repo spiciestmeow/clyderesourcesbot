@@ -137,26 +137,14 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
                 more_str = f" <i>+{more_count} more</i>" if more_count > 0 else ""
                 text += f"   <b>Also includes:</b> {preview_str}{more_str}\n"
 
-        # ── Account freshness ──
+        # ── Account freshness — SOCIAL MEDIA STYLE ──
         created_at = acc.get("created_at", "")
         if created_at:
             try:
-                manila = pytz.timezone("Asia/Manila")
-                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00")).astimezone(manila)
-                diff_h = (datetime.now(manila) - dt).total_seconds() / 3600
-                if diff_h < 6:
-                    age_tag = "🟢 Freshly added"
-                elif diff_h < 24:
-                    age_tag = f"🟡 Added {int(diff_h)}h ago"
-                elif diff_h < 72:
-                    age_tag = f"🟠 Added {int(diff_h/24)}d ago"
-                else:
-                    age_tag = f"🔵 Added {int(diff_h/24)}d ago"
+                age_tag = get_relative_time_ago(created_at)
                 text += f"   {age_tag}\n"
             except Exception:
-                pass
-
-        text += "\n"
+                text += "   🟢 Freshly added\n"
 
         # ── Claim button ──
         btn_label = f"✅ Claim Account {i}"
@@ -7432,6 +7420,45 @@ async def handle_updates(chat_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
+def get_relative_time_ago(created_at_str: str) -> str:
+    """Returns social media style relative time (Manila timezone)"""
+    if not created_at_str:
+        return "🟢 Freshly added"
+    
+    try:
+        manila = pytz.timezone("Asia/Manila")
+        
+        # Handle both '2024-...' and '2024-...Z' formats
+        if created_at_str.endswith('Z'):
+            dt = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(created_at_str)
+        
+        dt = dt.astimezone(manila)
+        now = datetime.now(manila)
+        
+        diff = now - dt
+        seconds = int(diff.total_seconds())
+        
+        if seconds < 60:
+            return "🟢 Just now"
+        elif seconds < 3600:          # < 1 hour
+            minutes = seconds // 60
+            return f"🟢 {minutes}m ago"
+        elif seconds < 86400:         # < 1 day
+            hours = seconds // 3600
+            return f"🟡 {hours}h ago"
+        else:                         # days
+            days = seconds // 86400
+            if days <= 3:
+                return f"🟠 {days}d ago"
+            else:
+                return f"🔵 {days}d ago"
+                
+    except Exception as e:
+        print(f"⚠️ Time parsing error: {e}")
+        return "🟢 Freshly added"
+
 def get_freshness_badge(last_updated: str | None) -> str:
     """
     Returns a freshness badge based on how recently the cookie was added/updated.
@@ -12378,17 +12405,22 @@ async def process_update(update_data: dict):
                 other_games = [g for g in all_games if g.lower() != display_name.lower()]
                 is_bundle = is_bundle_account(sample_acc)
 
+                # Get freshness from the newest account in the group
+                newest_created = max(
+                    (a.get("created_at") for a in acc_list if a.get("created_at")),
+                    default=None
+                )
+                age_tag = get_relative_time_ago(newest_created) if newest_created else "🟢 Freshly added"
+
                 if count == 1 and not is_bundle:
-                    # Single non-bundle account
-                    text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account available\n\n"
+                    text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account {age_tag}\n\n"
                     buttons.append([InlineKeyboardButton(
                         f"✅ Claim — {display_name[:35]}",
                         callback_data=f"claim_steam|{acc_list[0]['email']}"
                     )])
                 else:
-                    # Multiple accounts or bundle
                     bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
-                    text += f"🎮 <b>{html.escape(display_name)}</b>{bundle_tag}\n"
+                    text += f"🎮 <b>{html.escape(display_name)}</b>{bundle_tag} {age_tag}\n"
 
                     if other_games:
                         preview = ", ".join(html.escape(g) for g in other_games[:3])
@@ -12400,7 +12432,7 @@ async def process_update(update_data: dict):
 
                     text += "\n"
 
-                    # Store in Redis
+                    # Store in Redis for "View All"
                     emails = [acc.get("email") for acc in acc_list if acc.get("email")]
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
