@@ -5182,7 +5182,10 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
 async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None = None):
-    """Called when the 20-second search window reaches 0 (no game name typed)"""
+    # ── Guard: if search was already completed, do nothing ──
+    if not await redis_client.get(f"steam_searching:{chat_id}"):
+        return
+    
     # Delete main prompt + 5-second warning
     if prompt_message_id:
         try:
@@ -12546,28 +12549,6 @@ async def process_update(update_data: dict):
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
-
-            # === STRONG CLEANUP - Stop the old 20-second timer completely ===
-            await redis_client.delete(f"steam_searching:{chat_id}")
-            
-            # Delete the original search prompt message
-            prompt_id = await redis_client.get(f"steam_search_prompt:{chat_id}")
-            if prompt_id:
-                try:
-                    await tg_app.bot.delete_message(chat_id, int(prompt_id))
-                except Exception:
-                    pass
-            await redis_client.delete(f"steam_search_prompt:{chat_id}")
-
-            # Also delete any warning message
-            warning_id = await redis_client.get(f"steam_warning:{chat_id}")
-            if warning_id:
-                try:
-                    await tg_app.bot.delete_message(chat_id, int(warning_id))
-                except Exception:
-                    pass
-            await redis_client.delete(f"steam_warning:{chat_id}")
-            # ================================================================
 
             # ── Auto-expire after exactly 30 seconds + consume 1 attempt automatically
             async def auto_expire_result():
