@@ -5168,8 +5168,8 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
 async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None = None):
-    """Called when the 20-second search window reaches 0 (no game name typed)"""
-    # Clean up the prompt message
+    """Called when the 20-second search window reaches 0"""
+    # Clean up the main prompt
     if prompt_message_id:
         try:
             await tg_app.bot.delete_message(chat_id, prompt_message_id)
@@ -5179,7 +5179,7 @@ async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None 
     await redis_client.delete(f"steam_search_prompt:{chat_id}")
     await redis_client.delete(f"steam_searching:{chat_id}")
 
-    # ── YOUR EXACT MESSAGE (attempt is NOT consumed) ──
+    # ── YOUR EXACT MESSAGE (attempt NOT consumed) ──
     expire_text = (
         "🌿 <b>Search window closed.</b>\n\n"
         "No game name was entered within the time limit.\n"
@@ -11360,13 +11360,8 @@ async def handle_callback(update: Update):
         await redis_client.setex(f"steam_searching:{chat_id}", 20, "1")
         await query.answer("🔍 Starting 20-second search window...", show_alert=False)
 
-        # ── SEARCH PROMPT + LAST-5-SECONDS COUNTDOWN (Most Stable + MAX LOGGING) ──
-        SEARCH_TIMEOUT = 20
-
-        print(f"🔍 [STEAM SEARCH] Countdown started for chat {chat_id} - timeout = {SEARCH_TIMEOUT}s")
-
-        # Guide template
-        guide_template = (
+        # Static prompt (no editing)
+        guide_text = (
             "🔍 <b>Search for a Steam Game</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
@@ -11374,58 +11369,48 @@ async def handle_callback(update: Update):
             "📌 <b>Tips for better results:</b>\n"
             "• Use exact or shorter game title\n"
             "• Popular games usually have accounts\n\n"
-            "⏰ <b>You have {seconds} seconds</b> to type the game name now\n"
+            "⏰ <b>You have 20 seconds</b> to type the game name now\n"
             "📌 Results expire in 10 min after search\n"
             "⚠️ Expired without claiming = attempt used\n\n"
             "✏️ <b>Type the game name now:</b> 🍃"
         )
 
-        initial_text = guide_template.format(seconds=SEARCH_TIMEOUT)
-
-        # Send prompt
+        # Send static prompt
         if query and query.message:
             try:
-                prompt_msg = await query.message.edit_caption(caption=initial_text, parse_mode="HTML")
+                prompt_msg = await query.message.edit_caption(caption=guide_text, parse_mode="HTML")
             except:
-                prompt_msg = await tg_app.bot.send_message(chat_id, initial_text, parse_mode="HTML")
+                prompt_msg = await tg_app.bot.send_message(chat_id, guide_text, parse_mode="HTML")
         else:
-            prompt_msg = await tg_app.bot.send_message(chat_id, initial_text, parse_mode="HTML")
+            prompt_msg = await tg_app.bot.send_message(chat_id, guide_text, parse_mode="HTML")
 
         await redis_client.setex(f"steam_search_prompt:{chat_id}", 30, str(prompt_msg.message_id))
 
-        # ── Robust countdown: static 15s → dynamic last 5s ──
-        async def robust_countdown():
-            # Static phase (first 15 seconds)
-            for _ in range(15):
-                if not await redis_client.get(f"steam_searching:{chat_id}"):
-                    return
-                await asyncio.sleep(1)
+        # ── 20-second static timer + 5-second warning ──
+        async def static_timer():
+            # Wait 15 seconds (static phase)
+            await asyncio.sleep(15)
 
-            # Dynamic countdown (last 5 seconds)
-            for remaining in range(5, -1, -1):
-                if not await redis_client.get(f"steam_searching:{chat_id}"):
-                    return  # user typed → stop
+            # 5 seconds remaining → send temporary message
+            if await redis_client.get(f"steam_searching:{chat_id}"):
+                warning = await tg_app.bot.send_message(
+                    chat_id,
+                    "⏳ <b>5 seconds remaining!</b>\n\nType the game name <b>now</b>!",
+                    parse_mode="HTML"
+                )
+                # Auto-delete warning after 5 seconds
+                asyncio.create_task(
+                    asyncio.sleep(5)
+                    .then(lambda: tg_app.bot.delete_message(chat_id, warning.message_id))
+                )
 
-                new_text = guide_template.format(seconds=remaining)
+            # Wait the final 5 seconds
+            await asyncio.sleep(5)
 
-                try:
-                    if hasattr(prompt_msg, 'caption') and prompt_msg.caption is not None:
-                        await prompt_msg.edit_caption(caption=new_text, parse_mode="HTML")
-                    else:
-                        await prompt_msg.edit_text(text=new_text, parse_mode="HTML")
-                except Exception as e:
-                    # Normal behavior when user types (message gets deleted)
-                    if any(x in str(e).lower() for x in ["not found", "message to edit", "chat not found"]):
-                        return
-                    print(f"⚠️ Countdown edit failed at {remaining}s: {e}")
-
-                if remaining > 0:
-                    await asyncio.sleep(1)
-
-            # Time reached 0 → show your exact message
+            # Time is up
             await auto_expire_search_prompt(chat_id, prompt_msg.message_id if prompt_msg else None)
 
-        asyncio.create_task(robust_countdown())
+        asyncio.create_task(static_timer())
    
     # ── BACK TO RESULTS (after opening bundle)
     elif data.startswith("steam_back_to_results|"):
