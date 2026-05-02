@@ -11593,13 +11593,16 @@ async def handle_callback(update: Update):
                 await query.message.delete()
             except Exception:
                 pass
+
+            emoji = "🍿" if category == "netflix" else "🎥" if category == "prime" else "🍜"
             loading = await send_animated_translated(
                 chat_id=chat_id,
                 animation_url=INVENTORY_GIF,
-                caption=f"{'🍿' if category == 'netflix' else '🎥'} <i>Loading {category.title()} Cookies...</i>",
+                caption=f"{emoji} <i>Loading {category.title()} Cookies...</i>",
             )
             class _FreshQuery:
                 message = loading
+
             await show_paginated_cookie_list(category, chat_id, _FreshQuery(), page=0)
             return
         
@@ -11865,6 +11868,12 @@ async def handle_callback(update: Update):
         except Exception:
             await query.answer("Invalid selection", show_alert=True)
             return
+
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
         await reveal_cookie(service_type, chat_id, first_name, query, idx, page)
 
     # ── BACK TO COOKIE LIST (with cleanup) ──

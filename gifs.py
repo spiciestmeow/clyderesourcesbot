@@ -37,6 +37,5 @@ LATENIGHT_GIF = "https://i.pinimg.com/originals/9d/07/a0/9d07a0a457837aad2465da3
 QR_IMAGE_URL = "https://i.ibb.co/Fb3wKDfy/photo-2026-04-20-10-31-23.jpg"
 DONOR_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
 
-
 COOKIE_TUTORIAL_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
 CRUNCHY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMHRuc3JoZmgxbnpuaWlkd2k2anFsZjByamtjaXd0cnRxZzBzemtuYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EJrhtXJFLG87zvsU0Y/giphy.gif"
