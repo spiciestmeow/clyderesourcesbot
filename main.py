@@ -9956,12 +9956,13 @@ async def restore_bot_commands(chat_id: int):
 
 @safe_handler("handle_callback")
 async def handle_callback(update: Update):
-    query     = update.callback_query
+    query = update.callback_query
     if not query or not query.data:
         return
-    chat_id   = update.effective_chat.id
+
+    data = query.data
+    chat_id = update.effective_chat.id
     first_name = update.effective_user.first_name if update.effective_user else "Wanderer"
-    data      = query.data
 
     # ── Update presence on EVERY button tap ──
     asyncio.create_task(update_last_active(chat_id))
@@ -11478,10 +11479,13 @@ async def handle_callback(update: Update):
         success = await claim_steam_account(chat_id, first_name, account_email, display_name)
 
         if success:
-            await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, "3")
-
+            await redis_client.set(
+                f"steam_search_attempts:{chat_id}", "3", ex=86400, nx=True
+            )
             cooldown_seconds = get_steam_cooldown_hours(level) * 3600
-            await redis_client.setex(f"steam_claim_cd:{chat_id}", cooldown_seconds, "1")
+            await redis_client.set(
+                f"steam_claim_cd:{chat_id}", "1", ex=cooldown_seconds, nx=True
+            )
 
             await redis_client.delete(f"steam_search_result:{chat_id}")
             await redis_client.delete(f"steam_searching:{chat_id}")
