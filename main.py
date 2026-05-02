@@ -11361,10 +11361,10 @@ async def handle_callback(update: Update):
         await redis_client.setex(f"steam_searching:{chat_id}", 20, "1")
         await query.answer("🔍 Ready to search", show_alert=False)
 
-        # ── SEARCH PROMPT + RELIABLE 1-SECOND COUNTDOWN ──
-        SEARCH_TIMEOUT = 20   # seconds (you can change this)
+        # ── SEARCH PROMPT + LAST-5-SECONDS COUNTDOWN (Most Stable) ──
+        SEARCH_TIMEOUT = 20   # total time the user has
 
-        # Use a template so .format() always works perfectly
+        # Initial message (static for first 15 seconds)
         guide_template = (
             "🔍 <b>Search for a Steam Game</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -11381,7 +11381,7 @@ async def handle_callback(update: Update):
 
         initial_guide = guide_template.format(seconds=SEARCH_TIMEOUT)
 
-        # Send the prompt (works for both caption and text messages)
+        # Send the prompt
         if query and query.message:
             try:
                 await query.message.edit_caption(caption=initial_guide, parse_mode="HTML")
@@ -11391,18 +11391,21 @@ async def handle_callback(update: Update):
         else:
             prompt_msg = await tg_app.bot.send_message(chat_id, initial_guide, parse_mode="HTML")
 
-        # Store prompt ID for later cleanup
+        # Store message ID for cleanup
         await redis_client.setex(
             f"steam_search_prompt:{chat_id}",
-            SEARCH_TIMEOUT + 60,
+            SEARCH_TIMEOUT + 60,      # 20 + 60 = 80 seconds safety buffer
             str(prompt_msg.message_id)
         )
 
-        # ── ROBUST COUNTDOWN ──
+        # ── COUNTDOWN: Only active in the LAST 5 SECONDS ──
         async def robust_countdown():
-            remaining = SEARCH_TIMEOUT
+            # Wait silently until 5 seconds left
+            await asyncio.sleep(SEARCH_TIMEOUT - 5)
+
+            # Now do dramatic countdown from 5 to 0
+            remaining = 5
             while remaining > 0:
-                # User already typed → stop countdown
                 if not await redis_client.get(f"steam_searching:{chat_id}"):
                     return
 
@@ -11413,13 +11416,12 @@ async def handle_callback(update: Update):
                     else:
                         await prompt_msg.edit_text(text=current_text, parse_mode="HTML")
                 except Exception:
-                    # Telegram sometimes complains — we just continue countdown silently
-                    pass
+                    pass  # silent fail is fine
 
                 await asyncio.sleep(1)
                 remaining -= 1
 
-            # === TIME'S UP ===
+            # Time's up
             await auto_expire_search_prompt(chat_id, prompt_msg.message_id if prompt_msg else None)
 
         asyncio.create_task(robust_countdown())
