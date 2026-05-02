@@ -8899,12 +8899,16 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
     if query and query.message:
         try:
             await query.message.edit_caption(
-                caption=caption, parse_mode="HTML", reply_markup=keyboard
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard
             )
         except Exception:
             try:
                 await query.message.edit_text(
-                    text=caption, parse_mode="HTML", reply_markup=keyboard
+                    text=caption,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
                 )
             except Exception:
                 pass
@@ -11353,6 +11357,10 @@ async def handle_callback(update: Update):
             )
 
     # ── STEAM SEARCH PROMPT + INSTANT CLEANUP OF "SEARCH WINDOW CLOSED" ──
+    elif data == "vamt_filter_steam":
+        await handle_steam_landing(chat_id, first_name, query)
+        await query.answer()
+
     elif data in ("steam_do_search", "search_different_game"):
         await query.answer()
 
