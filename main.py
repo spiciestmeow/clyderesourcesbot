@@ -227,23 +227,37 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
 
     remaining = 3 - new_attempts
 
-    expired_text = (
-        f"⏳ <b>This search has expired.</b>\n\n"
-        f"The results are no longer valid.\n"
-        f"(30 seconds have passed without claiming)\n\n"
-        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
-        f"{make_attempts_bar(new_attempts)}\n\n"
-        f"🌲 <i>You can search again right now!</i>"
-    )
+    if remaining > 0:
+        expired_text = (
+            f"⏳ <b>This search has expired.</b>\n\n"
+            f"The results are no longer valid.\n"
+            f"(30 seconds have passed without claiming)\n\n"
+            f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+            f"{make_attempts_bar(new_attempts)}\n\n"
+            f"🌲 <i>You can search again right now!</i>"
+        )
+        buttons = [
+            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+        ]
+    else:
+        expired_text = (
+            f"⏳ <b>This search has expired.</b>\n\n"
+            f"The results are no longer valid.\n"
+            f"(30 seconds have passed without claiming)\n\n"
+            f"🎯 <b>Search Attempts:</b> 0/3 remaining\n"
+            f"{make_attempts_bar(new_attempts)}\n\n"
+            f"🌲 <i>Please wait for your daily cooldown to reset before searching again.</i>"
+        )
+        buttons = [
+            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+        ]
 
     await tg_app.bot.send_message(
         chat_id,
         expired_text,
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
-        ])
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
 
     if increment_attempt:
@@ -12526,7 +12540,6 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
-            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             result_msg = await tg_app.bot.send_message(
                 chat_id=chat_id,
                 text=text.strip(),
@@ -12534,7 +12547,7 @@ async def process_update(update_data: dict):
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 
-            # === STRONG CLEANUP - Stop the old 20-second timer ===
+            # === STRONG CLEANUP - Stop the old 20-second timer completely ===
             await redis_client.delete(f"steam_searching:{chat_id}")
             
             # Delete the original search prompt message
@@ -12545,6 +12558,16 @@ async def process_update(update_data: dict):
                 except Exception:
                     pass
             await redis_client.delete(f"steam_search_prompt:{chat_id}")
+
+            # Also delete any warning message
+            warning_id = await redis_client.get(f"steam_warning:{chat_id}")
+            if warning_id:
+                try:
+                    await tg_app.bot.delete_message(chat_id, int(warning_id))
+                except Exception:
+                    pass
+            await redis_client.delete(f"steam_warning:{chat_id}")
+            # ================================================================
 
             # ── Auto-expire after exactly 30 seconds + consume 1 attempt automatically
             async def auto_expire_result():
