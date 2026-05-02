@@ -11410,6 +11410,7 @@ async def handle_callback(update: Update):
 
                 if remaining <= 0:
                     break
+
                 try:
                     updated_guide = (
                         "🔍 <b>Search for a Steam Game</b>\n"
@@ -11434,10 +11435,31 @@ async def handle_callback(update: Update):
                             return
                 except Exception:
                     return
-                
-            # Time's up — call the existing expire function
-            await auto_expire_search_prompt(chat_id, prompt_msg_id)
 
+            # ── Time's up — handle expiry directly here ──
+            if not await redis_client.get(f"steam_searching:{chat_id}"):
+                return  # user typed something just before expiry
+                    
+            try:
+                await tg_app.bot.delete_message(chat_id, prompt_msg_id)
+            except Exception:   
+                pass
+
+            await redis_client.delete(f"steam_search_prompt:{chat_id}")
+            await redis_client.delete(f"steam_searching:{chat_id}")
+
+            await tg_app.bot.send_message(
+                chat_id,
+                "🌿 <b>Search window closed.</b>\n\n"
+                "No game name was entered within 20 seconds.\n"
+                "Your attempt has <b>not</b> been used. 🍃",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+                ])
+            )
+                        
         asyncio.create_task(countdown_timer(prompt_msg, SEARCH_TIMEOUT, interval=5))
         return
    
