@@ -5213,7 +5213,7 @@ async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None 
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+            [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
         ])
     )
 
@@ -11352,10 +11352,11 @@ async def handle_callback(update: Update):
             "✏️ <b>Type the game name now:</b> 🍃"
         )
 
-        prompt_msg = await tg_app.bot.send_message(
-            chat_id, 
-            guide_text, 
-            parse_mode="HTML"
+        prompt_msg = await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=STEAM_SEARCH,
+                caption=guide_text,
+                parse_mode="HTML"
         )
 
         await redis_client.setex(f"steam_search_prompt:{chat_id}", 30, str(prompt_msg.message_id))
