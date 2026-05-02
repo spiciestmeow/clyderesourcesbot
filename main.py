@@ -12486,10 +12486,10 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
-            result_msg = await tg_app.bot.send_message(
+            result_msg = await send_animated_translated(
                 chat_id=chat_id,
-                text=text.strip(),
-                parse_mode="HTML",
+                animation_url=STEAM_RESULT_GIF,
+                caption=text.strip(),
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 
