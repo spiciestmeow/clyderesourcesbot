@@ -12495,7 +12495,29 @@ async def process_update(update_data: dict):
 
             # ── Auto-expire after exactly 30 seconds + consume 1 attempt automatically
             async def auto_expire_result():
-                await asyncio.sleep(30)
+                await asyncio.sleep(25)
+
+                try:
+                    current_caption = result_msg.caption or result_msg.text or ""
+                    warning_text = current_caption + "\n\n⏳ <b>5 seconds remaining before this expires!</b>"
+
+                    try:
+                        await result_msg.edit_caption(
+                            caption=warning_text,
+                            parse_mode="HTML",
+                            reply_markup=result_msg.reply_markup
+                        )
+                    except Exception:
+                        await result_msg.edit_text(
+                            text=warning_text,
+                            parse_mode="HTML",
+                            reply_markup=result_msg.reply_markup
+                        )
+                except Exception:
+                    pass
+
+                await asyncio.sleep(5)
+
                 try:
                     consumed_key = f"steam_result_consumed:{chat_id}"
 
@@ -12533,23 +12555,18 @@ async def process_update(update_data: dict):
                             [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
                         ]
 
-                    # SAFE EDIT — works whether it's a GIF or normal text message
                     try:
+                        await result_msg.edit_caption(
+                            caption=expired_text,
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup(buttons_expired)
+                        )
+                    except Exception:
                         await result_msg.edit_text(
                             expired_text,
                             parse_mode="HTML",
                             reply_markup=InlineKeyboardMarkup(buttons_expired)
                         )
-                    except Exception:
-                        try:
-                            await result_msg.edit_caption(
-                                caption=expired_text,
-                                parse_mode="HTML",
-                                reply_markup=InlineKeyboardMarkup(buttons_expired)
-                            )
-                        except Exception:
-                            pass
-
                 except Exception:
                     pass
 
