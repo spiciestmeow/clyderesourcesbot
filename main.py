@@ -5168,8 +5168,8 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
 async def auto_expire_search_prompt(chat_id: int, prompt_msg_id: int):
-    """Delete search prompt after 60 seconds if user didn't reply"""
-    await asyncio.sleep(60.1)
+    """Delete search prompt after 5 seconds if user didn't reply"""
+    await asyncio.sleep(6.1)                    # wait a tiny bit over 5 seconds
     
     # If user already typed something, do nothing
     if not await redis_client.get(f"steam_searching:{chat_id}"):
@@ -5187,9 +5187,9 @@ async def auto_expire_search_prompt(chat_id: int, prompt_msg_id: int):
     
     # Send friendly expired message
     text = (
-        "⏳ <b>Search window closed</b>\n\n"
+        "⏳ <b>Search window closed.</b>\n\n"
         "No game name was entered within 60 seconds.\n"
-        "Your attempt has <b>not</b> been used. 🍃"
+        "Your attempt has <b>not</b> been used. 🍃",
     )
     
     buttons = InlineKeyboardMarkup([
@@ -11380,26 +11380,20 @@ async def handle_callback(update: Update):
         )
 
         prompt_msg_id = None
-        is_caption = False
-
         if query and query.message:
             try:
                 await query.message.edit_caption(caption=guide, parse_mode="HTML")
                 prompt_msg_id = query.message.message_id
-                is_caption = True
             except Exception:
                 try:
                     await query.message.edit_text(text=guide, parse_mode="HTML")
                     prompt_msg_id = query.message.message_id
-                    is_caption = False
                 except Exception:
                     sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
                     prompt_msg_id = sent.message_id
-                    is_caption = False
         else:
             sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
             prompt_msg_id = sent.message_id
-            is_caption = False
 
         if prompt_msg_id:
             await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
