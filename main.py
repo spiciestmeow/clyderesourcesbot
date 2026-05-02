@@ -11379,7 +11379,7 @@ async def handle_callback(update: Update):
             "✏️ <b>Type the game name now:</b> 🍃"
         )
 
-        # Send static prompt
+        # Send the prompt
         if query and query.message:
             try:
                 prompt_msg = await query.message.edit_caption(caption=guide_text, parse_mode="HTML")
@@ -11390,9 +11390,9 @@ async def handle_callback(update: Update):
 
         await redis_client.setex(f"steam_search_prompt:{chat_id}", 30, str(prompt_msg.message_id))
 
-        # ── FIXED TIMER: 5s warning + instant deletion at exactly 20 seconds ──
+        # ── FIXED 20-SECOND TIMER (uses your auto_expire_search_prompt) ──
         async def static_timer():
-            await asyncio.sleep(15)   # wait until 15 seconds
+            await asyncio.sleep(15)   # 15 seconds passed
 
             # Show 5 seconds remaining warning
             if await redis_client.get(f"steam_searching:{chat_id}"):
@@ -11406,32 +11406,13 @@ async def handle_callback(update: Update):
                 except:
                     pass
 
-            await asyncio.sleep(5)   # final 5 seconds → total 20 seconds
+            await asyncio.sleep(5)    # total = exactly 20 seconds
 
-            # === INSTANT CLEANUP AT EXACTLY 20 SECONDS ===
-            if await redis_client.get(f"steam_searching:{chat_id}"):
-                # Delete the MAIN prompt immediately
-                search_prompt_id = await redis_client.get(f"steam_search_prompt:{chat_id}")
-                if search_prompt_id:
-                    try:
-                        await tg_app.bot.delete_message(chat_id, int(search_prompt_id))
-                        print(f"🧹 Main prompt deleted instantly at 20s for {chat_id}")
-                    except Exception as e:
-                        print(f"⚠️ Main prompt already gone: {e}")
-                    await redis_client.delete(f"steam_search_prompt:{chat_id}")
-
-                # Also delete the 5-second warning
-                warning_id = await redis_client.get(f"steam_warning:{chat_id}")
-                if warning_id:
-                    try:
-                        await tg_app.bot.delete_message(chat_id, int(warning_id))
-                    except:
-                        pass
-                    await redis_client.delete(f"steam_warning:{chat_id}")
-
-                # Show the expired message
-                await send_steam_search_expired_message(chat_id, increment_attempt=True)
-                await redis_client.delete(f"steam_searching:{chat_id}")
+            # Call your function — deletes prompt + warning instantly, NO attempt deducted
+            await auto_expire_search_prompt(
+                chat_id, 
+                prompt_msg.message_id if prompt_msg else None
+            )
 
         asyncio.create_task(static_timer())
    
