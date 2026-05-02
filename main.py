@@ -11361,10 +11361,12 @@ async def handle_callback(update: Update):
         await redis_client.setex(f"steam_searching:{chat_id}", 20, "1")
         await query.answer("🔍 Ready to search", show_alert=False)
 
-        # ── SEARCH PROMPT + LAST-5-SECONDS COUNTDOWN (Most Stable) ──
-        SEARCH_TIMEOUT = 20   # total time the user has
+        # ── SEARCH PROMPT + LAST-5-SECONDS COUNTDOWN (Most Stable + MAX LOGGING) ──
+        SEARCH_TIMEOUT = 20
 
-        # Initial message (static for first 15 seconds)
+        print(f"🔍 [STEAM SEARCH] Countdown started for chat {chat_id} - timeout = {SEARCH_TIMEOUT}s")
+
+        # Initial static message (clear and bold)
         guide_template = (
             "🔍 <b>Search for a Steam Game</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -11381,35 +11383,36 @@ async def handle_callback(update: Update):
 
         initial_guide = guide_template.format(seconds=SEARCH_TIMEOUT)
 
-        # Send the prompt
+        # Send prompt
         if query and query.message:
             try:
                 await query.message.edit_caption(caption=initial_guide, parse_mode="HTML")
                 prompt_msg = query.message
-            except Exception:
+                print(f"✅ [STEAM SEARCH] Prompt sent via edit_caption (chat {chat_id})")
+            except Exception as e:
+                print(f"⚠️ [STEAM SEARCH] edit_caption failed, sending new message (chat {chat_id}): {e}")
                 prompt_msg = await tg_app.bot.send_message(chat_id, initial_guide, parse_mode="HTML")
         else:
             prompt_msg = await tg_app.bot.send_message(chat_id, initial_guide, parse_mode="HTML")
+            print(f"✅ [STEAM SEARCH] Prompt sent as new message (chat {chat_id})")
 
-        # Store message ID for cleanup
+        # Store for cleanup
         await redis_client.setex(
             f"steam_search_prompt:{chat_id}",
-            SEARCH_TIMEOUT + 60,      # 20 + 60 = 80 seconds safety buffer
+            SEARCH_TIMEOUT + 60,
             str(prompt_msg.message_id)
         )
 
-        # ── ROBUST COUNTDOWN + DETAILED LOGGING (for debugging) ──
+        # ── COUNTDOWN: Only last 5 seconds + heavy logging ──
         async def robust_countdown():
-            print(f"🔍 [COUNTDOWN] Started for chat {chat_id} - waiting {SEARCH_TIMEOUT-5} seconds until last 5s")
-
-            # Wait silently until last 5 seconds
+            print(f"🔍 [COUNTDOWN] Task started - waiting {SEARCH_TIMEOUT-5} seconds (chat {chat_id})")
             await asyncio.sleep(SEARCH_TIMEOUT - 5)
-            print(f"🔍 [COUNTDOWN] Now starting visible countdown (5→0) for chat {chat_id}")
 
+            print(f"🔍 [COUNTDOWN] Starting visible countdown 5→0 (chat {chat_id})")
             remaining = 5
             while remaining > 0:
                 if not await redis_client.get(f"steam_searching:{chat_id}"):
-                    print(f"🔍 [COUNTDOWN] Stopped early - user already typed for chat {chat_id}")
+                    print(f"🔍 [COUNTDOWN] Stopped early - user typed (chat {chat_id})")
                     return
 
                 print(f"🔍 [COUNTDOWN] Updating to {remaining} seconds (chat {chat_id})")
@@ -11423,15 +11426,16 @@ async def handle_callback(update: Update):
                         await prompt_msg.edit_text(text=current_text, parse_mode="HTML")
                         print(f"✅ [COUNTDOWN] edit_text SUCCESS → {remaining}s (chat {chat_id})")
                 except Exception as e:
-                    print(f"❌ [COUNTDOWN] EDIT FAILED at {remaining}s | Error: {type(e).__name__}: {e} | chat {chat_id}")
+                    print(f"❌ [COUNTDOWN] EDIT FAILED at {remaining}s | Type: {type(e).__name__} | Error: {e} | chat {chat_id}")
 
                 await asyncio.sleep(1)
                 remaining -= 1
 
-            print(f"🔍 [COUNTDOWN] Reached 0 seconds - calling auto_expire_search_prompt for chat {chat_id}")
+            print(f"🔍 [COUNTDOWN] Reached 0 - calling auto_expire (chat {chat_id})")
             await auto_expire_search_prompt(chat_id, prompt_msg.message_id if prompt_msg else None)
 
         asyncio.create_task(robust_countdown())
+        print(f"✅ [STEAM SEARCH] Countdown task created successfully (chat {chat_id})")
    
     # ── BACK TO RESULTS (after opening bundle)
     elif data.startswith("steam_back_to_results|"):
