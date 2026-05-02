@@ -5168,18 +5168,27 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
 async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None = None):
-    """Called when the 20-second search window reaches 0 (no game name typed)"""
-    # Clean up the prompt message
+    """Called when the 20-second search window reaches 0"""
+    # Delete main prompt
     if prompt_message_id:
         try:
             await tg_app.bot.delete_message(chat_id, prompt_message_id)
         except:
             pass
 
+    # Also delete the 5-second warning (if it exists)
+    warning_id = await redis_client.get(f"steam_warning:{chat_id}")
+    if warning_id:
+        try:
+            await tg_app.bot.delete_message(chat_id, int(warning_id))
+        except:
+            pass
+        await redis_client.delete(f"steam_warning:{chat_id}")
+
     await redis_client.delete(f"steam_search_prompt:{chat_id}")
     await redis_client.delete(f"steam_searching:{chat_id}")
 
-    # ── YOUR EXACT MESSAGE (attempt is NOT consumed) ──
+    # ── YOUR EXACT MESSAGE (attempt NOT consumed) ──
     expire_text = (
         "🌿 <b>Search window closed.</b>\n\n"
         "No game name was entered within the time limit.\n"
@@ -11353,7 +11362,7 @@ async def handle_callback(update: Update):
         attempts_left = 3 - current_attempts
 
         await redis_client.delete(f"steam_search_result:{chat_id}")
-        await redis_client.setex(f"steam_searching:{chat_id}", 25, "1")
+        await redis_client.setex(f"steam_searching:{chat_id}", 20, "1")
         await query.answer("🔍 Search window opened (20 seconds)", show_alert=False)
 
         # Static prompt (no editing)
