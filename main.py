@@ -8898,85 +8898,16 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
 
     if query and query.message:
         try:
-            await query.message.edit_caption(
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+            await query.message.delete()
         except Exception:
-            try:
-                await query.message.edit_text(
-                    text=caption,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
-            except Exception:
-                pass
-    else:
-        await tg_app.bot.send_message(
-            chat_id, caption, parse_mode="HTML", reply_markup=keyboard
-        )
+            pass
 
-async def handle_user_steam_search(chat_id: int, first_name: str, query=None):
-    profile = await get_user_profile(chat_id)
-    if not profile:
-        return
-
-    level = profile.get("level", 1)
-    cooldown_hours = get_steam_cooldown_hours(level)
-
-    # Check cooldown
-    claim_ttl = await redis_client.ttl(f"steam_claim_cd:{chat_id}")
-    search_ttl = await redis_client.ttl(f"steam_search_cd:{chat_id}")
-    active_cd = max(claim_ttl, search_ttl)
-
-    attempts_left = 3 - int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-
-    # Build the steam landing page
-    if active_cd > 0:
-        hours = active_cd // 3600
-        mins = (active_cd % 3600) // 60
-        status_text = (
-            f"⏳ <b>You are on cooldown</b>\n"
-            f"Time remaining: <b>{hours}h {mins}m</b>\n"
-            f"Level {level} cooldown: {cooldown_hours} hours"
-        )
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
-        ])
-    else:
-        status_text = (
-            f"🔍 <b>Search attempts remaining: {attempts_left}/3</b>\n"
-            f"Level {level} cooldown after claim: <b>{cooldown_hours}h</b>"
-        )
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔍 Search for a Game", callback_data="steam_do_search")],
-            [InlineKeyboardButton("📜 My Claims", callback_data="my_steam_claims")],
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
-        ])
-
-    caption = (
-        "🎮 <b>Steam Accounts</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{status_text}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "• Search for any game you want\n"
-        "• Found results expire in <b>10 minutes</b>\n"
-        "• 3 failed/expired searches → cooldown starts\n\n"
-        "<i>The forest holds many games, wanderer. 🍃</i>"
+    await send_animated_translated(
+        chat_id=chat_id,
+        animation_url=STEAM_GIF,
+        caption=caption,
+        reply_markup=keyboard
     )
-
-    if query and query.message:
-        try:
-            await query.message.edit_caption(caption=caption, parse_mode="HTML", reply_markup=keyboard)
-        except Exception:
-            try:
-                await query.message.edit_text(text=caption, parse_mode="HTML", reply_markup=keyboard)
-            except Exception:
-                pass
-    else:
-        await tg_app.bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=keyboard)
 
 async def handle_steam_game_search(chat_id: int, first_name: str, game_query: str):
     profile = await get_user_profile(chat_id)
@@ -11358,7 +11289,7 @@ async def handle_callback(update: Update):
 
     # ── STEAM SEARCH PROMPT + INSTANT CLEANUP OF "SEARCH WINDOW CLOSED" ──
     elif data == "vamt_filter_steam":
-        await handle_user_steam_search(chat_id, first_name, query)
+        await handle_steam_landing(chat_id, first_name, query)
         await query.answer()
 
     elif data in ("steam_do_search", "search_different_game"):
