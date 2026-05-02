@@ -12486,10 +12486,10 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
-            result_msg = await tg_app.bot.send_message(
+            result_msg = await send_animated_translated(
                 chat_id=chat_id,
-                text=text.strip(),
-                parse_mode="HTML",
+                animation_url=STEAM_RESULT_GIF,     
+                caption=text.strip(),
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 
@@ -12501,7 +12501,7 @@ async def process_update(update_data: dict):
 
                     if await redis_client.get(consumed_key):
                         await redis_client.delete(consumed_key)
-                        return  # User already paid the attempt when opening "View All"
+                        return
 
                     # Original logic continues only if View All was NOT opened
                     current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
@@ -12533,13 +12533,25 @@ async def process_update(update_data: dict):
                             [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
                         ]
 
-                    await result_msg.edit_text(
-                        expired_text,
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(buttons_expired)
-                    )
+                    # SAFE EDIT — works whether it's a GIF or normal text message
+                    try:
+                        await result_msg.edit_text(
+                            expired_text,
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup(buttons_expired)
+                        )
+                    except Exception:
+                        try:
+                            await result_msg.edit_caption(
+                                caption=expired_text,
+                                parse_mode="HTML",
+                                reply_markup=InlineKeyboardMarkup(buttons_expired)
+                            )
+                        except Exception:
+                            pass
+
                 except Exception:
-                    pass  # message may have been deleted by user
+                    pass
 
             asyncio.create_task(auto_expire_result())
             return
