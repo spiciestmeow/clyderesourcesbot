@@ -11334,9 +11334,12 @@ async def handle_callback(update: Update):
         if chat_id != OWNER_ID:
             await tg_app.bot.send_message(
                 chat_id,
-                "🌿 Steam accounts are currently in testing mode.",
+                "🌿 Steam accounts are currently in testing mode.\n\n"
+                "Only the Forest Caretaker can use this feature at the moment.",
                 parse_mode="HTML"
             )
+            await query.answer("🔒 Feature in testing", show_alert=True)
+            return  # ← IMPORTANT: actually disable for non-owners
 
         current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         
@@ -11378,6 +11381,8 @@ async def handle_callback(update: Update):
         )
 
         prompt_msg = None
+        prompt_msg_id = None
+
         if query and query.message:
             try:
                 await query.message.edit_caption(caption=guide, parse_mode="HTML")
@@ -11394,23 +11399,56 @@ async def handle_callback(update: Update):
             prompt_msg = sent
 
         if prompt_msg:
-            prompt_msg_id = prompt_msg.message_id if hasattr(prompt_msg, 'message_id') else prompt_msg.message_id
-            await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
+            prompt_msg_id = getattr(prompt_msg, 'message_id', None)
+            if prompt_msg_id:
+                await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
 
-        # ── Countdown task ──
-        async def countdown_timer(msg, total_seconds: int, interval: int = 5):
-            remaining = total_seconds
-            while remaining > 0:
-                await asyncio.sleep(interval)
-                remaining -= interval
+        # ── FIXED & ROBUST COUNTDOWN TIMER ──
+        async def handle_search_timeout(chat_id: int, prompt_msg_id: int | None):
+            """Dedicated timeout handler - always runs when time is up"""
+            await redis_client.delete(f"steam_search_prompt:{chat_id}")
+            await redis_client.delete(f"steam_searching:{chat_id}")
 
-                # Stop if user already searched (key deleted)
+            if prompt_msg_id:
+                try:
+                    await tg_app.bot.delete_message(chat_id, prompt_msg_id)
+                except Exception:
+                    pass
+
+            expired_text = (
+                "🌿 <b>Search window closed.</b>\n\n"
+                f"No game name was entered within {SEARCH_TIMEOUT} seconds.\n"
+                "Your attempt has <b>not</b> been used. 🍃"
+            )
+
+            await tg_app.bot.send_message(
+                chat_id,
+                expired_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+                ])
+            )
+
+        async def countdown_timer(msg, total_seconds: int = SEARCH_TIMEOUT, interval: int = 2):
+            """Accurate real-time countdown + robust timeout"""
+            start_time = asyncio.get_event_loop().time()
+
+            while True:
+                elapsed = asyncio.get_event_loop().time() - start_time
+                remaining = max(0, int(total_seconds - elapsed))
+
+                # User already typed something → stop countdown
                 if not await redis_client.get(f"steam_searching:{chat_id}"):
                     return
 
+                # Time's up
                 if remaining <= 0:
-                    break
+                    await handle_search_timeout(chat_id, prompt_msg_id)
+                    return
 
+                # Update message every 2 seconds
                 try:
                     updated_guide = (
                         "🔍 <b>Search for a Steam Game</b>\n"
@@ -11426,43 +11464,20 @@ async def handle_callback(update: Update):
                         "⚠️ Expired without claiming = attempt used\n\n"
                         "✏️ <b>Type the game name now:</b> 🍃"
                     )
-                    try:
+                    if hasattr(msg, 'edit_caption') and msg.caption is not None:
                         await msg.edit_caption(caption=updated_guide, parse_mode="HTML")
-                    except Exception:
-                        try:
-                            await msg.edit_text(text=updated_guide, parse_mode="HTML")
-                        except Exception:
-                            return
+                    else:
+                        await msg.edit_text(text=updated_guide, parse_mode="HTML")
                 except Exception:
+                    # Message gone or user already searched
                     return
 
-            # ── Time's up — handle expiry directly here ──
-            if not await redis_client.get(f"steam_searching:{chat_id}"):
-                return  # user typed something just before expiry
-                    
-            try:
-                await tg_app.bot.delete_message(chat_id, prompt_msg_id)
-            except Exception:   
-                pass
+                await asyncio.sleep(interval)
 
-            await redis_client.delete(f"steam_search_prompt:{chat_id}")
-            await redis_client.delete(f"steam_searching:{chat_id}")
+        # Start the improved countdown
+        if prompt_msg:
+            asyncio.create_task(countdown_timer(prompt_msg))
 
-            await tg_app.bot.send_message(
-                chat_id,
-                "🌿 <b>Search window closed.</b>\n\n"
-                "No game name was entered within 20 seconds.\n"
-                "Your attempt has <b>not</b> been used. 🍃",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
-                ])
-            )
-                        
-        asyncio.create_task(countdown_timer(prompt_msg, SEARCH_TIMEOUT, interval=5))
-        return
-   
     # ── BACK TO RESULTS (after opening bundle)
     elif data.startswith("steam_back_to_results|"):
         try:
