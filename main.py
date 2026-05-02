@@ -11398,30 +11398,37 @@ async def handle_callback(update: Update):
             str(prompt_msg.message_id)
         )
 
-        # ── COUNTDOWN: Only active in the LAST 5 SECONDS ──
+        # ── ROBUST COUNTDOWN + DETAILED LOGGING (for debugging) ──
         async def robust_countdown():
-            # Wait silently until 5 seconds left
-            await asyncio.sleep(SEARCH_TIMEOUT - 5)
+            print(f"🔍 [COUNTDOWN] Started for chat {chat_id} - waiting {SEARCH_TIMEOUT-5} seconds until last 5s")
 
-            # Now do dramatic countdown from 5 to 0
+            # Wait silently until last 5 seconds
+            await asyncio.sleep(SEARCH_TIMEOUT - 5)
+            print(f"🔍 [COUNTDOWN] Now starting visible countdown (5→0) for chat {chat_id}")
+
             remaining = 5
             while remaining > 0:
                 if not await redis_client.get(f"steam_searching:{chat_id}"):
+                    print(f"🔍 [COUNTDOWN] Stopped early - user already typed for chat {chat_id}")
                     return
+
+                print(f"🔍 [COUNTDOWN] Updating to {remaining} seconds (chat {chat_id})")
 
                 try:
                     current_text = guide_template.format(seconds=remaining)
                     if hasattr(prompt_msg, 'caption') and prompt_msg.caption is not None:
                         await prompt_msg.edit_caption(caption=current_text, parse_mode="HTML")
+                        print(f"✅ [COUNTDOWN] edit_caption SUCCESS → {remaining}s (chat {chat_id})")
                     else:
                         await prompt_msg.edit_text(text=current_text, parse_mode="HTML")
-                except Exception:
-                    pass  # silent fail is fine
+                        print(f"✅ [COUNTDOWN] edit_text SUCCESS → {remaining}s (chat {chat_id})")
+                except Exception as e:
+                    print(f"❌ [COUNTDOWN] EDIT FAILED at {remaining}s | Error: {type(e).__name__}: {e} | chat {chat_id}")
 
                 await asyncio.sleep(1)
                 remaining -= 1
 
-            # Time's up
+            print(f"🔍 [COUNTDOWN] Reached 0 seconds - calling auto_expire_search_prompt for chat {chat_id}")
             await auto_expire_search_prompt(chat_id, prompt_msg.message_id if prompt_msg else None)
 
         asyncio.create_task(robust_countdown())
