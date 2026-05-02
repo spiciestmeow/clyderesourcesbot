@@ -11356,7 +11356,6 @@ async def handle_callback(update: Update):
                 chat_id=chat_id,
                 animation_url=STEAM_SEARCH,
                 caption=guide_text,
-                parse_mode="HTML"
         )
 
         await redis_client.setex(f"steam_search_prompt:{chat_id}", 30, str(prompt_msg.message_id))
