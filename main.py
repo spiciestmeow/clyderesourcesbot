@@ -5188,9 +5188,9 @@ async def auto_expire_search_prompt(
     attempts_left: int,
     is_caption: bool = False
 ):
-    """Live 60-second countdown — edits every 5 seconds in the same message"""
     total = 60
     interval = 5
+    elapsed = 0
 
     async def _edit(text: str):
         try:
@@ -5211,13 +5211,17 @@ async def auto_expire_search_prompt(
         except Exception:
             pass
 
-    for remaining in range(total - interval, 0, -interval):
+    while elapsed < total:
         await asyncio.sleep(interval)
+        elapsed += interval
 
         if not await redis_client.get(f"steam_searching:{chat_id}"):
             return
 
-        await _edit(build_search_guide(attempts_left, remaining))
+        remaining = total - elapsed
+        if remaining > 0:
+            await _edit(build_search_guide(attempts_left, remaining))
+        # Don't edit at 0 — expiry block handles it
 
     # ── Timer ended ──
     if not await redis_client.get(f"steam_searching:{chat_id}"):
