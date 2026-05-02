@@ -52,21 +52,6 @@ LEVEL_TITLE_DESCRIPTIONS = {
 # ──────────────────────────────────────────────
 # NEW: STEAM SEARCH HELPERS (Multi-account + Bundle UX)
 # ──────────────────────────────────────────────
-def build_search_guide(attempts_left: int, remaining: int = 60) -> str:
-    return (
-        "🔍 <b>Search for a Steam Game</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-        f"{make_attempts_bar(3 - attempts_left)}\n\n"
-        "📌 <b>Tips for better results:</b>\n"
-        "• Use the exact game title\n"
-        "• Short names work too (e.g. <code>batman</code>)\n"
-        "• Partial names are supported\n\n"
-        f"⏰ <b>You have {remaining} seconds</b> to type the game name\n"
-        "📌 Results expire in <b>10 minutes</b> after search\n"
-        "⚠️ Expired without claiming = attempt used\n\n"
-        "✏️ <b>Type the game name now:</b> 🍃"
-    )
 
 def is_bundle_account(acc: dict) -> bool:
     """Returns True if this is a big bundle account (2+ games in games[])"""
@@ -5182,69 +5167,38 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
-async def auto_expire_search_prompt(
-    chat_id: int,
-    prompt_msg_id: int,
-    attempts_left: int,
-    is_caption: bool = False
-):
-    total = 60
-    interval = 5
-    elapsed = 0
-
-    async def _edit(text: str):
-        try:
-            if is_caption:
-                await tg_app.bot.edit_message_caption(
-                    chat_id=chat_id,
-                    message_id=prompt_msg_id,
-                    caption=text,
-                    parse_mode="HTML"
-                )
-            else:
-                await tg_app.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=prompt_msg_id,
-                    text=text,
-                    parse_mode="HTML"
-                )
-        except Exception:
-            pass
-
-    while elapsed < total:
-        await asyncio.sleep(interval)
-        elapsed += interval
-
-        if not await redis_client.get(f"steam_searching:{chat_id}"):
-            return
-
-        remaining = total - elapsed
-        if remaining > 0:
-            await _edit(build_search_guide(attempts_left, remaining))
-        # Don't edit at 0 — expiry block handles it
-
-    # ── Timer ended ──
+async def auto_expire_search_prompt(chat_id: int, prompt_msg_id: int):
+    """Delete search prompt after 60 seconds if user didn't reply"""
+    await asyncio.sleep(60.1)
+    
+    # If user already typed something, do nothing
     if not await redis_client.get(f"steam_searching:{chat_id}"):
         return
-
+    
+    # Delete the prompt message
     try:
         await tg_app.bot.delete_message(chat_id, prompt_msg_id)
-    except Exception:
-        pass
-
+    except:
+        pass  # message might already be gone
+    
+    # Clean up
     await redis_client.delete(f"steam_search_prompt:{chat_id}")
     await redis_client.delete(f"steam_searching:{chat_id}")
-
-    await tg_app.bot.send_message(
-        chat_id,
-        "🌿 <b>Search window closed.</b>\n\n"
+    
+    # Send friendly expired message
+    text = (
+        "⏳ <b>Search window closed</b>\n\n"
         "No game name was entered within 60 seconds.\n"
-        "Your attempt has <b>not</b> been used. 🍃",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
-        ])
+        "Your attempt has <b>not</b> been used. 🍃"
+    )
+    
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+    ])
+    
+    await tg_app.bot.send_message(
+        chat_id, text, parse_mode="HTML", reply_markup=buttons
     )
 
 async def send_delayed_feedback_buttons(
@@ -11410,7 +11364,20 @@ async def handle_callback(update: Update):
         await redis_client.setex(f"steam_searching:{chat_id}", 10, "1")
         await query.answer("🔍 Ready to search", show_alert=False)
 
-        guide = build_search_guide(attempts_left, remaining=60)
+        guide = (
+            "🔍 <b>Search for a Steam Game</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
+            f"{make_attempts_bar(3 - attempts_left)}\n\n"
+            "📌 <b>Tips for better results:</b>\n"
+            "• Use the exact game title\n"
+            "• Short names work too (e.g. <code>batman</code>)\n"
+            "• Partial names are supported\n\n"
+            "⏰ <b>You have 5 seconds</b> to type the game name\n"
+            "📌 Results expire in <b>10 minutes</b> after search\n"
+            "⚠️ Expired without claiming = attempt used\n\n"
+            "✏️ <b>Type the game name now:</b> 🍃"
+        )
 
         prompt_msg_id = None
         is_caption = False
@@ -11436,7 +11403,7 @@ async def handle_callback(update: Update):
 
         if prompt_msg_id:
             await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
-            asyncio.create_task(auto_expire_search_prompt(chat_id, prompt_msg_id, attempts_left, is_caption))
+            asyncio.create_task(auto_expire_search_prompt(chat_id, prompt_msg_id))
         return
    
     # ── BACK TO RESULTS (after opening bundle)
