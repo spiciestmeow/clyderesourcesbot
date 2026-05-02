@@ -11440,15 +11440,30 @@ async def handle_callback(update: Update):
         try:
             _, group_key = data.split("|", 1)
             await query.answer("🔄 Returning to results...", show_alert=False)
-            
-            # Restart fresh 30s timer on the summary results page WITHOUT deducting again
-            await show_steam_account_selection(
-                chat_id=chat_id,
-                group_key=group_key,
-                game_name="",
-                query_obj=query,
-                deduct_attempt=False
-            )
+
+            # Delete the current detailed "View All" page
+            if query and query.message:
+                try:
+                    await query.message.delete()
+                except:
+                    pass
+
+            # Clear consumed flag so user can click "View All" again cleanly
+            await redis_client.delete(f"steam_result_consumed:{chat_id}")
+
+            # Re-display the ORIGINAL summary search results page
+            cached = await redis_client.get(f"steam_search_result:{chat_id}")
+            if cached:
+                await handle_searchsteam_command(chat_id, "", query=query)
+            else:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "⏳ Search results have expired. Please search again.",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")]
+                    ])
+                )
         except Exception as e:
             print(f"Back to results error: {e}")
             await query.answer("❌ Result expired", show_alert=True)
