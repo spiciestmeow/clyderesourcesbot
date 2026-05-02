@@ -5168,8 +5168,8 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
 async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None = None):
-    """Called when the 20-second search window reaches 0"""
-    # Clean up the main prompt
+    """Called when the 20-second search window reaches 0 (no game name typed)"""
+    # Clean up the prompt message
     if prompt_message_id:
         try:
             await tg_app.bot.delete_message(chat_id, prompt_message_id)
@@ -5179,7 +5179,7 @@ async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None 
     await redis_client.delete(f"steam_search_prompt:{chat_id}")
     await redis_client.delete(f"steam_searching:{chat_id}")
 
-    # ── YOUR EXACT MESSAGE (attempt NOT consumed) ──
+    # ── YOUR EXACT MESSAGE (attempt is NOT consumed) ──
     expire_text = (
         "🌿 <b>Search window closed.</b>\n\n"
         "No game name was entered within the time limit.\n"
@@ -11329,14 +11329,11 @@ async def handle_callback(update: Update):
                 show_alert=False
             )
 
-    # ── TEMPORARILY DISABLE STEAM FOR REGULAR USERS (OWNER still has full access) ──
+        # ── STEAM SEARCH PROMPT — FULLY STATIC 20s TIMER ──
     elif data in ("steam_do_search", "search_different_game"):
         if chat_id != OWNER_ID:
-            await tg_app.bot.send_message(
-                chat_id,
-                "🌿 Steam accounts are currently in testing mode.",
-                parse_mode="HTML"
-            )
+            await query.answer("🌿 Steam search is caretaker only for now.", show_alert=True)
+            return
 
         current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         
@@ -11355,10 +11352,9 @@ async def handle_callback(update: Update):
 
         attempts_left = 3 - current_attempts
 
-        # Clear old result if searching again (no attempt charge)
         await redis_client.delete(f"steam_search_result:{chat_id}")
-        await redis_client.setex(f"steam_searching:{chat_id}", 20, "1")
-        await query.answer("🔍 Starting 20-second search window...", show_alert=False)
+        await redis_client.setex(f"steam_searching:{chat_id}", 25, "1")
+        await query.answer("🔍 Search window opened (20 seconds)", show_alert=False)
 
         # Static prompt (no editing)
         guide_text = (
@@ -11386,26 +11382,25 @@ async def handle_callback(update: Update):
 
         await redis_client.setex(f"steam_search_prompt:{chat_id}", 30, str(prompt_msg.message_id))
 
-        # ── 20-second static timer + 5-second warning ──
+        # ── Fully static 20-second timer + 5-second temporary warning ──
         async def static_timer():
-            # Wait 15 seconds (static phase)
-            await asyncio.sleep(15)
+            await asyncio.sleep(15)   # static for first 15 seconds
 
-            # 5 seconds remaining → send temporary message
+            # 5 seconds remaining → send temporary warning
             if await redis_client.get(f"steam_searching:{chat_id}"):
-                warning = await tg_app.bot.send_message(
-                    chat_id,
-                    "⏳ <b>5 seconds remaining!</b>\n\nType the game name <b>now</b>!",
-                    parse_mode="HTML"
-                )
-                # Auto-delete warning after 5 seconds
-                asyncio.create_task(
-                    asyncio.sleep(5)
-                    .then(lambda: tg_app.bot.delete_message(chat_id, warning.message_id))
-                )
+                try:
+                    warning = await tg_app.bot.send_message(
+                        chat_id,
+                        "⏳ <b>5 seconds</b> remaining!",
+                        parse_mode="HTML"
+                    )
+                    # Auto-delete warning after 5 seconds
+                    await asyncio.sleep(5)
+                    await tg_app.bot.delete_message(chat_id, warning.message_id)
+                except:
+                    pass
 
-            # Wait the final 5 seconds
-            await asyncio.sleep(5)
+            await asyncio.sleep(5)   # final 5 seconds
 
             # Time is up
             await auto_expire_search_prompt(chat_id, prompt_msg.message_id if prompt_msg else None)
