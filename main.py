@@ -59,7 +59,13 @@ def is_bundle_account(acc: dict) -> bool:
     valid_games = [str(g).strip() for g in games if str(g).strip()]
     return len(valid_games) >= 2
 
-async def show_steam_account_selection(chat_id: int, group_key: str, game_name: str, query_obj=None):
+async def show_steam_account_selection(
+        chat_id: int,
+        group_key: str,
+        game_name: str,
+        query_obj=None,
+        deduct_attempt: bool = True
+):
     raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
     if not raw:
         await tg_app.bot.send_message(chat_id, "⏳ Result expired. Please search again.", parse_mode="HTML")
@@ -85,14 +91,20 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     if not accounts:
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
-
-    # === IMMEDIATELY CONSUME 1 ATTEMPT WHEN OPENING "VIEW ALL" ===
-    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
-    new_attempts = min(current + 1, 3)
-    await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
-
-    # Mark that the detailed claim page was opened (prevents double deduction)
-    await redis_client.setex(f"steam_result_consumed:{chat_id}", 600, "1")
+    
+    # ── NEW: Idempotent (once-per-search) deduction logic ──
+    consumed = await redis_client.get(f"steam_result_consumed:{chat_id}")
+    
+    if deduct_attempt and not consumed:
+        current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+        new_attempts = min(current + 1, 3)
+        await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+        await redis_client.setex(f"steam_result_consumed:{chat_id}", 600, "1")
+        print(f"🧾 FIRST deduction for View All — {chat_id}")
+    elif deduct_attempt and consumed:
+        print(f"🔄 View All clicked again — already deducted, skipping for {chat_id}")
+    else:
+        print(f"🔄 Back to Results — no new deduction for {chat_id}")
 
     # ── Get logo ──
     logo_url = None
@@ -106,7 +118,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # ── Build caption ──
+    # ── Build caption and buttons (exactly the same as before) ──
     total = len(accounts)
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
@@ -116,22 +128,16 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
 
     buttons = []
 
-    # Sort by newest first (best UX)
-    accounts.sort(
-        key=lambda acc: acc.get("created_at") or "", 
-        reverse=True
-    )
+    accounts.sort(key=lambda acc: acc.get("created_at") or "", reverse=True)
 
     for i, acc in enumerate(accounts, 1):
         email = acc.get("email", "")
         games_list = [g.strip() for g in (acc.get("games") or []) if str(g).strip()]
         is_bundle = is_bundle_account(acc)
 
-        # ── Account header line ──
         bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
         text += f"<b>{i}️⃣ Account {i}</b>{bundle_tag}\n"
 
-        # ── Account freshness — SOCIAL MEDIA STYLE ──
         created_at = acc.get("created_at", "")
         if created_at:
             try:
@@ -140,13 +146,10 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
             except Exception:
                 text += "   🟢 Freshly added\n"
 
-        # ── Bundle games preview (same style as search page) ──
         if is_bundle and games_list:
-            # Show the searched game first, then others
             other_games = [g for g in games_list if g.lower() != game_name.lower()]
             preview_games = other_games[:3]
             more_count = len(other_games) - 3
-
             if preview_games:
                 preview_str = ", ".join(html.escape(g) for g in preview_games)
                 more_str = f" <i>+{more_count} more</i>" if more_count > 0 else ""
@@ -155,25 +158,16 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         text += "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
         
 
-        # ── Claim button ──
         btn_label = f"✅ Claim Account {i}"
         if is_bundle:
             btn_label += " 📦"
+        buttons.append([InlineKeyboardButton(btn_label, callback_data=f"claim_steam|{acc['email']}|{group_key}")])
 
-        buttons.append([
-            InlineKeyboardButton(
-                btn_label, 
-                callback_data=f"claim_steam|{acc['email']}|{group_key}"
-            )
-        ])
-
-    # ── Footer note ──
     text += (
         "━━━━━━━━━━━━━━━━━━\n"
         "<i>📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.</i>"
     )
 
-    # ── Nav buttons ──
     buttons.append([InlineKeyboardButton("← Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
 
@@ -184,7 +178,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         except:
             pass
 
-    # ── Send with or without logo ──
+    # ── Send message/photo ──
     try:
         if logo_url:
             msg = await tg_app.bot.send_photo(
@@ -205,7 +199,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
         print(f"🔴 Error sending claim page: {e}")
         return
 
-    # ── Auto-expire ──
+    # ── Auto-expire claim page (still uses increment_attempt=False) ──
     async def auto_expire_claim_page():
         await asyncio.sleep(30)
         try:
@@ -238,7 +232,7 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
         )
         buttons = [
             [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+            [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
         ]
     else:
         expired_text = (
@@ -250,7 +244,7 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
             f"🌲 <i>Please wait for your daily cooldown to reset before searching again.</i>"
         )
         buttons = [
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+            [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
         ]
 
     await tg_app.bot.send_message(
@@ -11445,8 +11439,18 @@ async def handle_callback(update: Update):
     elif data.startswith("steam_back_to_results|"):
         try:
             _, group_key = data.split("|", 1)
-            await show_steam_account_selection(chat_id, group_key, "", query)
-        except:
+            await query.answer("🔄 Returning to results...", show_alert=False)
+            
+            # Restart fresh 30s timer on the summary results page WITHOUT deducting again
+            await show_steam_account_selection(
+                chat_id=chat_id,
+                group_key=group_key,
+                game_name="",
+                query_obj=query,
+                deduct_attempt=False
+            )
+        except Exception as e:
+            print(f"Back to results error: {e}")
             await query.answer("❌ Result expired", show_alert=True)
         return
 
@@ -12554,8 +12558,8 @@ async def process_update(update_data: dict):
             async def auto_expire_result():
                 await asyncio.sleep(30)
                 try:
-                    # === CRITICAL FIX: Prevent double deduction when View All was opened ===
                     consumed_key = f"steam_result_consumed:{chat_id}"
+
                     if await redis_client.get(consumed_key):
                         await redis_client.delete(consumed_key)
                         return  # User already paid the attempt when opening "View All"
@@ -12578,7 +12582,7 @@ async def process_update(update_data: dict):
                         )
                         buttons_expired = [
                             [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+                            [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
                         ]
                     else:
                         # ← This is the clean message you want when attempts = 0
@@ -12587,7 +12591,7 @@ async def process_update(update_data: dict):
                             f"Please wait for your cooldown to expire before searching again. 🍃"
                         )
                         buttons_expired = [
-                            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+                            [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
                         ]
 
                     await result_msg.edit_text(
