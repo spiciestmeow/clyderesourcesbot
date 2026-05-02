@@ -11343,6 +11343,15 @@ async def handle_callback(update: Update):
 
     # ── STEAM SEARCH PROMPT + INSTANT CLEANUP OF "SEARCH WINDOW CLOSED" ──
     elif data in ("steam_do_search", "search_different_game"):
+        await query.answer()
+
+        # Clean up current message (expired prompt or any old message)
+        if query and query.message:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+
         if chat_id != OWNER_ID:
             await query.answer("🌿 Steam search is caretaker only for now.", show_alert=True)
             return
@@ -12525,7 +12534,19 @@ async def process_update(update_data: dict):
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 
-            # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
+            # === STRONG CLEANUP - Stop the old 20-second timer ===
+            await redis_client.delete(f"steam_searching:{chat_id}")
+            
+            # Delete the original search prompt message
+            prompt_id = await redis_client.get(f"steam_search_prompt:{chat_id}")
+            if prompt_id:
+                try:
+                    await tg_app.bot.delete_message(chat_id, int(prompt_id))
+                except Exception:
+                    pass
+            await redis_client.delete(f"steam_search_prompt:{chat_id}")
+
+            # ── Auto-expire after exactly 30 seconds + consume 1 attempt automatically
             async def auto_expire_result():
                 await asyncio.sleep(30)
                 try:
