@@ -11358,7 +11358,7 @@ async def handle_callback(update: Update):
 
     # ── STEAM SEARCH PROMPT + INSTANT CLEANUP OF "SEARCH WINDOW CLOSED" ──
     elif data == "vamt_filter_steam":
-        await handle_steam_landing(chat_id, first_name, query)
+        await handle_user_steam_search(chat_id, first_name, query)
         await query.answer()
 
     elif data in ("steam_do_search", "search_different_game"):
