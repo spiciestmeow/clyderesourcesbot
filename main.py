@@ -11440,119 +11440,15 @@ async def handle_callback(update: Update):
         try:
             _, group_key = data.split("|", 1)
             await query.answer("🔄 Returning to results...", show_alert=False)
-
-            # Delete the current account-picker message
-            if query and query.message:
-                try:
-                    await query.message.delete()
-                except Exception:
-                    pass
             
-            # Rebuild the summary from the stored group data
-            raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
-            if not raw:
-                await tg_app.bot.send_message(
-                    chat_id,
-                    "⏳ Results expired. Please search again.",
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
-                        [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
-                    ])
-                )
-                return
-
-            data_stored = json.loads(raw)
-            game_name = data_stored.get("game_name", "Steam Account")
-            emails = data_stored.get("emails", [])
-            count = len(emails)
-
-            # Get logo
-            logo_url = None
-            if emails:
-                acc_data = await _sb_get(
-                    "steamCredentials",
-                    **{"email": f"eq.{emails[0]}", "select": "game_name,games,image_url"}
-                ) or []
-                if acc_data:
-                    acc = acc_data[0]
-                    logo_url = await get_game_logo_url(
-                        game_name=acc.get("game_name"),
-                        games_list=acc.get("games") or [],
-                        preferred_name=game_name
-                    )
-                    if logo_url:
-                        logo_url = clean_image_url(logo_url)
-                    if not logo_url:
-                        logo_url = acc.get("image_url")
-
-            summary_text = (
-                f"🎮 <b>{html.escape(game_name)}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"✅ <b>{count} account{'s' if count > 1 else ''} available</b> — tap to view\n\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"<i>📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.</i>"
+            # Restart fresh 30s timer on the summary results page WITHOUT deducting again
+            await show_steam_account_selection(
+                chat_id=chat_id,
+                group_key=group_key,
+                game_name="",
+                query_obj=query,
+                deduct_attempt=False
             )
-
-            summary_buttons = [
-                [InlineKeyboardButton(
-                    f"👉 View {count} accounts — {game_name[:25]}",
-                    callback_data=f"steam_sel|{chat_id}|{group_key}"
-                )],
-                [InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")],
-                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
-            ]
-
-            # Send fresh summary (no attempt deduction)
-            if logo_url:
-                try:
-                    new_msg = await tg_app.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=logo_url,
-                        caption=summary_text,
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(summary_buttons)
-                    )
-                except Exception:
-                    new_msg = await tg_app.bot.send_message(
-                        chat_id, summary_text, parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(summary_buttons)
-                    )
-            else:
-                new_msg = await tg_app.bot.send_message(
-                    chat_id, summary_text, parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(summary_buttons)
-                )
-
-            # Fresh 30s expiry on this restored summary — NO attempt deduction
-            # Replace this in expire_restored_summary:
-            async def expire_restored_summary():
-                await asyncio.sleep(30)
-                try:
-                    still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
-                    consumed = await redis_client.get(f"steam_result_consumed:{chat_id}")
-                    if still_pending and not consumed:
-                        expired_text = (
-                            "⏳ <b>This search has expired.</b>\n\n"
-                            "The results are no longer valid. (30 seconds passed)\n\n"
-                            "Your attempt was <b>not consumed</b> — you may search again! 🍃"
-                        )
-                        markup = InlineKeyboardMarkup([
-                            [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
-                            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
-                        ])
-                        try:
-                            await new_msg.edit_caption(caption=expired_text, parse_mode="HTML", reply_markup=markup)
-                        except Exception:
-                            try:
-                                await new_msg.edit_text(text=expired_text, parse_mode="HTML", reply_markup=markup)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-
-            asyncio.create_task(expire_restored_summary())
-
         except Exception as e:
             print(f"Back to results error: {e}")
             await query.answer("❌ Result expired", show_alert=True)
@@ -12658,39 +12554,28 @@ async def process_update(update_data: dict):
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 
-            await redis_client.setex(
-                f"steam_summary_msg:{chat_id}",
-                600,
-                str(result_msg.message_id)
-            )
-
             # ── Auto-expire after exactly 30 seconds + consume 1 attempt automatically
             async def auto_expire_result():
                 await asyncio.sleep(30)
                 try:
-                    # If View All was opened, the attempt was already deducted — skip
                     consumed_key = f"steam_result_consumed:{chat_id}"
-                    if await redis_client.get(consumed_key):
-                        # Don't deduct again, just let the message sit or edit neutrally
-                        return
 
-                    # Also skip if result was already claimed
-                    still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
-                    if not still_pending:
-                        return
+                    if await redis_client.get(consumed_key):
+                        await redis_client.delete(consumed_key)
+                        return  # User already paid the attempt when opening "View All"
 
                     # Original logic continues only if View All was NOT opened
                     current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
                     new_attempts = min(current + 1, 3)
                     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
-            
+
                     remaining = 3 - new_attempts
 
                     if remaining > 0:
                         expired_text = (
                             f"⏳ <b>This search has expired.</b>\n\n"
                             f"The results are no longer valid.\n"
-                            f"(30 seconds passed without claiming)\n\n"
+                            f"(<b>30 seconds</b> have passed without claiming)\n\n"
                             f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
                             f"{make_attempts_bar(new_attempts)}\n\n"
                             f"🌲 <i>You can search again right now!</i>"
@@ -12700,6 +12585,7 @@ async def process_update(update_data: dict):
                             [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
                         ]
                     else:
+                        # ← This is the clean message you want when attempts = 0
                         expired_text = (
                             f"🚫 <b>No search attempts remaining.</b>\n\n"
                             f"Please wait for your cooldown to expire before searching again. 🍃"
@@ -12714,7 +12600,7 @@ async def process_update(update_data: dict):
                         reply_markup=InlineKeyboardMarkup(buttons_expired)
                     )
                 except Exception:
-                    pass
+                    pass  # message may have been deleted by user
 
             asyncio.create_task(auto_expire_result())
             return
