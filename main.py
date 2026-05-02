@@ -170,7 +170,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
     # ── Footer note ──
     text += (
         "━━━━━━━━━━━━━━━━━━\n"
-        "<i>📧 Credentials revealed after claiming. ⏳ Expires in 10 min.</i>"
+        "<i>📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.</i>"
     )
 
     # ── Nav buttons ──
@@ -207,7 +207,7 @@ async def show_steam_account_selection(chat_id: int, group_key: str, game_name: 
 
     # ── Auto-expire ──
     async def auto_expire_claim_page():
-        await asyncio.sleep(10)
+        await asyncio.sleep(30)
         try:
             await tg_app.bot.delete_message(chat_id, msg.message_id)
             await send_steam_search_expired_message(chat_id, increment_attempt=False)
@@ -230,7 +230,7 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
     expired_text = (
         f"⏳ <b>This search has expired.</b>\n\n"
         f"The results are no longer valid.\n"
-        f"(10 seconds have passed without claiming)\n\n"
+        f"(30 seconds have passed without claiming)\n\n"
         f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
         f"{make_attempts_bar(new_attempts)}\n\n"
         f"🌲 <i>You can search again right now!</i>"
@@ -9148,7 +9148,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
 
     await redis_client.setex(
         f"steam_search_result:{chat_id}",
-        600,
+        30,
         json.dumps({"email": first_email, "game_name": first_game})
     )
 
@@ -9211,7 +9211,7 @@ async def handle_steam_game_search(chat_id: int, first_name: str, game_query: st
     text = (
         f"✅ <b>Found {total_accounts} account(s) across "
         f"{total_games} game title(s) for \"{html.escape(game_query)}\"!</b>\n\n"
-        f"⏳ Results expire in <b>10 minutes</b>. Pick one:\n\n"
+        f"⏳ Results expire in <b>30 seconds</b>. Pick one:\n\n"
     )
 
     buttons = []
@@ -11388,7 +11388,7 @@ async def handle_callback(update: Update):
             "• Use exact or shorter game title\n"
             "• Popular games usually have accounts\n\n"
             "⏰ <b>You have 20 seconds</b> to type the game name now\n"
-            "📌 Results expire in <b>10 min</b> after search\n"
+            "📌 Results expire in <b>30 seconds</b> after search\n"
             "⚠️ Expired without claiming = <b>attempt used</b>\n\n"
             "✏️ <b>Type the game name now:</b> 🍃"
         )
@@ -12483,7 +12483,7 @@ async def process_update(update_data: dict):
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
                         f"steam_group:{chat_id}:{safe_key}",
-                        15,
+                        30,
                         json.dumps({"emails": emails, "game_name": display_name})
                     )
 
@@ -12504,9 +12504,15 @@ async def process_update(update_data: dict):
                 first_acc, first_game = matching_accounts[0]
                 await redis_client.setex(
                     f"steam_search_result:{chat_id}",
-                    10,
+                    30,
                     json.dumps({"email": first_acc.get("email", ""), "game_name": first_game})
                 )
+
+            # ←←← ADD THIS FOOTER FOR CONSISTENCY ←←←
+            text += (
+                "━━━━━━━━━━━━━━━━━━\n"
+                "<i>📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.</i>"
+            )
 
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
@@ -12521,7 +12527,7 @@ async def process_update(update_data: dict):
 
             # ── Auto-expire after exactly 10 seconds + consume 1 attempt automatically
             async def auto_expire_result():
-                await asyncio.sleep(10)
+                await asyncio.sleep(30)
                 try:
                     # === CRITICAL FIX: Prevent double deduction when View All was opened ===
                     consumed_key = f"steam_result_consumed:{chat_id}"
@@ -12540,7 +12546,7 @@ async def process_update(update_data: dict):
                         expired_text = (
                             f"⏳ <b>This search has expired.</b>\n\n"
                             f"The results are no longer valid.\n"
-                            f"(10 seconds have passed without claiming)\n\n"
+                            f"(<b>30 seconds</b> have passed without claiming)\n\n"
                             f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
                             f"{make_attempts_bar(new_attempts)}\n\n"
                             f"🌲 <i>You can search again right now!</i>"
