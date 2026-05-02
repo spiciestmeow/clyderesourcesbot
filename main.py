@@ -5167,35 +5167,40 @@ async def show_streak_calendar(chat_id: int, first_name: str, query=None):
 # ══════════════════════════════════════════════════════════════════════════════
 # MESSAGES / SCREENS
 # ══════════════════════════════════════════════════════════════════════════════
-async def auto_expire_search_prompt(chat_id: int, prompt_msg_id: int):
-    """Delete search prompt after 20 seconds if user didn't reply"""
-    await asyncio.sleep(20.1)
-    
-    # If user already typed something, do nothing
-    if not await redis_client.get(f"steam_searching:{chat_id}"):
-        return
-    
-    # Delete the prompt message
-    try:
-        await tg_app.bot.delete_message(chat_id, prompt_msg_id)
-    except:
-        pass  # message might already be gone
-    
-    # Clean up
-    await redis_client.delete(f"steam_search_prompt:{chat_id}")
+async def auto_expire_search_prompt(chat_id: int, prompt_message_id: int | None = None):
+    """Called when user doesn't type a game name in time.
+    Attempt is NOT consumed — clean UX."""
+    # Cleanup Redis state
     await redis_client.delete(f"steam_searching:{chat_id}")
-    
-    await tg_app.bot.send_message(
-        chat_id,
+    await redis_client.delete(f"steam_search_prompt:{chat_id}")
+
+    # Delete the old prompt message
+    if prompt_message_id:
+        try:
+            await tg_app.bot.delete_message(chat_id, prompt_message_id)
+        except Exception:
+            pass
+
+    # Show the clean expiration message you wanted
+    expire_text = (
         "🌿 <b>Search window closed.</b>\n\n"
-        "No game name was entered within 60 seconds.\n"
-        "Your attempt has <b>not</b> been used. 🍃",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-            [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
-        ])
+        "No game name was entered within the time limit.\n"
+        "Your <b>attempt has not been used</b>. 🍃\n\n"
+        "You can search again right now!"
     )
+
+    try:
+        await tg_app.bot.send_message(
+            chat_id,
+            expire_text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")]
+            ])
+        )
+    except Exception as e:
+        print(f"🔴 Failed to send search prompt timeout message: {e}")
 
 async def send_delayed_feedback_buttons(
     chat_id: int,
@@ -11368,77 +11373,60 @@ async def handle_callback(update: Update):
             f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
             f"{make_attempts_bar(3 - attempts_left)}\n\n"
             "📌 <b>Tips for better results:</b>\n"
-            "• Use the exact game title\n"
-            "• Short names work too (e.g. <code>batman</code>)\n"
-            "• Partial names are supported\n\n"
+            "• Use exact or shorter game title\n"
+            "• Popular games usually have accounts\n\n"
             f"⏰ <b>You have {SEARCH_TIMEOUT} seconds</b> to type the game name\n"
-            "📌 Results expire in <b>10 minutes</b> after search\n"
+            "📌 Results expire in 10 min after search\n"
             "⚠️ Expired without claiming = attempt used\n\n"
             "✏️ <b>Type the game name now:</b> 🍃"
         )
 
-        prompt_msg = None
+        # Send prompt (handle both caption and text messages safely)
         if query and query.message:
             try:
                 await query.message.edit_caption(caption=guide, parse_mode="HTML")
                 prompt_msg = query.message
             except Exception:
-                try:
-                    await query.message.edit_text(text=guide, parse_mode="HTML")
-                    prompt_msg = query.message
-                except Exception:
-                    sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
-                    prompt_msg = sent
+                prompt_msg = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
         else:
-            sent = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
-            prompt_msg = sent
+            prompt_msg = await tg_app.bot.send_message(chat_id, guide, parse_mode="HTML")
 
-        if prompt_msg:
-            prompt_msg_id = prompt_msg.message_id if hasattr(prompt_msg, 'message_id') else prompt_msg.message_id
-            await redis_client.setex(f"steam_search_prompt:{chat_id}", 300, str(prompt_msg_id))
+        # Store prompt ID for cleanup
+        await redis_client.setex(
+            f"steam_search_prompt:{chat_id}",
+            SEARCH_TIMEOUT + 20,
+            str(prompt_msg.message_id)
+        )
 
-    # ── Countdown task ──
-        async def countdown_timer(msg, total_seconds: int, interval: int = 5):
-            remaining = total_seconds
+        # ── NEW: Robust countdown (1-second ticks near the end) ──
+        async def countdown_timer():
+            remaining = SEARCH_TIMEOUT
             while remaining > 0:
-                await asyncio.sleep(interval)
-                remaining -= interval
-
-                # Stop if user already searched (key deleted)
+                # User already typed a game name → stop countdown
                 if not await redis_client.get(f"steam_searching:{chat_id}"):
                     return
 
-                if remaining <= 0:
-                    break
+                # Update message with current time
                 try:
-                    updated_guide = (
-                        "🔍 <b>Search for a Steam Game</b>\n"
-                        "━━━━━━━━━━━━━━━━━━\n\n"
-                        f"🎯 <b>Attempts:</b> {attempts_left}/3 remaining\n"
-                        f"{make_attempts_bar(3 - attempts_left)}\n\n"
-                        "📌 <b>Tips for better results:</b>\n"
-                        "• Use the exact game title\n"
-                        "• Short names work too (e.g. <code>batman</code>)\n"
-                        "• Partial names are supported\n\n"
-                        f"⏰ <b>You have {remaining} seconds</b> to type the game name\n"
-                        "📌 Results expire in <b>10 minutes</b> after search\n"
-                        "⚠️ Expired without claiming = attempt used\n\n"
-                        "✏️ <b>Type the game name now:</b> 🍃"
+                    current_guide = guide.replace(
+                        f"You have {SEARCH_TIMEOUT} seconds",
+                        f"You have {remaining} seconds"
                     )
-                    try:
-                        await msg.edit_caption(caption=updated_guide, parse_mode="HTML")
-                    except Exception:
-                        try:
-                            await msg.edit_text(text=updated_guide, parse_mode="HTML")
-                        except Exception:
-                            return  # message was deleted or can't be edited, stop
+                    if hasattr(prompt_msg, "caption"):
+                        await prompt_msg.edit_caption(caption=current_guide, parse_mode="HTML")
+                    else:
+                        await prompt_msg.edit_text(text=current_guide, parse_mode="HTML")
                 except Exception:
-                    return
-            # Time's up — call the existing expire function
-            await auto_expire_search_prompt(chat_id, prompt_msg_id)
+                    # Message was deleted or can't be edited — just continue to expiration
+                    pass
 
-        asyncio.create_task(countdown_timer(prompt_msg, SEARCH_TIMEOUT, interval=5))
-        return
+                await asyncio.sleep(1)
+                remaining -= 1
+
+            # === TIMEOUT REACHED ===
+            await auto_expire_search_prompt(chat_id, prompt_msg.message_id)
+
+        asyncio.create_task(countdown_timer())
    
     # ── BACK TO RESULTS (after opening bundle)
     elif data.startswith("steam_back_to_results|"):
