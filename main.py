@@ -11388,8 +11388,8 @@ async def handle_callback(update: Update):
             "• Use exact or shorter game title\n"
             "• Popular games usually have accounts\n\n"
             "⏰ <b>You have 20 seconds</b> to type the game name now\n"
-            "📌 Results expire in 10 min after search\n"
-            "⚠️ Expired without claiming = attempt used\n\n"
+            "📌 Results expire in <b>10 min</b> after search\n"
+            "⚠️ Expired without claiming = <b>attempt used</b>\n\n"
             "✏️ <b>Type the game name now:</b> 🍃"
         )
 
