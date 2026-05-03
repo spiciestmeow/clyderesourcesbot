@@ -4231,7 +4231,10 @@ def kb_resources():
             InlineKeyboardButton("📜 Ancient Scrolls", url="https://clyderesourcehub.short.gy/learn-and-guides"),
         ],
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
-        [InlineKeyboardButton("🍜 Crunchy Checker", callback_data="show_crunchyroll_bot")],
+        [
+            InlineKeyboardButton("🍜 Crunchy Checker", callback_data="show_crunchyroll_bot"),
+            InlineKeyboardButton("🏕️ CayUnchained", callback_data="show_cayunchained_bot"),
+        ],
         [InlineKeyboardButton("← Back to Main Menu", callback_data="main_menu")],
     ])
 
@@ -10243,6 +10246,42 @@ async def handle_callback(update: Update):
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🍜 Open Crunchyroll Bot", url="https://t.me/clydecrunchybot")],
+            [InlineKeyboardButton("← Back to Resources", callback_data="show_resources")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+        ])
+
+        msg = await send_animated_translated(
+            chat_id=chat_id,
+            animation_url=CRUNCHY_GIF,
+            caption=caption,
+            reply_markup=keyboard,
+        )
+        await _remember(chat_id, msg.message_id)
+        return
+    
+    elif data == "show_cayunchained_bot":
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        caption = (
+            "🍜 <b>Cay's Unchained Bot</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "A companion bot nestled deeper in the enchanted forest, "
+            "dedicated entirely to <b>Crunchyroll account validation</b>.\n\n"
+            "🌿 <b>What it offers:</b>\n"
+            "• 🔍 Check Crunchyroll account status\n"
+            "• ✅ Verify premium subscription validity\n"
+            "• 🌏 Detect regional restrictions\n"
+            "• 🎌 Test streaming capability\n"
+            "• 📊 Get detailed account info (plan, expiry, etc.)\n\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "<i>The anime spirits await you in a quieter grove of the forest.</i> 🍃✨"
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🍜 Open CayUnchained Bot", url="https://t.me/CayUnchainedOfficial_bot")],
             [InlineKeyboardButton("← Back to Resources", callback_data="show_resources")],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
