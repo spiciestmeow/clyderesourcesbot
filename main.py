@@ -4294,6 +4294,10 @@ def kb_inventory():
             InlineKeyboardButton("🍜 Crunchyroll", callback_data="vamt_filter_crunchyroll"),
             InlineKeyboardButton("🎮 Steam", callback_data="vamt_filter_steam"),
         ],
+        [
+            InlineKeyboardButton("🤖 Grok", callback_data="vamt_filter_grok"),
+            InlineKeyboardButton("🛡️ NordVPN", callback_data="vamt_filter_nord"),
+        ],
         [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
@@ -11298,8 +11302,63 @@ async def handle_callback(update: Update):
 
     # ── STEAM SEARCH PROMPT + INSTANT CLEANUP OF "SEARCH WINDOW CLOSED" ──
     elif data == "vamt_filter_steam":
-        await handle_steam_landing(chat_id, first_name, query)
         await query.answer()
+        
+        if chat_id != OWNER_ID:
+            await query.message.edit_caption(
+                caption=(
+                    "🎮 <b>Steam Accounts</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔒 <b>Steam is currently restricted.</b>\n\n"
+                    "This section is temporarily available to the Forest Caretaker only.\n\n"
+                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
+            return
+
+        await handle_steam_landing(chat_id, first_name, query)
+
+    elif data == "vamt_filter_nord":
+        await query.answer()
+        
+        if chat_id != OWNER_ID:
+            await query.message.edit_caption(
+                caption=(
+                    "🎮 <b>NordVPN Accounts</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔒 <b>NordVPN is currently restricted.</b>\n\n"
+                    "This section is temporarily available to the Forest Caretaker only.\n\n"
+                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
+            return
+
+    elif data == "vamt_filter_grok":
+        await query.answer()
+        
+        if chat_id != OWNER_ID:
+            await query.message.edit_caption(
+                caption=(
+                    "🎮 <b>Grok Accounts</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔒 <b>Grok is currently restricted.</b>\n\n"
+                    "This section is temporarily available to the Forest Caretaker only.\n\n"
+                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
+            return
 
     elif data in ("steam_do_search", "search_different_game"):
         await query.answer()
