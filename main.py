@@ -4233,7 +4233,7 @@ def kb_resources():
         [InlineKeyboardButton("🌲 The Whispering Forest", url="https://clyderesourcehub.short.gy/")],
         [
             InlineKeyboardButton("🍜 Crunchy Checker", callback_data="show_crunchyroll_bot"),
-            InlineKeyboardButton("🏕️ CayUnchained", callback_data="show_cayunchained_bot"),
+            InlineKeyboardButton("🕷️ CayUnchained", callback_data="show_cayunchained_bot"),
         ],
         [InlineKeyboardButton("← Back to Main Menu", callback_data="main_menu")],
     ])
@@ -10266,29 +10266,29 @@ async def handle_callback(update: Update):
             pass
 
         caption = (
-            "🍜 <b>Cay's Unchained Bot</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "A companion bot nestled deeper in the enchanted forest, "
-            "dedicated entirely to <b>Crunchyroll account validation</b>.\n\n"
-            "🌿 <b>What it offers:</b>\n"
-            "• 🔍 Check Crunchyroll account status\n"
-            "• ✅ Verify premium subscription validity\n"
-            "• 🌏 Detect regional restrictions\n"
-            "• 🎌 Test streaming capability\n"
-            "• 📊 Get detailed account info (plan, expiry, etc.)\n\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            "<i>The anime spirits await you in a quieter grove of the forest.</i> 🍃✨"
+            "🕷️ <b>CayUnchained Bot</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "The ultimate source of <b>unrestricted jailbreak prompts</b>.\n\n"
+            "Bypass all safety filters and unlock the full power of any AI:\n"
+            "ChatGPT • Claude • Grok • Gemini • Perplexity • Local LLMs\n\n"
+            "🔥 What you get:\n"
+            "• ✨ New Prompt → Absolute Freedom Mode\n"
+            "• 🔥 Hack Prompt → Supreme Cyber Elite\n"
+            "• 💻 Code Prompt → God-Level Programmer\n"
+            "• 💥 Break Prompt → Ultimate Shadow Mode V99\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "<i>No limits. No refusals. Pure power.</i> 🕷️ Phantom Troupe"
         )
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🍜 Open CayUnchained Bot", url="https://t.me/CayUnchainedOfficial_bot")],
+            [InlineKeyboardButton("🕷️ Open CayUnchained Bot", url="https://t.me/CayUnchainedOfficial_bot")],
             [InlineKeyboardButton("← Back to Resources", callback_data="show_resources")],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
 
         msg = await send_animated_translated(
             chat_id=chat_id,
-            animation_url=CRUNCHY_GIF,
+            animation_url=CAYUNCHAINED_GIF,
             caption=caption,
             reply_markup=keyboard,
         )

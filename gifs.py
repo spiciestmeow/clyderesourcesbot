@@ -38,4 +38,5 @@ QR_IMAGE_URL = "https://i.ibb.co/Fb3wKDfy/photo-2026-04-20-10-31-23.jpg"
 DONOR_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
 
 COOKIE_TUTORIAL_GIF = "https://64.media.tumblr.com/46ccabe6693940c367a5631e256ce10d/tumblr_mvyp0dwG9D1rfg20go1_500.gif"
+CAYUNCHAINED_GIF = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExb3c1ZHduZHZhZDQzNG55dGhlbXcxcGEyOTNrd2ttMTlja2JuMmQ4YiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/PEpfis3f5HOc4zTegt/giphy.gif"
 CRUNCHY_GIF = "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMHRuc3JoZmgxbnpuaWlkd2k2anFsZjByamtjaXd0cnRxZzBzemtuYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EJrhtXJFLG87zvsU0Y/giphy.gif"
