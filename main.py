@@ -10267,7 +10267,7 @@ async def handle_callback(update: Update):
 
         caption = (
             "🕷️ <b>CayUnchained Bot</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
             "The ultimate source of <b>unrestricted jailbreak prompts</b>.\n\n"
             "Bypass all safety filters and unlock the full power of any AI:\n"
             "ChatGPT • Claude • Grok • Gemini • Perplexity • Local LLMs\n\n"
@@ -10276,7 +10276,7 @@ async def handle_callback(update: Update):
             "• 🔥 Hack Prompt → Supreme Cyber Elite\n"
             "• 💻 Code Prompt → God-Level Programmer\n"
             "• 💥 Break Prompt → Ultimate Shadow Mode V99\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "━━━━━━━━━━━━━━━━━━\n"
             "<i>No limits. No refusals. Pure power.</i> 🕷️ Phantom Troupe"
         )
 
