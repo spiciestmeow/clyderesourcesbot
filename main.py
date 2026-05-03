@@ -82,7 +82,7 @@ async def show_steam_account_selection(
             **{
                 "email": f"eq.{email}",
                 "status": "eq.Available",
-                "select": "email,game_name,image_url,password,steam_id,release_type,games,created_at"
+                "select": "email,game_name,image_url,password,steam_id,release_type,games,created_at, family_view"
             }
         ) or []
         if acc_data:
@@ -5715,7 +5715,7 @@ async def show_steam_claim_detail(
 
     acc_data = await _sb_get(
         "steamCredentials",
-        **{"email": f"eq.{email}", "select": "password,steam_id,games,image_url"},
+        **{"email": f"eq.{email}", "select": "password,steam_id,games,image_url, family_view"},
     ) or []
 
     password = "—"
@@ -5763,13 +5763,22 @@ async def show_steam_claim_detail(
     has_feedback = len(fb_data) > 0
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
-    # ── Steam ID: Only show when it has value (no empty line) ──
+    # Fetch family_view
+    family_view = False
+    if acc_data:
+        family_view = acc_data[0].get("family_view", False) or False
+
+    # ── Steam ID / Family View ──
     steam_id_line = ""
-    if steam_id:
-        steam_id_line = (
-            f"🆔 <b>Steam ID:</b>\n"
-            f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n\n"
-        )
+    if family_view:
+        steam_id_line = "🔒 <b>Access Level:</b> Family View On\n\n"
+    else:
+        steam_id_line = "✅ <b>Access Level:</b> Full Access\n\n"
+        if steam_id:
+            steam_id_line += (
+                f"🆔 <b>Steam ID:</b>\n"
+                f"<code><tg-spoiler>{steam_id}</tg-spoiler></code>\n\n"
+            )
 
     # ── Extra Games (Bundle): Only show when it's a bundle account (same clean style as Steam ID) ──
     extra_line = ""
@@ -11485,6 +11494,10 @@ async def handle_callback(update: Update):
                 parse_mode="HTML"
             )
 
+            family_view = False
+            if acc_data:
+                family_view = acc_data[0].get("family_view", False) or False
+
             # === FINAL SUCCESS MESSAGE WITH CORRECT NAME ===
             caption = (
                 f"🎮 <b>{html.escape(display_name)} — Successfully Claimed!</b>\n"
@@ -11494,11 +11507,15 @@ async def handle_callback(update: Update):
                 f"🔑 <b>Password:</b>\n"
                 f"<tg-spoiler>{html.escape(password)}</tg-spoiler>\n\n"
             )
-            if steam_id:
-                caption += (
-                    f"🆔 <b>Steam ID:</b>\n"
-                    f"<tg-spoiler><code>{steam_id}</code></tg-spoiler>\n\n"
-                )
+            if family_view:
+                caption += "🔒 <b>Access Level:</b> Family View On\n\n"
+            else:
+                caption += "✅ <b>Access Level:</b> Full Access\n\n"
+                if steam_id:
+                    caption += (
+                        f"🆔 <b>Steam ID:</b>\n"
+                        f"<tg-spoiler><code>{steam_id}</code></tg-spoiler>\n\n"
+                    )
             caption += (
                 f"<blockquote expandable=\"true\">"
                 f"⚠️ <b>Important Notice</b>\n"
