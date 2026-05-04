@@ -5783,6 +5783,8 @@ async def show_steam_claim_detail(
 
     # Fetch family_view
     family_view = data.get("family_view", False)
+    if not family_view and acc_data:
+        family_view = acc_data[0].get("family_view", False) or False
 
     # ── Steam ID / Family View ──
     steam_id_line = ""
