@@ -1189,7 +1189,8 @@ async def claim_steam_account(
     first_name: str,
     account_email: str,
     game_name: str = None,
-    family_view: bool = False
+    family_view: bool = False,
+    games: list = None
 ) -> bool:
     # ── Atomic lock prevents concurrent claims ──
     lock_key = f"claiming:{chat_id}:{account_email}"
@@ -1217,7 +1218,8 @@ async def claim_steam_account(
             "first_name": first_name,
             "account_email": account_email,
             "game_name": game_name or "Steam Account",
-            "family_view": family_view
+            "family_view": family_view,
+            "games": games or []
         })
 
         if success:
@@ -11596,7 +11598,8 @@ async def handle_callback(update: Update):
         # Use the nice display name we got from search
         success = await claim_steam_account(
             chat_id, first_name, account_email, display_name,
-            family_view=family_view
+            family_view=family_view,
+            games=games_list
         )
 
         if success:
