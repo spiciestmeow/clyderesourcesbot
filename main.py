@@ -5639,7 +5639,7 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         # ── Check if it's a bundle ──
         extra_games = c.get("games") or []
         is_bundle = is_bundle_account({"games": extra_games})
-        bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
+        bundle_tag = " 📦 Big Bundle" if is_bundle else ""
 
         # ── Feedback badge ──
         if fb_status == "working":
