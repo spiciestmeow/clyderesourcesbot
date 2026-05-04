@@ -174,7 +174,7 @@ async def show_steam_account_selection(
     text += (
         "━━━━━━━━━━━━━━━━━━\n"
         f"<b>Page {page} of {total_pages}</b>\n"
-        "<i>📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.</i>"
+        "<i>📧 Credentials revealed after claiming. ⏳ Expires in 2 minutes.</i>"
     )
 
     # ── Pagination buttons ──
@@ -221,13 +221,13 @@ async def show_steam_account_selection(
     # ── Store active message ID for timer tracking ──
     await redis_client.setex(
         f"steam_claim_msg:{chat_id}",
-        35,
+        125,
         str(msg.message_id)
     )
 
     # ── Auto-expire claim page (still uses increment_attempt=False) ──
     async def auto_expire_claim_page():
-        await asyncio.sleep(25)
+        await asyncio.sleep(115)
         try:
             active_id = await redis_client.get(f"steam_claim_msg:{chat_id}")
             if not active_id or int(active_id) != msg.message_id:
@@ -237,7 +237,7 @@ async def show_steam_account_selection(
             try:
                 current_caption = msg.caption or ""
                 warning_caption = current_caption.replace(
-                    "📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.",
+                    "📧 Credentials revealed after claiming. ⏳ Expires in 2 minutes.",
                     "📧 Credentials revealed after claiming. ⏳ Expires in 5 seconds."
                 )
                 await tg_app.bot.edit_message_caption(
@@ -283,7 +283,7 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
         expired_text = (
             f"⏳ <b>This search has expired.</b>\n\n"
             f"The results are no longer valid.\n"
-            f"(30 seconds have passed without claiming)\n\n"
+            f"(2 minutes have passed without claiming)\n\n"
             f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
             f"{make_attempts_bar(new_attempts)}\n\n"
             f"🌲 <i>You can search again right now!</i>"
@@ -296,7 +296,7 @@ async def send_steam_search_expired_message(chat_id: int, increment_attempt: boo
         expired_text = (
             f"⏳ <b>This search has expired.</b>\n\n"
             f"The results are no longer valid.\n"
-            f"(30 seconds have passed without claiming)\n\n"
+            f"(2 minutes have passed without claiming)\n\n"
             f"🎯 <b>Search Attempts:</b> 0/3 remaining\n"
             f"{make_attempts_bar(new_attempts)}\n\n"
             f"🌲 <i>Please wait for your daily cooldown to reset before searching again.</i>"
@@ -11550,7 +11550,7 @@ async def handle_callback(update: Update):
             "• Use exact or shorter game title\n"
             "• Popular games usually have accounts\n\n"
             "⏰ <b>You have 20 seconds</b> to type the game name now\n"
-            "📌 Results expire in <b>30 seconds</b> after search\n"
+            "📌 Results expire in <b>2 minutes</b> after search\n"
             "⚠️ Expired without claiming = <b>attempt used</b>\n\n"
             "✏️ <b>Type the game name now:</b> 🍃"
         )
@@ -12698,7 +12698,7 @@ async def process_update(update_data: dict):
                     safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
                     await redis_client.setex(
                         f"steam_group:{chat_id}:{safe_key}",
-                        30,
+                        120,
                         json.dumps({"emails": emails, "game_name": display_name})
                     )
 
@@ -12719,14 +12719,14 @@ async def process_update(update_data: dict):
                 first_acc, first_game = matching_accounts[0]
                 await redis_client.setex(
                     f"steam_search_result:{chat_id}",
-                    30,
+                    120,
                     json.dumps({"email": first_acc.get("email", ""), "game_name": first_game})
                 )
 
             # ←←← ADD THIS FOOTER FOR CONSISTENCY ←←←
             text += (
                 "━━━━━━━━━━━━━━━━━━\n"
-                "<i>📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.</i>"
+                "<i>📧 Credentials revealed after claiming. ⏳ Expires in 2 minutes.</i>"
             )
 
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
@@ -12744,7 +12744,7 @@ async def process_update(update_data: dict):
 
             # ── Auto-expire after exactly 30 seconds + consume 1 attempt automatically
             async def auto_expire_result():
-                await asyncio.sleep(25)
+                await asyncio.sleep(115)
 
                 try:
                     current_caption = result_msg.caption or result_msg.text or ""
