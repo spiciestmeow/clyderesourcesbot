@@ -227,17 +227,40 @@ async def show_steam_account_selection(
 
     # ── Auto-expire claim page (still uses increment_attempt=False) ──
     async def auto_expire_claim_page():
-        await asyncio.sleep(30)
+        await asyncio.sleep(25)
         try:
-            # Only act if THIS message is still the active one
             active_id = await redis_client.get(f"steam_claim_msg:{chat_id}")
             if not active_id or int(active_id) != msg.message_id:
-                return  # a newer page replaced us, do nothing
+                return
+            
+            # ── 5-second warning (same as search results page) ──
+            try:
+                current_caption = msg.caption or ""
+                warning_caption = current_caption.replace(
+                    "📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.",
+                    "⏳ <b>Expires in 5 seconds!</b>"
+                )
+                await tg_app.bot.edit_message_caption(
+                    chat_id=chat_id,
+                    message_id=msg.message_id,
+                    caption=warning_caption,
+                    parse_mode="HTML",
+                    reply_markup=msg.reply_markup
+                )
+            except Exception:
+                pass
+
+            await asyncio.sleep(5)  # wait the final 5 seconds
+
+            # re-check in case user claimed during the warning
+            active_id = await redis_client.get(f"steam_claim_msg:{chat_id}")
+            if not active_id or int(active_id) != msg.message_id:
+                return
 
             await tg_app.bot.delete_message(chat_id, msg.message_id)
             await redis_client.delete(f"steam_claim_msg:{chat_id}")
             await send_steam_search_expired_message(
-                chat_id, 
+                chat_id,
                 increment_attempt=False
             )
         except Exception:
@@ -11559,15 +11582,23 @@ async def handle_callback(update: Update):
         try:
             _, group_key = data.split("|", 1)
             await query.answer("🔄 Returning to results...", show_alert=False)
-            
-            # Restart fresh 30s timer on the summary results page WITHOUT deducting again
-            await show_steam_account_selection(
-                chat_id=chat_id,
-                group_key=group_key,
-                game_name="",
-                query_obj=query,
-                deduct_attempt=False
-            )
+
+            # Get the last search query from Redis
+            last_search = await redis_client.get(f"steam_last_search:{chat_id}")
+            if not last_search:
+                await query.answer("⏳ Search expired. Please search again.", show_alert=True)
+                return
+
+            # Delete current View All message
+            if query and query.message:
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+
+            # Re-run the search with the saved query
+            await handle_steam_game_search(chat_id, first_name, last_search)
+
         except Exception as e:
             print(f"Back to results error: {e}")
             await query.answer("❌ Result expired", show_alert=True)
