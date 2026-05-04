@@ -5533,7 +5533,7 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         "steam_claims",
         **{
             "chat_id": f"eq.{chat_id}",
-            "select": "game_name,account_email,claimed_at",
+            "select": "game_name,account_email,claimed_at,games",
             "order": "claimed_at.desc",
             "limit": 500,
         }
@@ -5634,6 +5634,11 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
         email = c.get("account_email", "")
         short_key = f"{chat_id}_{abs(hash(email)) % 999999}"
 
+        # ── Check if it's a bundle ──
+        extra_games = c.get("games") or []
+        is_bundle = is_bundle_account({"games": extra_games})
+        bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
+
         # ── Feedback badge ──
         if fb_status == "working":
             fb_badge = "✅ Verified"
@@ -5665,15 +5670,17 @@ async def show_my_steam_claims(chat_id: int, first_name: str, query=None, page: 
 
         # ── Entry card ──
         text += (
-            f"<b>{i}.</b> 🎮 <b>{game}</b>\n"
+            f"<b>{i}.</b> 🎮 <b>{game}</b> {bundle_tag}\n"
             f"     {time_ago}  ·  {fb_badge}\n"
             "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
         )
 
-        # ── Button (keep original style — just the game name with fb icon) ──
+        # ── Button with bundle tag ──
         btn_icon = "✅" if fb_status == "working" else ("❌" if fb_status == "not_working" else "🎮")
+        btn_text = f"{btn_icon} {game[:30]}{bundle_tag}"
+
         buttons.append([InlineKeyboardButton(
-            f"{btn_icon} {game[:35]}",
+            btn_text,
             callback_data=f"steam_detail|{short_key}|{page}"
         )])
 
@@ -5862,8 +5869,12 @@ async def show_steam_claim_detail(
             f"<i>Help the forest — tap the buttons below!</i>"
         )
 
+    is_bundle = is_bundle_account({"games": extra_games})  # reuse existing helper
+
+    bundle_tag = " 📦 <b>Big Bundle</b>" if is_bundle else ""
+
     text = (
-        f"🎮 <b>{html.escape(game_name)}</b>\n"
+        f"🎮 <b>{html.escape(game_name)}</b>{bundle_tag}\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"📧 Email:\n"
         f"<tg-spoiler>{html.escape(email)}</tg-spoiler>\n\n"
