@@ -8438,7 +8438,7 @@ async def handle_steam_feedback(
             f"{current_caption}\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"{emoji} <b>You reported this as: {label}</b>\n"
-            + ("<i>Made a mistake? Tap Undo within 30 seconds.</i>"
+            + ("<i>Made a mistake? Tap Undo within 2 minutes.</i>"
                if not is_working else
                "<i>Thank you for your feedback! 🍃</i>")
         )
@@ -12521,6 +12521,9 @@ async def process_update(update_data: dict):
 
             term = raw.lower().strip()
 
+            # Save search term so "Back to Results" can rebuild the page
+            await redis_client.setex(f"steam_last_search:{chat_id}", 300, term)
+
             current_attempts = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
 
             # ── STRONG EARLY GUARD: No attempts left → show clean message immediately
@@ -12785,7 +12788,7 @@ async def process_update(update_data: dict):
                         expired_text = (
                             f"⏳ <b>This search has expired.</b>\n\n"
                             f"The results are no longer valid.\n"
-                            f"(<b>30 seconds</b> have passed without claiming)\n\n"
+                            f"(<b>2 minutes</b> have passed without claiming)\n\n"
                             f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
                             f"{make_attempts_bar(new_attempts)}\n\n"
                             f"🌲 <i>You can search again right now!</i>"
