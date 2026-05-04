@@ -1209,6 +1209,8 @@ async def claim_steam_account(
 
         if existing_claim:
             return False
+        
+        print(f"🔍 DEBUG CLAIM_DB → about to save claim for {account_email} | family_view={family_view}")
 
         success = await _sb_post("steam_claims", {
             "chat_id": chat_id,
@@ -5729,6 +5731,10 @@ async def show_steam_claim_detail(
         "steamCredentials",
         **{"email": f"eq.{email}", "select": "password,steam_id,games,image_url, family_view"},
     ) or []
+
+    print(f"🔍 DEBUG CLAIM → acc_data found: {len(acc_data)} items")
+    if acc_data:
+        print(f"🔍 DEBUG CLAIM → family_view = {acc_data[0].get('family_view')}")
 
     password = "—"
     steam_id = ""
