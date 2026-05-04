@@ -64,7 +64,8 @@ async def show_steam_account_selection(
         group_key: str,
         game_name: str,
         query_obj=None,
-        deduct_attempt: bool = True
+        deduct_attempt: bool = True,
+        page: int = 1
 ):
     raw = await redis_client.get(f"steam_group:{chat_id}:{group_key}")
     if not raw:
@@ -106,6 +107,15 @@ async def show_steam_account_selection(
     else:
         print(f"🔄 Back to Results — no new deduction for {chat_id}")
 
+    # ── Pagination setup (5 accounts per page) ──
+    ACCOUNTS_PER_PAGE = 5
+    total = len(accounts)
+    total_pages = (total + ACCOUNTS_PER_PAGE - 1) // ACCOUNTS_PER_PAGE
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * ACCOUNTS_PER_PAGE
+    end = start + ACCOUNTS_PER_PAGE
+    page_accounts = accounts[start:end]
+
     # ── Get logo ──
     logo_url = None
     if accounts:
@@ -118,8 +128,7 @@ async def show_steam_account_selection(
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # ── Build caption and buttons (exactly the same as before) ──
-    total = len(accounts)
+    # ── Build caption and buttons (EXACT same format as before) ──
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -128,9 +137,9 @@ async def show_steam_account_selection(
 
     buttons = []
 
-    accounts.sort(key=lambda acc: acc.get("created_at") or "", reverse=True)
+    page_accounts.sort(key=lambda acc: acc.get("created_at") or "", reverse=True)
 
-    for i, acc in enumerate(accounts, 1):
+    for i, acc in enumerate(page_accounts, start + 1):
         email = acc.get("email", "")
         games_list = [g.strip() for g in (acc.get("games") or []) if str(g).strip()]
         is_bundle = is_bundle_account(acc)
@@ -165,8 +174,19 @@ async def show_steam_account_selection(
 
     text += (
         "━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Page {page} of {total_pages}</b>\n"
         "<i>📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.</i>"
     )
+
+    # ── Pagination buttons ──
+    pagination_row = []
+    if page > 1:
+        pagination_row.append(InlineKeyboardButton("← Previous", callback_data=f"steam_accounts_page|{group_key}|{page-1}"))
+    pagination_row.append(InlineKeyboardButton(f"📄 {page}/{total_pages}", callback_data="noop"))
+    if page < total_pages:
+        pagination_row.append(InlineKeyboardButton("Next →", callback_data=f"steam_accounts_page|{group_key}|{page+1}"))
+    if pagination_row:
+        buttons.append(pagination_row)
 
     buttons.append([InlineKeyboardButton("← Back to Results", callback_data=f"steam_back_to_results|{group_key}")])
     buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
@@ -10023,6 +10043,20 @@ async def handle_callback(update: Update):
             await handle_profile_page(chat_id, first_name, query, page=page)
         except Exception as e:
             print(f"Profile page error: {e}")
+        return
+
+    elif data.startswith("steam_accounts_page|"):
+        _, group_key, page_str = data.split("|")
+        page = int(page_str)
+        await show_steam_account_selection(
+            chat_id=chat_id,
+            group_key=group_key,
+            game_name="",
+            query_obj=query,
+            deduct_attempt=False,
+            page=page
+        )
+        await query.answer()
         return
 
     # ── NEW: MULTI-ACCOUNT SELECTION SCREEN ──
