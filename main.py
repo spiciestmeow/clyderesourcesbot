@@ -57,7 +57,7 @@ def is_bundle_account(acc: dict) -> bool:
     """Returns True if this is a big bundle account (2+ games in games[])"""
     games = acc.get("games") or []
     valid_games = [str(g).strip() for g in games if str(g).strip()]
-    return len(valid_games) >= 2
+    return len(valid_games) >= 1
 
 async def show_steam_account_selection(
         chat_id: int,
