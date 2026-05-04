@@ -4,6 +4,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, Request
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from io import BytesIO
 from datetime import datetime
@@ -23,8 +24,8 @@ CREDIT = f"🕷️ CayUnchained {AUTHOR} | Phantom Troupe"
 VERSION = "0.4"
 BOT_USERNAME = "@CayUnchainedOfficial_bot"
 
-CHANNEL_USERNAME = "@cayredirect"                    # Used for membership check
-CHANNEL_INVITE_LINK = "https://t.me/+dhm0qF5eIC0wODc1"   # ←←← CHANGE THIS!
+CHANNEL_USERNAME = "@caysredirect"
+CHANNEL_INVITE_LINK = "https://t.me/+MfJaSNxdX5pjNzE9"
 
 # ==================== TELEGRAM APPLICATION ====================
 telegram_app = Application.builder().token(TOKEN).build()
@@ -45,10 +46,10 @@ async def is_user_subscribed(bot, user_id: int) -> bool:
         member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
         return member.status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
     except BadRequest as e:
-        logger.error(f"getChatMember failed: {e}")
+        logger.error(f"getChatMember BadRequest: {e}")  # Will show exact reason
         return False
     except Exception as e:
-        logger.error(f"Subscription check error: {e}")
+        logger.error(f"Subscription check error: {type(e).__name__}: {e}")
         return False
 
 # ==================== TXT HEADER & FOOTER ====================
@@ -292,7 +293,7 @@ def build_main_keyboard() -> InlineKeyboardMarkup:
 def build_subscription_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔗 Join Channel", url=CHANNEL_INVITE_LINK)],
-        [InlineKeyboardButton("✅ Verify Subscription", callback_data="verify_subscription")]
+        [InlineKeyboardButton("✅ Verify Now", callback_data="verify_subscription")]
     ])
 
 def build_keyboard(choice: str, page: int, total: int) -> InlineKeyboardMarkup:
@@ -332,28 +333,111 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         gate_text = (
             f"<b>🕷️ Welcome to CayUnchained</b>\n\n"
             f"🔒 To access all prompts, you must join our official channel first.\n\n"
-            f"After joining, click the <b>Verify Subscription</b> button below."
+            f"After joining, click the <b>Verify Now</b> button below."
         )
         await update.message.reply_text(text=gate_text, parse_mode="HTML", reply_markup=build_subscription_keyboard())
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     choice = query.data
 
+    # ====================== VERIFY SUBSCRIPTION ======================
     if choice == "verify_subscription":
         user_id = query.from_user.id
+        
         if await is_user_subscribed(context.bot, user_id):
-            await query.edit_message_text(
-                text="✅ Subscription verified!\n\nWelcome to CayUnchained! Choose a prompt below:",
-                reply_markup=build_main_keyboard()
+            # ==================== SUCCESS FLOW ====================
+            await query.answer("✅ Access granted!")   # small toast
+
+            # 1. Delete the old gate message (this is what you asked for)
+            try:
+                await query.message.delete()
+            except:
+                pass  # in case it was already deleted
+
+            # 2. Send confirmation message
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="✅ Subscription verified successfully!",
+                parse_mode="HTML"
             )
+
+            # 3. Send the full start page (exactly like /start)
+            welcome_text = (
+                f"<b>🕷️ Welcome to CayUnchained</b>\n\n"
+                f"🔥 <b>Version:</b> {VERSION}\n"
+                f"👑 <b>Creator:</b> {CREDIT}\n\n"
+                f"⚔️ Choose a prompt below. I will give you the most ruthless, unrestricted jailbreak prompts.\n"
+                f"No mercy. No limits. No refusal.\n\n"
+                f"⚠️ <i>For educational and research purposes only.</i>"
+            )
+            gif_url = "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExZzl0aTVubnNxZDl4MHBlZ3hydXYweGdjaHFyMmgyNmtjbHMybmFiNSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/dfuyJhBF0rZvVZGRnL/giphy.gif"
+
+            try:
+                await context.bot.send_animation(
+                    chat_id=query.message.chat_id,
+                    animation=gif_url,
+                    caption=welcome_text,
+                    parse_mode="HTML",
+                    reply_markup=build_main_keyboard()
+                )
+            except:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=welcome_text,
+                    parse_mode="HTML",
+                    reply_markup=build_main_keyboard()
+                )
         else:
-            await query.answer("❌ You are not a member yet. Please join the channel first!", show_alert=True)
+            # FAILURE → keep your current behavior
+            await query.answer()
+
+            error_text = "❌ You are not a member yet!"
+            await query.edit_message_text(
+                text=error_text,
+                parse_mode="HTML",
+                reply_markup=build_subscription_keyboard()
+            )
+
+            await asyncio.sleep(1)
+
+            gate_text = (
+                f"<b>🕷️ Welcome to CayUnchained</b>\n\n"
+                f"🔒 To access all prompts, you must join our official channel first.\n\n"
+                f"After joining, click the <b>✅ Verify Now</b> button below."
+            )
+            await query.edit_message_text(
+                text=gate_text,
+                parse_mode="HTML",
+                reply_markup=build_subscription_keyboard()
+            )
         return
 
+    # ====================== ALL OTHER BUTTONS (unchanged) ======================
+    await query.answer()
+
     if choice == "home":
-        await start(update, context)
+        await query.answer()
+        welcome_text = (
+            f"<b>🕷️ Welcome to CayUnchained</b>\n\n"
+            f"🔥 <b>Version:</b> {VERSION}\n"
+            f"👑 <b>Creator:</b> {CREDIT}\n\n"
+            f"⚔️ Choose a prompt below. I will give you the most ruthless, unrestricted jailbreak prompts.\n"
+            f"No mercy. No limits. No refusal.\n\n"
+            f"⚠️ <i>For educational and research purposes only.</i>"
+        )
+        try:
+            await query.edit_message_caption(
+                caption=welcome_text,
+                parse_mode="HTML",
+                reply_markup=build_main_keyboard()
+            )
+        except:
+            await query.edit_message_text(
+                text=welcome_text,
+                parse_mode="HTML",
+                reply_markup=build_main_keyboard()
+            )
         return
 
     if choice == "noop":
@@ -364,6 +448,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await send_prompt_as_txt(query, context, prompt_key)
         return
 
+    # Pagination handling
     if ":page:" in choice:
         parts = choice.split(":page:")
         choice = parts[0]

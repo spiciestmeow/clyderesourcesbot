@@ -1185,7 +1185,11 @@ async def get_steam_claims_today(chat_id: int) -> int:
     return len(data)
 
 async def claim_steam_account(
-    chat_id: int, first_name: str, account_email: str, game_name: str = None
+    chat_id: int,
+    first_name: str,
+    account_email: str,
+    game_name: str = None,
+    family_view: bool = False
 ) -> bool:
     # ── Atomic lock prevents concurrent claims ──
     lock_key = f"claiming:{chat_id}:{account_email}"
@@ -1211,6 +1215,7 @@ async def claim_steam_account(
             "first_name": first_name,
             "account_email": account_email,
             "game_name": game_name or "Steam Account",
+            "family_view": family_view
         })
 
         if success:
@@ -5771,9 +5776,7 @@ async def show_steam_claim_detail(
     feedback_status = fb_data[0].get("status", "") if has_feedback else ""
 
     # Fetch family_view
-    family_view = False
-    if acc_data:
-        family_view = acc_data[0].get("family_view", False) or False
+    family_view = data.get("family_view", False)
 
     # ── Steam ID / Family View ──
     steam_id_line = ""
@@ -8907,7 +8910,7 @@ async def handle_steam_landing(chat_id: int, first_name: str, query=None):
         f"{status_text}\n\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "• Search for any game you want\n"
-        "• Found results expire in <b>10 minutes</b>\n"
+        "• Found results expire in <b>30 seconds</b>\n"
         "• 3 failed/expired searches → cooldown starts\n\n"
         "<i>The forest holds many games, wanderer. 🍃</i>"
     )
@@ -11542,8 +11545,10 @@ async def handle_callback(update: Update):
 
         acc_data = await _sb_get(
             "steamCredentials", 
-            **{"email": f"eq.{account_email}", "status": "eq.Available",
-               "select": "game_name,image_url,password,steam_id,release_type,games"}
+            **{
+                "email": f"eq.{account_email}",
+                "status": "eq.Available",
+                "select": "game_name,image_url,password,steam_id,release_type,games,family_view"}
         ) or []
         
         if not acc_data:
@@ -11556,6 +11561,9 @@ async def handle_callback(update: Update):
         account_image_url = acc.get("image_url")
         games_list = acc.get("games") or []
 
+        # ── Get family_view BEFORE calling claim_steam_account ──
+        family_view = acc.get("family_view", False)
+
         # ── Get the best possible logo (especially important for bundles) ──
         logo_url = await get_game_logo_url(
             game_name=acc.get("game_name"),
@@ -11567,7 +11575,10 @@ async def handle_callback(update: Update):
         final_image_url = logo_url or account_image_url
 
         # Use the nice display name we got from search
-        success = await claim_steam_account(chat_id, first_name, account_email, display_name)
+        success = await claim_steam_account(
+            chat_id, first_name, account_email, display_name,
+            family_view=family_view
+        )
 
         if success:
             await redis_client.set(
@@ -11591,10 +11602,6 @@ async def handle_callback(update: Update):
                 f"(Level {level} cooldown)",
                 parse_mode="HTML"
             )
-
-            family_view = False
-            if acc_data:
-                family_view = acc_data[0].get("family_view", False) or False
 
             # === FINAL SUCCESS MESSAGE WITH CORRECT NAME ===
             caption = (
