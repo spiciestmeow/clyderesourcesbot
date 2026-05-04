@@ -238,7 +238,7 @@ async def show_steam_account_selection(
                 current_caption = msg.caption or ""
                 warning_caption = current_caption.replace(
                     "📧 Credentials revealed after claiming. ⏳ Expires in 30 seconds.",
-                    "⏳ <b>Expires in 5 seconds!</b>"
+                    "📧 Credentials revealed after claiming. ⏳ Expires in 5 seconds."
                 )
                 await tg_app.bot.edit_message_caption(
                     chat_id=chat_id,
@@ -11583,12 +11583,6 @@ async def handle_callback(update: Update):
             _, group_key = data.split("|", 1)
             await query.answer("🔄 Returning to results...", show_alert=False)
 
-            # Get the last search query from Redis
-            last_search = await redis_client.get(f"steam_last_search:{chat_id}")
-            if not last_search:
-                await query.answer("⏳ Search expired. Please search again.", show_alert=True)
-                return
-
             # Delete current View All message
             if query and query.message:
                 try:
@@ -11596,12 +11590,39 @@ async def handle_callback(update: Update):
                 except Exception:
                     pass
 
-            # Re-run the search with the saved query
-            await handle_steam_game_search(chat_id, first_name, last_search)
+            # Check if original found page message still exists
+            found_msg_id = await redis_client.get(f"steam_found_msg:{chat_id}")
+            last_search = await redis_client.get(f"steam_last_search:{chat_id}")
+
+            if not found_msg_id and not last_search:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "⏳ <b>Search results expired.</b>\n\nPlease search again. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
+                        [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
+                    ])
+                )
+                return
+
+            # Re-run the search to rebuild the found page
+            if last_search:
+                await handle_steam_game_search(chat_id, first_name, last_search)
+            else:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "⏳ <b>Search results expired.</b>\n\nPlease search again. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
+                        [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
+                    ])
+                )
 
         except Exception as e:
-            print(f"Back to results error: {e}")
-            await query.answer("❌ Result expired", show_alert=True)
+            print(f"🔴 Back to results error: {e}")
+            await query.answer("❌ Something went wrong", show_alert=True)
         return
 
     elif data == "steam_back_to_results":
@@ -12717,6 +12738,9 @@ async def process_update(update_data: dict):
                 caption=text.strip(),
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
+
+            # ADD THIS
+            await redis_client.setex(f"steam_found_msg:{chat_id}", 600, str(result_msg.message_id))
 
             # ── Auto-expire after exactly 30 seconds + consume 1 attempt automatically
             async def auto_expire_result():
