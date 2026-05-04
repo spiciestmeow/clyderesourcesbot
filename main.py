@@ -11580,31 +11580,45 @@ async def handle_callback(update: Update):
     # ── BACK TO RESULTS — Show the exact same nice modern found page
     elif data.startswith("steam_back_to_results|"):
         try:
-            await query.answer("🔄 Restoring results...", show_alert=False)
+            _, group_key = data.split("|", 1)
+            await query.answer("🔄 Returning to results...", show_alert=False)
 
-            # Delete the current "View All" page
+            # Delete current View All message
             if query and query.message:
                 try:
                     await query.message.delete()
                 except Exception:
                     pass
 
-            # Get the original search term
-            term = await redis_client.get(f"steam_last_search:{chat_id}")
-            
-            if not term:
-                await send_steam_search_expired_message(chat_id, increment_attempt=False)
+            # Check if original found page message still exists
+            found_msg_id = await redis_client.get(f"steam_found_msg:{chat_id}")
+            last_search = await redis_client.get(f"steam_last_search:{chat_id}")
+
+            if not found_msg_id and not last_search:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "⏳ <b>Search results expired.</b>\n\nPlease search again. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
+                        [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
+                    ])
+                )
                 return
 
-            # Re-trigger the modern search logic cleanly
-            await redis_client.setex(f"steam_searching:{chat_id}", 90, "1")   # longer flag for safety
-
-            # Send the term as a message so the main search intercept runs the nice page
-            await tg_app.bot.send_message(
-                chat_id=chat_id,
-                text=term,
-                parse_mode="HTML"
-            )
+            # Re-run the search to rebuild the found page
+            if last_search:
+                await handle_steam_game_search(chat_id, first_name, last_search)
+            else:
+                await tg_app.bot.send_message(
+                    chat_id,
+                    "⏳ <b>Search results expired.</b>\n\nPlease search again. 🍃",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
+                        [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
+                    ])
+                )
 
         except Exception as e:
             print(f"🔴 Back to results error: {e}")
