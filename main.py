@@ -11459,8 +11459,6 @@ async def handle_callback(update: Update):
 
     elif data == "vamt_filter_nord":
         await query.answer()
-        
-        if chat_id != OWNER_ID:
             await query.message.edit_caption(
                 caption=(
                     "🎮 <b>NordVPN Accounts</b>\n"
@@ -11478,8 +11476,6 @@ async def handle_callback(update: Update):
 
     elif data == "vamt_filter_grok":
         await query.answer()
-        
-        if chat_id != OWNER_ID:
             await query.message.edit_caption(
                 caption=(
                     "🎮 <b>Grok Accounts</b>\n"
