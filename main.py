@@ -93,7 +93,7 @@ async def show_steam_account_selection(
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
     
-    # ── NEW: Idempotent (once-per-search) deduction logic ──
+    # ── Idempotent (once-per-search) deduction logic ──
     consumed = await redis_client.get(f"steam_result_consumed:{chat_id}")
     
     if deduct_attempt and not consumed:
@@ -128,7 +128,7 @@ async def show_steam_account_selection(
         if logo_url:
             logo_url = clean_image_url(logo_url)
 
-    # ── Build caption and buttons (EXACT same format as before) ──
+    # ── Build caption and buttons ──
     text = (
         f"🎮 <b>{html.escape(game_name)}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -165,7 +165,6 @@ async def show_steam_account_selection(
                 text += f"   <b>Also includes:</b> {preview_str}<b>{more_str}</b>\n"
 
         text += "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
-        
 
         btn_label = f"✅ Claim Account {i}"
         if is_bundle:
@@ -219,12 +218,28 @@ async def show_steam_account_selection(
         print(f"🔴 Error sending claim page: {e}")
         return
 
+    # ── Store active message ID for timer tracking ──
+    await redis_client.setex(
+        f"steam_claim_msg:{chat_id}",
+        35,
+        str(msg.message_id)
+    )
+
     # ── Auto-expire claim page (still uses increment_attempt=False) ──
     async def auto_expire_claim_page():
         await asyncio.sleep(30)
         try:
+            # Only act if THIS message is still the active one
+            active_id = await redis_client.get(f"steam_claim_msg:{chat_id}")
+            if not active_id or int(active_id) != msg.message_id:
+                return  # a newer page replaced us, do nothing
+
             await tg_app.bot.delete_message(chat_id, msg.message_id)
-            await send_steam_search_expired_message(chat_id, increment_attempt=False)
+            await redis_client.delete(f"steam_claim_msg:{chat_id}")
+            await send_steam_search_expired_message(
+                chat_id, 
+                increment_attempt=False
+            )
         except Exception:
             pass
 
@@ -11647,6 +11662,7 @@ async def handle_callback(update: Update):
 
             await redis_client.delete(f"steam_search_result:{chat_id}")
             await redis_client.delete(f"steam_searching:{chat_id}")
+            await redis_client.delete(f"steam_claim_msg:{chat_id}")
 
             hours_left = cooldown_seconds // 3600
             mins_left = (cooldown_seconds % 3600) // 60
