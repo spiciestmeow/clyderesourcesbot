@@ -11577,7 +11577,7 @@ async def handle_callback(update: Update):
 
         asyncio.create_task(static_timer())
    
-    # ── BACK TO RESULTS (after opening bundle)
+    # ── BACK TO RESULTS — Show the exact same nice modern found page
     elif data.startswith("steam_back_to_results|"):
         try:
             _, group_key = data.split("|", 1)

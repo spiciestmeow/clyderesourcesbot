@@ -93,19 +93,19 @@ async def show_steam_account_selection(
         await tg_app.bot.send_message(chat_id, "❌ No accounts available anymore.", parse_mode="HTML")
         return
     
-    # ── Idempotent (once-per-search) deduction logic ──
-    consumed = await redis_client.get(f"steam_result_consumed:{chat_id}")
-    
-    if deduct_attempt and not consumed:
+    # ── Idempotent deduction — uses session flag to prevent double-deduction ──
+    session_deducted = await redis_client.get(f"steam_session_deducted:{chat_id}")
+
+    if deduct_attempt and not session_deducted:
         current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
         new_attempts = min(current + 1, 3)
         await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
-        await redis_client.setex(f"steam_result_consumed:{chat_id}", 600, "1")
-        print(f"🧾 FIRST deduction for View All — {chat_id}")
-    elif deduct_attempt and consumed:
-        print(f"🔄 View All clicked again — already deducted, skipping for {chat_id}")
+        await redis_client.setex(f"steam_session_deducted:{chat_id}", 600, "1")
+        print(f"🧾 FIRST deduction for View All — {chat_id}, attempts now {new_attempts}")
+    elif deduct_attempt and session_deducted:
+        print(f"🔄 View All clicked again — session already deducted, skipping for {chat_id}")
     else:
-        print(f"🔄 Back to Results — no new deduction for {chat_id}")
+        print(f"🔄 No deduction — deduct_attempt=False for {chat_id}")
 
     # ── Pagination setup (5 accounts per page) ──
     ACCOUNTS_PER_PAGE = 5
@@ -11457,40 +11457,43 @@ async def handle_callback(update: Update):
 
         await handle_steam_landing(chat_id, first_name, query)
 
-    # ── NORDVPN & GROK — now identical for everyone (including owner) ──
     elif data == "vamt_filter_nord":
         await query.answer()
-        await query.message.edit_caption(
-            caption=(
-                "🎮 <b>NordVPN Accounts</b>\n"
-                "━━━━━━━━━━━━━━━━━━\n\n"
-                "🔒 <b>NordVPN is currently restricted.</b>\n\n"
-                "This section is temporarily available to the Forest Caretaker only.\n\n"
-                "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
-            ),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
-            ])
-        )
-        return
+        
+        if chat_id != OWNER_ID:
+            await query.message.edit_caption(
+                caption=(
+                    "🎮 <b>NordVPN Accounts</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔒 <b>NordVPN is currently restricted.</b>\n\n"
+                    "This section is temporarily available to the Forest Caretaker only.\n\n"
+                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
+            return
 
     elif data == "vamt_filter_grok":
         await query.answer()
-        await query.message.edit_caption(
-            caption=(
-                "🎮 <b>Grok Accounts</b>\n"
-                "━━━━━━━━━━━━━━━━━━\n\n"
-                "🔒 <b>Grok is currently restricted.</b>\n\n"
-                "This section is temporarily available to the Forest Caretaker only.\n\n"
-                "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
-            ),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
-            ])
-        )
-        return
+        
+        if chat_id != OWNER_ID:
+            await query.message.edit_caption(
+                caption=(
+                    "🎮 <b>Grok Accounts</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔒 <b>Grok is currently restricted.</b>\n\n"
+                    "This section is temporarily available to the Forest Caretaker only.\n\n"
+                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
+            return
 
     elif data in ("steam_do_search", "search_different_game"):
         await query.answer()
@@ -11580,18 +11583,16 @@ async def handle_callback(update: Update):
             _, group_key = data.split("|", 1)
             await query.answer("🔄 Returning to results...", show_alert=False)
 
-            # Delete current View All message
             if query and query.message:
                 try:
                     await query.message.delete()
                 except Exception:
                     pass
 
-            # Check if original found page message still exists
-            found_msg_id = await redis_client.get(f"steam_found_msg:{chat_id}")
-            last_search = await redis_client.get(f"steam_last_search:{chat_id}")
+            cached_grouped = await redis_client.get(f"steam_grouped_cache:{chat_id}")
+            cached_term = await redis_client.get(f"steam_search_term:{chat_id}")
 
-            if not found_msg_id and not last_search:
+            if not cached_grouped or not cached_term:
                 await tg_app.bot.send_message(
                     chat_id,
                     "⏳ <b>Search results expired.</b>\n\nPlease search again. 🍃",
@@ -11603,22 +11604,163 @@ async def handle_callback(update: Update):
                 )
                 return
 
-            # Re-run the search to rebuild the found page
-            if last_search:
-                await handle_steam_game_search(chat_id, first_name, last_search)
-            else:
-                await tg_app.bot.send_message(
-                    chat_id,
-                    "⏳ <b>Search results expired.</b>\n\nPlease search again. 🍃",
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔍 Search Again", callback_data="search_different_game")],
-                        [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
-                    ])
+            grouped_cache = json.loads(cached_grouped)
+            term = cached_term
+            total_accounts = sum(v["count"] for v in grouped_cache.values())
+
+            text = (
+                f"✅ Found <b>{total_accounts}</b> account(s) "
+                f"for \"<b>{html.escape(term)}</b>\"\n\n"
+            )
+            buttons = []
+
+            for display_name, info in grouped_cache.items():
+                count = info["count"]
+                has_bundle = info.get("has_bundle", False)
+                has_single = info.get("has_single", True)
+                other_games = info.get("other_games", [])
+                newest_created = info.get("newest_created")
+                age_tag = get_relative_time_ago(newest_created) if newest_created else "🟢 Freshly added"
+
+                if has_bundle and has_single:
+                    type_label = "📦 <b>Bundle + Single</b>"
+                elif has_bundle:
+                    type_label = "📦 <b>All Big Bundles</b>"
+                else:
+                    type_label = ""
+
+                if count == 1 and not has_bundle:
+                    text += f"🎮 <b>{html.escape(display_name)}</b> — 1 account {age_tag}\n\n"
+                    claim_email = info["emails"][0] if info["emails"] else ""
+                    buttons.append([InlineKeyboardButton(
+                        f"✅ Claim — {display_name[:35]}",
+                        callback_data=f"claim_steam|{claim_email}"
+                    )])
+                else:
+                    text += f"🎮 <b>{html.escape(display_name)}</b> {type_label} {age_tag}\n"
+                    if other_games:
+                        preview = ", ".join(html.escape(g) for g in other_games[:3])
+                        more = f" +{len(other_games) - 3} more" if len(other_games) > 3 else ""
+                        text += f"   <b>Also includes:</b> {preview}{more}\n"
+                    text += f"   <b>{count} accounts available</b>\n\n"
+
+                    safe_key = abs(hash(f"{chat_id}:{display_name}")) % 999999
+                    await redis_client.setex(
+                        f"steam_group:{chat_id}:{safe_key}",
+                        600,
+                        json.dumps({"emails": info["emails"], "game_name": display_name})
+                    )
+                    btn_label = (
+                        f"👉 View {count} accounts — {display_name[:25]}"
+                        if count > 1
+                        else f"✅ Claim — {display_name[:35]}"
+                    )
+                    btn_callback = (
+                        f"steam_sel|{chat_id}|{safe_key}"
+                        if count > 1
+                        else f"claim_steam|{info['emails'][0]}"
+                    )
+                    buttons.append([InlineKeyboardButton(btn_label, callback_data=btn_callback)])
+
+            text += (
+                "━━━━━━━━━━━━━━━━━━\n"
+                "<i>📧 Credentials revealed after claiming. ⏳ Expires in 2 minutes.</i>"
+            )
+            buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
+            buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
+
+            result_msg = await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=STEAM_RESULT_GIF,
+                caption=text.strip(),
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+            await redis_client.setex(f"steam_found_msg:{chat_id}", 600, str(result_msg.message_id))
+
+            # Restore search result key so claim flow still works
+            first_email = next(
+                (info["emails"][0] for info in grouped_cache.values() if info["emails"]), ""
+            )
+            first_game = next(iter(grouped_cache.keys()), "Steam Account")
+            await redis_client.setex(
+                f"steam_search_result:{chat_id}",
+                120,
+                json.dumps({"email": first_email, "game_name": first_game})
+            )
+
+            # ── Fresh 2-min timer — NO deduction (already handled by View All tap or Found Page expire) ──
+            async def expire_back_to_results():
+                await asyncio.sleep(115)
+
+                still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
+                if not still_pending:
+                    return
+
+                try:
+                    current_caption = result_msg.caption or ""
+                    warning = current_caption + "\n\n⏳ <b>5 seconds remaining!</b>"
+                    await result_msg.edit_caption(
+                        caption=warning, parse_mode="HTML",
+                        reply_markup=result_msg.reply_markup
+                    )
+                except Exception:
+                    pass
+
+                await asyncio.sleep(5)
+
+                still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
+                if not still_pending:
+                    return
+
+                try:
+                    await result_msg.delete()
+                except Exception:
+                    pass
+
+                await redis_client.delete(f"steam_search_result:{chat_id}")
+
+                # Session was already deducted (View All was tapped to get here)
+                # Safety fallback in case flag expired
+                already_deducted = await redis_client.get(f"steam_session_deducted:{chat_id}")
+                if not already_deducted:
+                    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                    new_attempts = min(current + 1, 3)
+                    await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
+                    await redis_client.setex(f"steam_session_deducted:{chat_id}", 600, "1")
+                    remaining = 3 - new_attempts
+                else:
+                    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                    remaining = 3 - current
+
+                expired_text = (
+                    f"⏳ <b>This search has expired.</b>\n\n"
+                    f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                    f"{make_attempts_bar(3 - remaining)}\n\n"
+                    + (f"🌲 <i>You can search again right now!</i>"
+                       if remaining > 0 else
+                       f"🌲 <i>Please wait for your daily cooldown to reset.</i>")
                 )
+                btns = (
+                    [[InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                     [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]]
+                    if remaining > 0 else
+                    [[InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]]
+                )
+                try:
+                    await tg_app.bot.send_message(
+                        chat_id, expired_text, parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(btns)
+                    )
+                except Exception:
+                    pass
+
+            asyncio.create_task(expire_back_to_results())
 
         except Exception as e:
             print(f"🔴 Back to results error: {e}")
+            import traceback
+            traceback.print_exc()
             await query.answer("❌ Something went wrong", show_alert=True)
         return
 
@@ -11712,6 +11854,8 @@ async def handle_callback(update: Update):
             await redis_client.delete(f"steam_search_result:{chat_id}")
             await redis_client.delete(f"steam_searching:{chat_id}")
             await redis_client.delete(f"steam_claim_msg:{chat_id}")
+            await redis_client.delete(f"steam_session_deducted:{chat_id}")
+            await redis_client.delete(f"steam_result_consumed:{chat_id}")
 
             hours_left = cooldown_seconds // 3600
             mins_left = (cooldown_seconds % 3600) // 60
@@ -12495,8 +12639,9 @@ async def process_update(update_data: dict):
         if not is_real_command:
             await redis_client.delete(f"steam_searching:{chat_id}")
             
-            # ── NEW: Clear the "View All opened" flag for a fresh new search
+            # ── Clear session flags for a fresh new search ──
             await redis_client.delete(f"steam_result_consumed:{chat_id}")
+            await redis_client.delete(f"steam_session_deducted:{chat_id}")
             
             # Also clear the old search result (you probably already have this line)
             await redis_client.delete(f"steam_search_result:{chat_id}")
@@ -12732,6 +12877,30 @@ async def process_update(update_data: dict):
             buttons.append([InlineKeyboardButton("🔄 Search Different Game", callback_data="search_different_game")])
             buttons.append([InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")])
 
+            # ── Cache grouped results for "Back to Results" re-render ──
+            grouped_cache_data = {}
+            for display_name, acc_list in grouped.items():
+                all_games_sample = get_unified_games(acc_list[0]) if acc_list else []
+                other_games_list = [g for g in all_games_sample if g.lower() != display_name.lower()]
+                newest_created_val = max(
+                    (a.get("created_at") for a in acc_list if a.get("created_at")),
+                    default=None
+                )
+                grouped_cache_data[display_name] = {
+                    "emails": [acc.get("email") for acc in acc_list if acc.get("email")],
+                    "count": len(acc_list),
+                    "has_bundle": any(is_bundle_account(acc) for acc in acc_list),
+                    "has_single": any(not is_bundle_account(acc) for acc in acc_list),
+                    "other_games": other_games_list,
+                    "newest_created": newest_created_val,
+                }
+            await redis_client.setex(
+                f"steam_grouped_cache:{chat_id}",
+                600,
+                json.dumps(grouped_cache_data)
+            )
+            await redis_client.setex(f"steam_search_term:{chat_id}", 600, term)
+
             result_msg = await send_animated_translated(
                 chat_id=chat_id,
                 animation_url=STEAM_RESULT_GIF,     
@@ -12746,10 +12915,14 @@ async def process_update(update_data: dict):
             async def auto_expire_result():
                 await asyncio.sleep(115)
 
+                still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
+                if not still_pending:
+                    return  # user claimed successfully
+
+                # 5-second warning
                 try:
                     current_caption = result_msg.caption or result_msg.text or ""
                     warning_text = current_caption + "\n\n⏳ <b>5 seconds remaining before this expires!</b>"
-
                     try:
                         await result_msg.edit_caption(
                             caption=warning_text,
@@ -12767,57 +12940,64 @@ async def process_update(update_data: dict):
 
                 await asyncio.sleep(5)
 
-                try:
-                    consumed_key = f"steam_result_consumed:{chat_id}"
+                still_pending = await redis_client.get(f"steam_search_result:{chat_id}")
+                if not still_pending:
+                    return
 
-                    if await redis_client.get(consumed_key):
-                        await redis_client.delete(consumed_key)
-                        return
+                await redis_client.delete(f"steam_search_result:{chat_id}")
 
-                    # Original logic continues only if View All was NOT opened
+                # ── Deduct only if View All was NEVER tapped (session flag not set) ──
+                already_deducted = await redis_client.get(f"steam_session_deducted:{chat_id}")
+
+                if not already_deducted:
+                    # Found Page expired without View All — wasted search, deduct 1
                     current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
                     new_attempts = min(current + 1, 3)
                     await redis_client.setex(f"steam_search_attempts:{chat_id}", 86400, str(new_attempts))
-
+                    await redis_client.setex(f"steam_session_deducted:{chat_id}", 600, "1")
                     remaining = 3 - new_attempts
+                    print(f"[EXPIRE] Found Page expired without View All — deducted for {chat_id}, remaining={remaining}")
+                else:
+                    current = int(await redis_client.get(f"steam_search_attempts:{chat_id}") or 0)
+                    remaining = 3 - current
+                    print(f"[EXPIRE] Found Page expired after View All — already deducted, skipping for {chat_id}")
 
-                    if remaining > 0:
-                        expired_text = (
-                            f"⏳ <b>This search has expired.</b>\n\n"
-                            f"The results are no longer valid.\n"
-                            f"(<b>2 minutes</b> have passed without claiming)\n\n"
-                            f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
-                            f"{make_attempts_bar(new_attempts)}\n\n"
-                            f"🌲 <i>You can search again right now!</i>"
-                        )
-                        buttons_expired = [
-                            [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
-                            [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
-                        ]
-                    else:
-                        # ← This is the clean message you want when attempts = 0
-                        expired_text = (
-                            f"🚫 <b>No search attempts remaining.</b>\n\n"
-                            f"Please wait for your cooldown to expire before searching again. 🍃"
-                        )
-                        buttons_expired = [
-                            [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
-                        ]
+                if remaining > 0:
+                    expired_text = (
+                        f"⏳ <b>This search has expired.</b>\n\n"
+                        f"The results are no longer valid.\n"
+                        f"(2 minutes have passed without claiming)\n\n"
+                        f"🎯 <b>Search Attempts:</b> {remaining}/3 remaining\n"
+                        f"{make_attempts_bar(3 - remaining)}\n\n"
+                        f"🌲 <i>You can search again right now!</i>"
+                    )
+                    buttons_expired = [
+                        [InlineKeyboardButton("🔄 Search Again", callback_data="search_different_game")],
+                        [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
+                    ]
+                else:
+                    expired_text = (
+                        f"⏳ <b>This search has expired.</b>\n\n"
+                        f"🎯 <b>Search Attempts:</b> 0/3 remaining\n"
+                        f"{make_attempts_bar(3)}\n\n"
+                        f"🌲 <i>Please wait for your daily cooldown to reset.</i>"
+                    )
+                    buttons_expired = [
+                        [InlineKeyboardButton("← Back to Steam", callback_data="vamt_filter_steam")]
+                    ]
 
-                    try:
-                        await result_msg.edit_caption(
-                            caption=expired_text,
-                            parse_mode="HTML",
-                            reply_markup=InlineKeyboardMarkup(buttons_expired)
-                        )
-                    except Exception:
-                        await result_msg.edit_text(
-                            expired_text,
-                            parse_mode="HTML",
-                            reply_markup=InlineKeyboardMarkup(buttons_expired)
-                        )
+                try:
+                    await result_msg.edit_caption(
+                        caption=expired_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons_expired)
+                    )
                 except Exception:
-                    pass
+                    await result_msg.edit_text(
+                        expired_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons_expired)
+                    )
 
             asyncio.create_task(auto_expire_result())
             return
