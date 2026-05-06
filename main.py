@@ -4432,6 +4432,7 @@ def kb_inventory():
             InlineKeyboardButton("🤖 Grok", callback_data="vamt_filter_grok"),
             InlineKeyboardButton("🛡️ NordVPN", callback_data="vamt_filter_nord"),
         ],
+        [InlineKeyboardButton("🧠 ChatGPT", callback_data="view_filter_gpt")],
         [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
@@ -11553,13 +11554,32 @@ async def handle_callback(update: Update):
             )
             return
 
+    elif data == "vamt_filter_gpt":
+        await query.answer()
+        
+        if chat_id != OWNER_ID:
+            await query.message.edit_caption(
+                caption=(
+                    "🎮 <b>ChatGPT Cookies</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔒 <b>NordVPN is currently restricted.</b>\n\n"
+                    "This section is temporarily available to the Forest Caretaker only.\n\n"
+                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+                ])
+            )
+            return
+
     elif data == "vamt_filter_grok":
         await query.answer()
         
         if chat_id != OWNER_ID:
             await query.message.edit_caption(
                 caption=(
-                    "🎮 <b>Grok Accounts</b>\n"
+                    "🎮 <b>Grok Cookies</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
                     "🔒 <b>Grok is currently restricted.</b>\n\n"
                     "This section is temporarily available to the Forest Caretaker only.\n\n"
