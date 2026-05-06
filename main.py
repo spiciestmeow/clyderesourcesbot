@@ -655,9 +655,10 @@ async def handle_award_beta_guardian(chat_id: int, target_id: int):
 async def send_public_vouch(
     chat_id: int,
     first_name: str,
-    service: str,           # "netflix", "prime", or "crunchyroll"
+    service: str,
     xp_points: int,
-    plan: str = "Premium"         # ← now uses actual XP given
+    plan: str = "Premium",
+    raw_service_type: str = ""
 ):
     """Send public vouch to CLYDE VOUCH group - New format"""
     service_map = {
@@ -672,7 +673,8 @@ async def send_public_vouch(
 
     clickable_user = f'<a href="tg://user?id={chat_id}">{html.escape(first_name)}</a>'
 
-    # ── FULL WIDTH HACK ──
+    flag = get_region_flag(raw_service_type) if raw_service_type else ""
+
     full_width = "ㅤ" * 10
 
     vouch_text = (
@@ -682,7 +684,7 @@ async def send_public_vouch(
         f"<b>USER👤</b> = {clickable_user}\n"
         f"<b>✨POINTS</b> = {xp_points} XP\n"
         f"<b>🛍️SERVICE</b> = {service_name}\n"
-        f"<b>📌PLAN</b> = {plan.upper()}\n"
+        f"<b>📌PLAN</b> = {plan.upper()}{flag}\n"
         f"<b>👸🏻BOT</b> = @{BOT_USERNAME}"
     )
 
@@ -6459,8 +6461,9 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
             chat_id=chat_id,
             first_name=first_name,
             service=service_type,
-            xp_points=action_xp,
-            plan=plan_detail or "Premium"
+            xp_points=action_xp or 2,
+            plan=plan_detail or "Premium",
+            raw_service_type=raw_service_type
         )
 
         await redis_client.setex(
