@@ -4432,7 +4432,7 @@ def kb_inventory():
             InlineKeyboardButton("🤖 Grok", callback_data="vamt_filter_grok"),
             InlineKeyboardButton("🛡️ NordVPN", callback_data="vamt_filter_nord"),
         ],
-        [InlineKeyboardButton("🧠 ChatGPT", callback_data="view_filter_gpt")],
+        [InlineKeyboardButton("🧠 ChatGPT", callback_data="vamt_filter_gpt")],
         [InlineKeyboardButton("← Back to Clearing", callback_data="main_menu")],
     ])
 
