@@ -674,7 +674,7 @@ async def send_public_vouch(
     full_width = "ㅤ" * 10
 
     vouch_text = (
-        f"🇳‌🇪‌🇼‌ 🇨‌🇱‌🇦‌🇮‌🇲‌🇪‌🇩‌{full_width}\n\n"
+        f"🇳‌🇪‌🇼‌ 🇨‌🇱‌🇦‌🇮‌🇲‌🇪‌🇩‌{full_width}\n"
         f"<b>Order ID:</b> {order_id}\n"
         f"<b>USER🆔</b> = {chat_id}\n"
         f"<b>USER👤</b> = {clickable_user}\n"
