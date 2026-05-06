@@ -675,11 +675,19 @@ async def send_public_vouch(
 
     flag = get_region_flag(raw_service_type) if raw_service_type else ""
 
+    # ── INTELLIGENT PLAN NORMALIZATION (fixes Prime Video + future-proof) ──
+    plan_display = str(plan).upper().strip()
+
+    # Prime Video always shows as "PREMIUM" (matches Netflix/Crunchyroll style)
+    if "PRIME" in plan_display and ("VIDEO" in plan_display or "PRIMEVIDEO" in plan_display):
+        plan_display = "PREMIUM"
+
+    # Remove any existing regional flag emoji at the end (extra safety)
     import re
-    plan_display = plan.upper().strip()
     plan_display = re.sub(r'[\U0001F1E6-\U0001F1FF]{2}\s*$', '', plan_display).strip()
 
     final_plan = f"{plan_display}{flag}" if flag else plan_display
+    # ── END OF NORMALIZATION ──
 
     full_width = "ㅤ" * 10
 
