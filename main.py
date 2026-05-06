@@ -1340,7 +1340,7 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 # ──────────────────────────────────────────────
 # PUBLIC VOUCH GROUP (CLYDE VOUCH)
 # ──────────────────────────────────────────────
-PUBLIC_VOUCH_GROUP_ID = -1003902724903
+PUBLIC_VOUCH_GROUP_ID = -1003978374392
 
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
