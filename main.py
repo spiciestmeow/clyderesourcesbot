@@ -11562,7 +11562,7 @@ async def handle_callback(update: Update):
                 caption=(
                     "🎮 <b>ChatGPT Cookies</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    "🔒 <b>NordVPN is currently restricted.</b>\n\n"
+                    "🔒 <b>ChatGPT is currently restricted.</b>\n\n"
                     "This section is temporarily available to the Forest Caretaker only.\n\n"
                     "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
                 ),
