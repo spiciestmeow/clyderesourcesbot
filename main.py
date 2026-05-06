@@ -671,7 +671,7 @@ async def send_public_vouch(
     clickable_user = f'<a href="tg://user?id={chat_id}">{html.escape(first_name)}</a>'
 
     # ── FULL WIDTH HACK ──
-    full_width = "ㅤ" * 38
+    full_width = "ㅤ" * 10
 
     vouch_text = (
         f"🇳‌🇪‌🇼‌ 🇨‌🇱‌🇦‌🇮‌🇲‌🇪‌🇩‌{full_width}\n\n"
