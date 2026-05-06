@@ -6421,6 +6421,7 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
                 InlineKeyboardButton("❌ Not Working", callback_data=f"kfb_bad|{service_type}|{idx}"),
             ],
             [InlineKeyboardButton("❓ How to use this?", callback_data=f"cookie_tutorial_{service_type}_1")],
+            [InlineKeyboardButton("📢 See Vouch", url="https://t.me/clydevouch")],
             [InlineKeyboardButton(
                 f"← Back to {service_name}",
                 callback_data=f"back_to_{service_type}_list|{page}"
