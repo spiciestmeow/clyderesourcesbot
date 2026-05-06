@@ -668,11 +668,17 @@ async def send_public_vouch(
 
     order_id = random.randint(1000, 9999)
 
+    clickable_user = f'<a href="tg://user?id={chat_id}">{html.escape(first_name)}</a>'
+
+    # ── FULL WIDTH HACK ──
+    full_width = "ㅤ" * 38
+
     vouch_text = (
-        f"<b>🇳‌🇪‌🇼‌ 🇨‌🇱‌🇦‌🇮‌🇲‌🇪‌🇩‌</b>\n\n"
+        f"{full_width}\n"
+        f"🇳‌🇪‌🇼‌ 🇨‌🇱‌🇦‌🇮‌🇲‌🇪‌🇩‌\n\n"
         f"<b>Order ID:</b> {order_id}\n"
         f"<b>USER🆔</b> = {chat_id}\n"
-        f"<b>USER👤</b> = {html.escape(first_name)}\n"
+        f"<b>USER👤</b> = {clickable_user}\n"
         f"<b>✨POINTS</b> = {xp_points}XP\n"
         f"<b>🛍️SERVICE</b> = {service_name}\n"
         f"<b>👸🏻BOT</b> = @{BOT_USERNAME}"
@@ -687,6 +693,7 @@ async def send_public_vouch(
         print(f"✅ Vouch posted → {service} by {chat_id} (+{xp_points} XP)")
     except Exception as e:
         print(f"⚠️ Failed to send vouch: {e}")
+
 async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
     rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
     emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
