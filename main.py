@@ -656,13 +656,15 @@ async def send_public_vouch(
     chat_id: int,
     first_name: str,
     service: str,           # "netflix", "prime", or "crunchyroll"
-    xp_points: int          # ← now uses actual XP given
+    xp_points: int,
+    plan: str = "Premium"         # ← now uses actual XP given
 ):
     """Send public vouch to CLYDE VOUCH group - New format"""
     service_map = {
         "netflix": "NETFLIX COOKIE",
-        "prime": "PRIME VIDEO COOKIE",
-        "crunchyroll": "CRUNCHYROLL COOKIE"
+        "prime": "PRIMEVIDEO COOKIE",
+        "crunchyroll": "CRUNCHYROLL COOKIE",
+        
     }
     service_name = service_map.get(service.lower(), service.upper() + " COOKIE")
 
@@ -678,8 +680,9 @@ async def send_public_vouch(
         f"<b>Order ID:</b> {order_id}\n"
         f"<b>USER🆔</b> = {chat_id}\n"
         f"<b>USER👤</b> = {clickable_user}\n"
-        f"<b>✨POINTS</b> = {xp_points}XP\n"
+        f"<b>✨POINTS</b> = {xp_points} XP\n"
         f"<b>🛍️SERVICE</b> = {service_name}\n"
+        f"<b>📌PLAN</b> = {plan.upper()}\n"
         f"<b>👸🏻BOT</b> = @{BOT_USERNAME}"
     )
 
@@ -6455,7 +6458,8 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
             chat_id=chat_id,
             first_name=first_name,
             service=service_type,
-            xp_points=action_xp
+            xp_points=action_xp,
+            plan=plan_detail or "Premium"
         )
 
         await redis_client.setex(
