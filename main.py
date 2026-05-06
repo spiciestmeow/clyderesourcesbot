@@ -669,7 +669,7 @@ async def send_public_vouch(
     order_id = random.randint(1000, 9999)
 
     vouch_text = (
-        f"<b>NEW CLAIMED</b>\n\n"
+        f"<b>🇳‌🇪‌🇼‌ 🇨‌🇱‌🇦‌🇮‌🇲‌🇪‌🇩‌</b>\n\n"
         f"<b>Order ID:</b> {order_id}\n"
         f"<b>USER🆔</b> = {chat_id}\n"
         f"<b>USER👤</b> = {html.escape(first_name)}\n"
