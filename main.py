@@ -675,6 +675,12 @@ async def send_public_vouch(
 
     flag = get_region_flag(raw_service_type) if raw_service_type else ""
 
+    import re
+    plan_display = plan.upper().strip()
+    plan_display = re.sub(r'[\U0001F1E6-\U0001F1FF]{2}\s*$', '', plan_display).strip()
+
+    final_plan = f"{plan_display}{flag}" if flag else plan_display
+
     full_width = "ㅤ" * 10
 
     vouch_text = (
@@ -684,7 +690,7 @@ async def send_public_vouch(
         f"<b>USER👤</b> = {clickable_user}\n"
         f"<b>✨POINTS</b> = {xp_points} XP\n"
         f"<b>🛍️SERVICE</b> = {service_name}\n"
-        f"<b>📌PLAN</b> = {plan.upper()}{flag}\n"
+        f"<b>📌PLAN</b> = {final_plan}\n"
         f"<b>👸🏻BOT</b> = @{BOT_USERNAME}"
     )
 
