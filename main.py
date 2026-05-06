@@ -652,6 +652,41 @@ async def handle_award_beta_guardian(chat_id: int, target_id: int):
     else:
         await tg_app.bot.send_message(chat_id, "❌ Failed to award. Check logs.")
 
+async def send_public_vouch(
+    chat_id: int,
+    first_name: str,
+    service: str,           # "netflix", "prime", or "crunchyroll"
+    xp_points: int          # ← now uses actual XP given
+):
+    """Send public vouch to CLYDE VOUCH group - New format"""
+    service_map = {
+        "netflix": "NETFLIX COOKIE",
+        "prime": "PRIME VIDEO COOKIE",
+        "crunchyroll": "CRUNCHYROLL COOKIE"
+    }
+    service_name = service_map.get(service.lower(), service.upper() + " COOKIE")
+
+    order_id = random.randint(1000, 9999)
+
+    vouch_text = (
+        f"<b>NEW CLAIMED</b> ✨\n\n"
+        f"<b>Order ID:</b> {order_id}\n"
+        f"<b>USER🆔</b> = {chat_id}\n"
+        f"<b>USER👤</b> = {html.escape(first_name)}\n"
+        f"<b>✨XP POINTS</b> = {xp_points}\n"
+        f"<b>🛍️SERVICE</b> = {service_name}\n\n"
+        f"<b>👸🏻BOT</b> = @{BOT_USERNAME}"
+    )
+
+    try:
+        await tg_app.bot.send_message(
+            chat_id=PUBLIC_VOUCH_GROUP_ID,
+            text=vouch_text,
+            parse_mode="HTML"
+        )
+        print(f"✅ Vouch posted → {service} by {chat_id} (+{xp_points} XP)")
+    except Exception as e:
+        print(f"⚠️ Failed to send vouch: {e}")
 async def send_achievement_unlock(chat_id: int, ach: dict, first_name: str):
     rarity_emoji = {"common": "🌿", "rare": "✨", "epic": "🌟", "legendary": "🌠", "mythic": "🪐"}
     emoji = rarity_emoji.get(ach.get("rarity", "epic"), "🌱")
@@ -1302,6 +1337,10 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+# ──────────────────────────────────────────────
+# PUBLIC VOUCH GROUP (CLYDE VOUCH)
+# ──────────────────────────────────────────────
+PUBLIC_VOUCH_GROUP_ID = -1003902724903
 
 MAINTENANCE_MESSAGE = (
     "🌿 <b>The Enchanted Clearing is currently under maintenance</b>\n\n"
@@ -6401,6 +6440,16 @@ async def reveal_cookie(service_type: str, chat_id: int, first_name: str, query,
         # ── Check achievements after revealing a cookie ──
         asyncio.create_task(
             check_and_award_achievements(chat_id, first_name, action=action_name)
+        )
+
+        # ──────────────────────────────────────────────
+        # NEW: SEND PUBLIC VOUCH
+        # ──────────────────────────────────────────────
+        await send_public_vouch(
+            chat_id=chat_id,
+            first_name=first_name,
+            service=service_type,
+            xp_points=action_xp
         )
 
         await redis_client.setex(
