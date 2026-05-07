@@ -10358,21 +10358,36 @@ async def handle_callback(update: Update):
         return
 
     # ── INVENTORY ──
-    if data == "check_vamt":
+    elif data == "check_vamt" or data == "back_to_inventory":   # ← added back_to_inventory
+        await query.answer("🌿 Returning to inventory...", show_alert=False)
+        
         try:
-            await query.message.delete()
+            # Try smooth edit first (this is what makes "Back to Inventory" instant)
+            await query.message.edit_caption(
+                caption=(
+                    "📜 <b>Ancient Library — Resource Scrolls</b>\n\n"
+                    "Choose the type of resource you need today:\n\n"
+                    "<i>Viewing items earns XP and helps you level up.</i>"
+                ),
+                parse_mode="HTML",
+                reply_markup=kb_inventory(),
+            )
         except Exception:
-            pass
-        await send_animated_translated(
-            chat_id=chat_id,
-            animation_url=INVENTORY_GIF,
-            caption=(
-                "📜 <b>Ancient Library — Resource Scrolls</b>\n\n"
-                "Choose the type of resource you need today:\n\n"
-                "<i>Viewing items earns XP and helps you level up.</i>"
-            ),
-            reply_markup=kb_inventory(),
-        )
+            # Fallback (for when called from menu or edit fails)
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await send_animated_translated(
+                chat_id=chat_id,
+                animation_url=INVENTORY_GIF,
+                caption=(
+                    "📜 <b>Ancient Library — Resource Scrolls</b>\n\n"
+                    "Choose the type of resource you need today:\n\n"
+                    "<i>Viewing items earns XP and helps you level up.</i>"
+                ),
+                reply_markup=kb_inventory(),
+            )
 
     elif data == "show_resources":
             immersive_text = (
