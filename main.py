@@ -11538,59 +11538,56 @@ async def handle_callback(update: Update):
     elif data == "vamt_filter_nord":
         await query.answer()
         
-        if chat_id != OWNER_ID:
-            await query.message.edit_caption(
-                caption=(
-                    "🎮 <b>NordVPN Accounts</b>\n"
-                    "━━━━━━━━━━━━━━━━━━\n\n"
-                    "🔒 <b>NordVPN is currently restricted.</b>\n\n"
-                    "This section is temporarily available to the Forest Caretaker only.\n\n"
-                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
-                ),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
-                ])
-            )
-            return
+        await query.message.edit_caption(
+            caption=(
+                "🎮 <b>NordVPN Accounts</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "🔒 <b>NordVPN is currently restricted.</b>\n\n"
+                "This section is temporarily available to the Forest Caretaker only.\n\n"
+                "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+            ])
+        )
+        return
 
     elif data == "vamt_filter_gpt":
         await query.answer()
         
-        if chat_id != OWNER_ID:
-            await query.message.edit_caption(
-                caption=(
-                    "🎮 <b>ChatGPT Cookies</b>\n"
-                    "━━━━━━━━━━━━━━━━━━\n\n"
-                    "🔒 <b>ChatGPT is currently restricted.</b>\n\n"
-                    "This section is temporarily available to the Forest Caretaker only.\n\n"
-                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
-                ),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
-                ])
-            )
-            return
+        await query.message.edit_caption(
+            caption=(
+                "🎮 <b>ChatGPT Cookies</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "🔒 <b>ChatGPT is currently restricted.</b>\n\n"
+                "This section is temporarily available to the Forest Caretaker only.\n\n"
+                "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+            ])
+        )
+        return
 
     elif data == "vamt_filter_grok":
         await query.answer()
         
-        if chat_id != OWNER_ID:
-            await query.message.edit_caption(
-                caption=(
-                    "🎮 <b>Grok Cookies</b>\n"
-                    "━━━━━━━━━━━━━━━━━━\n\n"
-                    "🔒 <b>Grok is currently restricted.</b>\n\n"
-                    "This section is temporarily available to the Forest Caretaker only.\n\n"
-                    "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
-                ),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
-                ])
-            )
-            return
+        await query.message.edit_caption(
+            caption=(
+                "🎮 <b>Grok Cookies</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "🔒 <b>Grok is currently restricted.</b>\n\n"
+                "This section is temporarily available to the Forest Caretaker only.\n\n"
+                "<i>Check back soon — the forest is still preparing this path for wanderers. 🍃</i>"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("← Back to Inventory", callback_data="check_vamt")],
+            ])
+        )
+        return
 
     elif data in ("steam_do_search", "search_different_game"):
         await query.answer()
